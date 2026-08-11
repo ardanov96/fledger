@@ -20,7 +20,6 @@ import (
 
 	"github.com/runut/fmcg-wallet/internal/auth/jwt"
 	"github.com/runut/fmcg-wallet/internal/auth/rbac"
-	"github.com/runut/fmcg-wallet/internal/domain/audit"
 	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/handler"
@@ -75,7 +74,6 @@ func run() error {
 		"max_conns", cfg.DB.MaxConns,
 	)
 
-	// Repos + use cases
 	db := postgres.NewDB(pool)
 	accountRepo := postgres.NewAccountRepository(db)
 	transactionRepo := postgres.NewTransactionRepository(db)
@@ -101,7 +99,6 @@ func run() error {
 		Logger:       log,
 	})
 
-	// Auth (JWT verifier + Casbin RBAC enforcer)
 	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
 
 	modelPath, policyPath := resolveRBACPaths()
@@ -111,17 +108,13 @@ func run() error {
 	}
 	log.Info("RBAC enforcer loaded", "policy", rbacEnforcer.Source())
 
-	// HTTP handlers
 	h := handler.New(transferService, accountService, invoiceService)
 
-	// Audit handlers (uses memory repo; Postgres-backed in Sprint 2C)
-	auditRepo := audit.NewMemoryRepository()
+	auditRepo := postgres.NewAuditRepository(db)
 	auditHandlers := &handler.AuditHandlers{Repo: auditRepo}
 
-	// Router
 	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer)
 
-	// HTTP server
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
 		Handler:           router,
