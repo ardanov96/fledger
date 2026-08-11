@@ -1,0 +1,66 @@
+# --- Binaries ---
+/bin/
+/dist/
+/*.exe
+/*.exe~
+/*.dll
+/*.so
+/*.dylib
+
+# --- Go test & coverage ---
+*.test
+*.out
+coverage.txt
+coverage.html
+*.coverprofile
+
+# --- Local environment ---
+.env
+.env.local
+.env.*.local
+*.local
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Frontend ---
+web/.next/
+web/out/
+web/node_modules/
+web/.turbo/
+web/coverage/
+web/build/
+web/.env*.local
+
+# --- Database dumps & local data ---
+*.sql.gz
+*.dump
+/data/
+/backups/
+
+# --- Secrets ---
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Generated docs ---
+docs/api/openapi.json
+docs/api/swagger/
+
+# --- Local sprint tracker (not pushed to public repo) ---
+docs/SPRINTS.md

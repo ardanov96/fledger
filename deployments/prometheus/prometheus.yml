@@ -1,0 +1,47 @@
+# =============================================================================
+# Prometheus configuration
+# Scrapes the FMCG Wallet API metrics endpoint.
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: fmcg-wallet-monitor
+    env: development
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: prometheus
+
+  # FMCG Wallet API — scraped from host (since API runs natively in dev)
+  - job_name: fmcg-wallet-api
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          service: fmcg-wallet-api
+          component: api
+          env: development
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "api-dev"
+
+  # When the API is also running in Docker, this scrape will activate:
+  - job_name: fmcg-wallet-api-docker
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ["api:8080"]
+        labels:
+          service: fmcg-wallet-api
+          component: api
+          env: development
+    # Only enable if the service exists
+    enable_http2: false

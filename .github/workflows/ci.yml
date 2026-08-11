@@ -1,0 +1,258 @@
+# =============================================================================
+# GitHub Actions — CI Pipeline
+# =============================================================================
+# Runs on every push and PR. Stages:
+#   1. Lint (golangci-lint strict)
+#   2. Test (go test -race -cover, threshold 80%)
+#   3. Security (govulncheck + gosec)
+#   4. Build (multi-platform binary)
+#   5. Docker (build + push to GHCR on main only)
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  GO_VERSION: "1.23"
+  COVERAGE_THRESHOLD: 80
+  BINARY_NAME: fmcg-wallet
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.0
+          args: --timeout=5m
+          only-new-issues: true
+
+  # ---------------------------------------------------------------------------
+  # 2. Test
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fmcg
+          POSTGRES_PASSWORD: fmcg_test
+          POSTGRES_DB: fmcg_wallet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fmcg"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: fmcg
+      DB_PASSWORD: fmcg_test
+      DB_NAME: fmcg_wallet_test
+      DB_SSLMODE: disable
+      REDIS_ADDR: localhost:6379
+      JWT_SECRET: test-jwt-secret-32-chars-min-length-required
+      APP_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+
+      - name: Install migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Run migrations
+        run: |
+          migrate -path migrations -database "postgres://fmcg:fmcg_test@localhost:5432/fmcg_wallet_test?sslmode=disable" up
+
+      - name: Run tests with race detector
+        run: |
+          set -e
+          go test -race -shuffle=on -coverprofile=coverage.out -covermode=atomic ./...
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          awk -v c=$COVERAGE -v t=$COVERAGE_THRESHOLD 'BEGIN {if (c+0 < t+0) {print "ERROR: coverage " c "% below threshold " t "%"; exit 1} else {print "OK: coverage " c "% >= " t "%"}}'
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 3. Security
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Run gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -quiet -fmt sarif -out gosec.sarif ./...
+        continue-on-error: false
+
+      - name: Upload gosec results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # 4. Build
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build (linux/amd64)
+        run: |
+          mkdir -p bin
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${GITHUB_SHA::8} -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o bin/api ./cmd/api
+
+      - name: Build (linux/arm64)
+        run: |
+          mkdir -p bin
+          GOARCH=arm64 go build -trimpath \
+            -ldflags="-s -w -X main.version=${GITHUB_SHA::8}" \
+            -o bin/api-arm64 ./cmd/api
+
+      - name: Verify build
+        run: |
+          file bin/api bin/api-arm64
+          ./bin/api --version || true
+
+  # ---------------------------------------------------------------------------
+  # 5. Docker (only on main, after merge)
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

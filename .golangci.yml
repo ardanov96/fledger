@@ -1,0 +1,212 @@
+# =============================================================================
+# golangci-lint — strict config for production-grade project
+# See: https://golangci-lint.run/welcome/
+# =============================================================================
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.23"
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  issues-exit-code: 1
+  # Skip vendor and generated
+  skip-dirs:
+    - bin
+    - dist
+    - vendor
+    - node_modules
+    - web
+
+linters:
+  disable-all: true
+  enable:
+    # Default
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Extra (strict)
+    - bodyclose
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - dupl
+    - exportloopref
+    - forbidigo
+    - funlen
+    - gocheckcompilerdirectives
+    - gochecknoglobals
+    - goconst
+    - gomnd
+    - gosec
+    - lll
+    - misspell
+    - nakedret
+    - nilerr
+    - nilnil
+    - nlreturn
+    - noctx
+    - paralleltest
+    - predeclared
+    - promlinter
+    - revive
+    - stylecheck
+    - tparallel
+    - unconvert
+    - unparam
+    - varnamelen
+    - wastedassign
+    - whitespace
+
+  # Performance tuning
+  fast: false
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  funlen:
+    lines: 100
+    statements: 50
+  gomnd:
+    # Allow common numbers in tests, disable elsewhere
+    checks: ["argument", "case", "condition", "return"]
+    ignored-numbers: ["0", "1", "2", "100", "200", "404", "500"]
+  lll:
+    line-length: 120
+    tab-width: 4
+  varnamelen:
+    min-name-length: 2
+    check-receiver: true
+    ignore-names:
+      - err
+      - ctx
+      - id
+      - ok
+      - db
+      - tx
+      - rx
+      - ws
+      - w
+      - r
+      - rs
+      - b
+      - i
+      - j
+      - k
+      - n
+      - m
+      - x
+      - y
+      - z
+      - t
+      - c
+      - e
+      - f
+      - g
+      - h
+      - l
+      - p
+      - q
+      - s
+      - u
+      - v
+      - ax
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - ifElseChain
+      - hugeParam
+      - rangeValCopy
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: package-comments
+      - name: var-naming
+      - name: error-strings
+      - name: error-naming
+      - name: error-return
+      - name: if-return
+      - name: indent-error-flow
+      - name: redundant-import-as
+      - name: superfluous-else
+      - name: unreachable-code
+      - name: unused-receiver
+  gosec:
+    confidence: medium
+    excludes:
+      - G115  # integer overflow conversion (false positives common with iota)
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # too noisy for performance micro-tuning
+  gocognit:
+    min-complexity: 20
+  forbidigo:
+    forbid:
+      - pattern: ^fmt\.Println?$
+        msg: "use structured logger (slog) instead of fmt.Print"
+      - pattern: ^log\.(Println|Print|Printf|Fatal|Fatalf|Fatalln)$
+        msg: "use structured logger (slog) instead of stdlib log"
+      - pattern: ^os\.Exit$
+        msg: "avoid os.Exit in library code; return error instead"
+    # Allow in cmd/ entrypoints
+    exclude-godoc: false
+  predeclared:
+    forbid:
+      - "true"
+      - "false"
+      - "int"
+      - "string"
+      - "bool"
+      - "float"
+      - "complex"
+    qualified: false
+  nlreturn:
+    block-size: 2
+  nakedret:
+    max-func-lines: 30
+  paralleltest:
+    # Enforce t.Parallel() in tests for performance
+    ignore-missing: false
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 50
+  max-same-issues: 3
+  # NEW: skip excluded in per-linter settings
+  exclude-rules:
+    # Long lines OK in test files
+    - path: _test\.go
+      linters:
+        - lll
+        - funlen
+        - dupl
+    # Allow magic numbers in test fixtures
+    - path: _test\.go
+      linters:
+        - gomnd
+    # Allow unused parameters in interfaces (for future)
+    - linters:
+        - unparam
+      path: _test\.go
+    # Generated docs
+    - path: docs/api/swagger
+      linters:
+        - all
+    # Mock files
+    - path: mocks/
+      linters:
+        - all
+
+  # Show all issues, don't auto-fix
+  fix: false

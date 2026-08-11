@@ -1,0 +1,49 @@
+# =============================================================================
+# Grafana datasource provisioning
+# Auto-configures Prometheus, Loki, and Tempo on Grafana startup.
+# =============================================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: "15s"
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      timeout: 60
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasource: Loki
+        tags: ["job", "instance", "pod", "service"]
+        mappedTags: [{ key: "service.name", value: "service" }]
+        mapTagNamesEnabled: true
+      serviceMap:
+        datasource: Prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      spanBar:
+        type: "Tag"
+      traceQuery:
+        query: /api/traces/{traceId}

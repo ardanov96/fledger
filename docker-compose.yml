@@ -1,0 +1,281 @@
+# =============================================================================
+# FMCG Wallet — Local Development Stack
+#
+# Usage:
+#   make up          # start all services in background
+#   make logs        # tail logs
+#   make down        # stop all services
+#   make down-volumes  # stop AND delete volumes (DESTRUCTIVE)
+#
+# All services run on a private bridge network (fmcg_net) and use the
+# project prefix fmcg_ for resource names to avoid clashes with other
+# local projects.
+# =============================================================================
+
+name: fmcg-wallet
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — primary database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: fmcg_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fmcg_wallet
+      POSTGRES_USER: fmcg
+      POSTGRES_PASSWORD: fmcg_dev_password
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      # Enforce statement timeout (defense-in-depth)
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - "5432:5432"
+    volumes:
+      - fmcg_postgres_data:/var/lib/postgresql/data
+      - ./deployments/postgres/initdb.d:/docker-entrypoint-initdb.d:ro
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "log_min_duration_statement=500ms"
+      - "-c"
+      - "log_checkpoints=on"
+      - "-c"
+      - "log_connections=on"
+      - "-c"
+      - "log_disconnections=on"
+      - "-c"
+      - "log_lock_waits=on"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.max=10000"
+      - "-c"
+      - "pg_stat_statements.track=all"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fmcg -d fmcg_wallet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fmcg_net
+
+  # ---------------------------------------------------------------------------
+  # PgBouncer — connection pooler (transaction pooling)
+  # ---------------------------------------------------------------------------
+  pgbouncer:
+    image: bitnami/pgbouncer:1.22-alpine
+    container_name: fmcg_pgbouncer
+    restart: unless-stopped
+    environment:
+      PGBOUNCER_DATABASE: fmcg_wallet
+      PGBOUNCER_USERNAME: fmcg
+      PGBOUNCER_PASSWORD: fmcg_dev_password
+      PGBOUNCER_AUTH_TYPE: scram-sha-256
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 1000
+      PGBOUNCER_DEFAULT_POOL_SIZE: 20
+      PGBOUNCER_MIN_POOL_SIZE: 5
+      PGBOUNCER_RESERVE_POOL_SIZE: 5
+      PGBOUNCER_SERVER_IDLE_TIMEOUT: 600
+      PGBOUNCER_QUERY_TIMEOUT: 60
+      PGBOUNCER_CLIENT_IDLE_TIMEOUT: 0
+      PGBOUNCER_LOG_CONNECTIONS: 1
+      PGBOUNCER_LOG_DISCONNECTIONS: 1
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fmcg_net
+
+  # ---------------------------------------------------------------------------
+  # Redis — cache + asynq broker
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: fmcg_redis
+    restart: unless-stopped
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "256mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--save"
+      - "60"
+      - "1000"
+    ports:
+      - "6379:6379"
+    volumes:
+      - fmcg_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fmcg_net
+
+  # ---------------------------------------------------------------------------
+  # NATS JetStream — event broker
+  # ---------------------------------------------------------------------------
+  nats:
+    image: nats:2.10-alpine
+    container_name: fmcg_nats
+    restart: unless-stopped
+    command:
+      - "nats-server"
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--max_payload=10MB"
+      - "--http_port=8222"
+    ports:
+      - "4222:4222"  # client
+      - "8222:8222"  # monitoring
+      - "6222:6222"  # cluster
+    volumes:
+      - fmcg_nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fmcg_net
+
+  # ---------------------------------------------------------------------------
+  # Observability — Grafana stack (Prometheus + Loki + Tempo + Grafana)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: fmcg_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - fmcg_prometheus_data:/prometheus
+    networks:
+      - fmcg_net
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: fmcg_loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./deployments/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - fmcg_loki_data:/loki
+    networks:
+      - fmcg_net
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: fmcg_promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./deployments/loki/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - fmcg_net
+    depends_on:
+      - loki
+
+  tempo:
+    image: grafana/tempo:2.7.1
+    container_name: fmcg_tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo-config.yml"]
+    ports:
+      - "4317:4317"  # OTLP gRPC receiver
+      - "3200:3200"  # tempo query
+    volumes:
+      - ./deployments/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - fmcg_tempo_data:/var/tempo
+    networks:
+      - fmcg_net
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: fmcg_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+    ports:
+      - "3000:3000"
+    volumes:
+      - fmcg_grafana_data:/var/lib/grafana
+      - ./deployments/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - fmcg_net
+
+  # ---------------------------------------------------------------------------
+  # MailHog — fake SMTP for email tests
+  # ---------------------------------------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: fmcg_mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - fmcg_net
+
+# =============================================================================
+# Networks & Volumes
+# =============================================================================
+networks:
+  fmcg_net:
+    driver: bridge
+    name: fmcg_net
+
+volumes:
+  fmcg_postgres_data:
+    name: fmcg_postgres_data
+  fmcg_redis_data:
+    name: fmcg_redis_data
+  fmcg_nats_data:
+    name: fmcg_nats_data
+  fmcg_prometheus_data:
+    name: fmcg_prometheus_data
+  fmcg_loki_data:
+    name: fmcg_loki_data
+  fmcg_tempo_data:
+    name: fmcg_tempo_data
+  fmcg_grafana_data:
+    name: fmcg_grafana_data

@@ -1,0 +1,21 @@
+# CODEOWNERS — automatically requested for review on PRs
+# Solo project for now, but this file makes ownership explicit
+# and serves as a template if the project is open-sourced.
+
+# Default owners for everything
+*       @runut
+
+# Platform code (money, config, logger, errors, httpx) — high-risk, review carefully
+/internal/platform/    @runut
+
+# Domain code — business logic, must be correct
+/internal/domain/      @runut
+
+# Database migrations — irreversible changes
+/migrations/           @runut
+
+# Security-sensitive configs
+/.github/workflows/    @runut
+/Dockerfile            @runut
+/docker-compose.yml    @runut
+/.golangci.yml         @runut
