@@ -65,11 +65,18 @@ func TestAuditMiddleware_AttachesPrincipal(t *testing.T) {
 	t.Parallel()
 	repo := audit.NewMemoryRepository()
 	mw := AuditMiddleware(repo, slog.New(slog.NewTextHandler(discardWriter{}, nil)))
-	handler := mw(AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw(AuthMiddleware(stubVerifierFor(t))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+<task_progress>- [x] All Sprint 9A files (incl. test_helpers.go)
+- [ ] Wire to main.go (cmd/api/main.go + add JWT verifier + Casbin enforcer setup)
+- [ ] Verify build
 		w.WriteHeader(http.StatusOK)
 	})))
 	req := httptest.NewRequest("GET", "/v1/accounts", nil)
-	req.Header.Set("Authorization", "Bearer test-token-abc")
+	req.Header.Set("Authorization", "Bearer anything-here-stubVerifier-accepts")
+<task_progress>- [x] All Sprint 9A files
+- [ ] Fix audit_test.go signature + add stubVerifier helper
+- [ ] Wire to main.go (cmd/api/main.go + add JWT verifier + Casbin enforcer setup)
+- [ ] Verify build
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	got, _ := repo.List(req.Context(), "any", 10)

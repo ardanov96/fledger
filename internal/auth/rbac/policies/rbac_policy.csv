@@ -1,0 +1,81 @@
+# Casbin policy for FMCG Wallet.
+#
+# Format: p, <role>, <domain>, <object>, <action>
+#         g, <user>, <role>, <domain>
+#
+# Edit this file to grant/revoke permissions; casbin auto-reloads it.
+# Hot-reload happens automatically via EnableAutoSavePolicy + the file
+# watcher in rbac.New; you can also call enforcer.Reload() to force.
+
+# ---- HQ Admin: full access within their tenant ----
+p, hq_admin, *, account, create
+p, hq_admin, *, account, read
+p, hq_admin, *, account, update
+p, hq_admin, *, account, delete
+p, hq_admin, *, account, list
+p, hq_admin, *, transfer, create
+p, hq_admin, *, transfer, read
+p, hq_admin, *, transfer, list
+p, hq_admin, *, invoice, create
+p, hq_admin, *, invoice, read
+p, hq_admin, *, invoice, update
+p, hq_admin, *, invoice, delete
+p, hq_admin, *, invoice, list
+p, hq_admin, *, payment, create
+p, hq_admin, *, payment, read
+p, hq_admin, *, credit_limit, create
+p, hq_admin, *, credit_limit, read
+p, hq_admin, *, credit_limit, update
+p, hq_admin, *, aging_report, read
+p, hq_admin, *, write_off, create
+p, hq_admin, *, write_off, approve
+p, hq_admin, *, audit_log, read
+
+# ---- HQ Finance: financial operations, no admin ----
+p, hq_finance, *, transfer, read
+p, hq_finance, *, transfer, list
+p, hq_finance, *, invoice, read
+p, hq_finance, *, invoice, list
+p, hq_finance, *, payment, create
+p, hq_finance, *, payment, read
+p, hq_finance, *, credit_limit, read
+p, hq_finance, *, credit_limit, update
+p, hq_finance, *, aging_report, read
+p, hq_finance, *, write_off, create
+p, hq_finance, *, write_off, approve
+p, hq_finance, *, audit_log, read
+
+# ---- Auditor: read-only across the board ----
+p, auditor, *, account, read
+p, auditor, *, account, list
+p, auditor, *, transfer, read
+p, auditor, *, transfer, list
+p, auditor, *, invoice, read
+p, auditor, *, invoice, list
+p, auditor, *, payment, read
+p, auditor, *, credit_limit, read
+p, auditor, *, aging_report, read
+p, auditor, *, audit_log, read
+
+# ---- Outlet Manager: scoped to their own outlet's transactions ----
+p, outlet_manager, *, account, read
+p, outlet_manager, *, account, list
+p, outlet_manager, *, transfer, create
+p, outlet_manager, *, transfer, read
+p, outlet_manager, *, transfer, list
+p, outlet_manager, *, invoice, read
+p, outlet_manager, *, invoice, list
+p, outlet_manager, *, payment, create
+p, outlet_manager, *, payment, read
+p, outlet_manager, *, aging_report, read
+
+# ---- Sales Rep: create payments only ----
+p, sales_rep, *, payment, create
+p, sales_rep, *, invoice, read
+p, sales_rep, *, invoice, list
+p, sales_rep, *, aging_report, read
+
+# ---- Example user-role assignments (replace with real seeding) ----
+# g, alice-user-uuid, hq_admin, 00000000-0000-0000-0000-000000000001
+# g, bob-user-uuid, hq_finance, 00000000-0000-0000-0000-000000000001
+# g, charlie-user-uuid, auditor, 00000000-0000-0000-0000-000000000001

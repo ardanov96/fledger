@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -17,10 +18,14 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/runut/fmcg-wallet/internal/auth/jwt"
+	"github.com/runut/fmcg-wallet/internal/auth/rbac"
+	"github.com/runut/fmcg-wallet/internal/domain/audit"
 	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/handler"
 	"github.com/runut/fmcg-wallet/internal/infra"
+	"github.com/runut/fmcg-wallet/internal/middleware"
 	"github.com/runut/fmcg-wallet/internal/platform/config"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 	"github.com/runut/fmcg-wallet/internal/platform/logger"
@@ -70,6 +75,7 @@ func run() error {
 		"max_conns", cfg.DB.MaxConns,
 	)
 
+	// Repos + use cases
 	db := postgres.NewDB(pool)
 	accountRepo := postgres.NewAccountRepository(db)
 	transactionRepo := postgres.NewTransactionRepository(db)
@@ -95,10 +101,27 @@ func run() error {
 		Logger:       log,
 	})
 
+	// Auth (JWT verifier + Casbin RBAC enforcer)
+	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
+
+	modelPath, policyPath := resolveRBACPaths()
+	rbacEnforcer, err := rbac.New(modelPath, policyPath)
+	if err != nil {
+		return fmt.Errorf("init RBAC enforcer: %w", err)
+	}
+	log.Info("RBAC enforcer loaded", "policy", rbacEnforcer.Source())
+
+	// HTTP handlers
 	h := handler.New(transferService, accountService, invoiceService)
 
-	router := buildRouter(cfg, log, pool, h)
+	// Audit handlers (uses memory repo; Postgres-backed in Sprint 2C)
+	auditRepo := audit.NewMemoryRepository()
+	auditHandlers := &handler.AuditHandlers{Repo: auditRepo}
 
+	// Router
+	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer)
+
+	// HTTP server
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
 		Handler:           router,
@@ -137,7 +160,25 @@ func run() error {
 	return nil
 }
 
-func buildRouter(cfg *config.Config, log *slog.Logger, pool *pgxpool.Pool, h *handler.Handlers) http.Handler {
+func resolveRBACPaths() (string, string) {
+	const defaultDir = "internal/auth/rbac/policies"
+	const modelFile = "rbac_model.conf"
+	const policyFile = "rbac_policy.csv"
+
+	dir := os.Getenv("RBAC_POLICY_DIR")
+	if dir == "" {
+		dir = defaultDir
+	}
+	abs, _ := filepath.Abs(dir)
+	return filepath.Join(abs, modelFile), filepath.Join(abs, policyFile)
+}
+
+func buildRouter(
+	cfg *config.Config, log *slog.Logger, pool *pgxpool.Pool,
+	h *handler.Handlers,
+	auditHandlers *handler.AuditHandlers,
+	verifier jwt.Verifier, rbacEnforcer *rbac.Enforcer,
+) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RealIP)
@@ -160,7 +201,28 @@ func buildRouter(cfg *config.Config, log *slog.Logger, pool *pgxpool.Pool, h *ha
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
 			httpx.JSON(w, http.StatusOK, map[string]string{"message": "pong"})
 		})
-		h.RegisterRoutes(r)
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth(verifier))
+
+			r.Post("/accounts", h.CreateAccount)
+			r.Get("/accounts", h.ListAccounts)
+			r.Get("/accounts/{id}", h.GetAccount)
+			r.Get("/accounts/{id}/entries", h.ListAccountEntries)
+
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionCreate, rbac.ObjectTransfer)).Post("/transfers", h.CreateTransfer)
+
+			r.Post("/invoices", h.CreateInvoice)
+			r.Get("/invoices/{id}", h.GetInvoice)
+			r.Get("/invoices", h.ListInvoices)
+			r.Post("/customers/{id}/payments", h.RecordPayment)
+			r.Get("/customers/{id}/aging", h.GetCustomerAging)
+			r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
+		})
+
+		r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+			rbac.ActionRead, rbac.ObjectAuditLog)).Get("/audit", auditHandlers.ListAudit)
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +313,6 @@ func versionHandler() http.HandlerFunc {
 
 var startedAt = time.Now()
 
-// dbTxAdapter wraps postgres.DB to satisfy usecase.TxRunner (ledger).
 type dbTxAdapter struct {
 	db *postgres.DB
 }
@@ -260,7 +321,6 @@ func (a *dbTxAdapter) ExecuteTx(ctx context.Context, fn func(ledger.Tx) error) e
 	return a.db.RunInTxDomain(ctx, fn)
 }
 
-// invoiceTxAdapter satisfies the invoice TxRunner interface.
 type invoiceTxAdapter struct {
 	db *postgres.DB
 }
