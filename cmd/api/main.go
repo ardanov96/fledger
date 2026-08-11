@@ -17,6 +17,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/handler"
 	"github.com/runut/fmcg-wallet/internal/infra"
@@ -40,13 +41,11 @@ func main() {
 }
 
 func run() error {
-	// 1. Config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// 2. Logger
 	log := logger.New(logger.Config{
 		Level:  cfg.App.LogLevel,
 		Format: cfg.App.LogFormat,
@@ -58,7 +57,6 @@ func run() error {
 		"port", cfg.App.Port,
 	)
 
-	// 3. Database
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -72,13 +70,15 @@ func run() error {
 		"max_conns", cfg.DB.MaxConns,
 	)
 
-	// 4. Wire repos + use cases
 	db := postgres.NewDB(pool)
 	accountRepo := postgres.NewAccountRepository(db)
 	transactionRepo := postgres.NewTransactionRepository(db)
 	entryRepo := postgres.NewEntryRepository(db)
+	invoiceRepo := postgres.NewInvoiceRepository(db)
+	creditLimitRepo := postgres.NewCreditLimitRepository(db)
 
 	txAdapter := &dbTxAdapter{db: db}
+	invoiceTx := &invoiceTxAdapter{db: db}
 
 	transferService := usecase.NewTransferService(usecase.TransferServiceDeps{
 		Accounts:     accountRepo,
@@ -88,14 +88,17 @@ func run() error {
 		Logger:       log,
 	})
 	accountService := usecase.NewAccountService(accountRepo, entryRepo)
+	invoiceService := usecase.NewInvoiceService(usecase.InvoiceServiceDeps{
+		Invoices:     invoiceRepo,
+		CreditLimits: creditLimitRepo,
+		DB:           invoiceTx,
+		Logger:       log,
+	})
 
-	// 5. HTTP handlers
-	h := handler.New(transferService, accountService)
+	h := handler.New(transferService, accountService, invoiceService)
 
-	// 6. Router
 	router := buildRouter(cfg, log, pool, h)
 
-	// 7. HTTP server
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
 		Handler:           router,
@@ -145,22 +148,18 @@ func buildRouter(cfg *config.Config, log *slog.Logger, pool *pgxpool.Pool, h *ha
 	r.Use(chimw.Timeout(60 * time.Second))
 	r.Use(corsMiddleware(cfg.Web.Origin))
 
-	// Health endpoints
 	r.Get("/healthz", livenessHandler)
 	r.Get("/readyz", readinessHandler(pool))
 	r.Get("/version", versionHandler())
 
-	// Metrics
 	if cfg.Telemetry.MetricsEnabled {
 		r.Method(http.MethodGet, cfg.Telemetry.MetricsPath, prometheusHandler())
 	}
 
-	// API v1
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
 			httpx.JSON(w, http.StatusOK, map[string]string{"message": "pong"})
 		})
-		// Mount all handlers
 		h.RegisterRoutes(r)
 	})
 
@@ -252,11 +251,20 @@ func versionHandler() http.HandlerFunc {
 
 var startedAt = time.Now()
 
-// dbTxAdapter wraps postgres.DB to satisfy usecase.TxRunner.
+// dbTxAdapter wraps postgres.DB to satisfy usecase.TxRunner (ledger).
 type dbTxAdapter struct {
 	db *postgres.DB
 }
 
 func (a *dbTxAdapter) ExecuteTx(ctx context.Context, fn func(ledger.Tx) error) error {
 	return a.db.RunInTxDomain(ctx, fn)
+}
+
+// invoiceTxAdapter satisfies the invoice TxRunner interface.
+type invoiceTxAdapter struct {
+	db *postgres.DB
+}
+
+func (a *invoiceTxAdapter) ExecuteTx(ctx context.Context, fn func(invoice.Tx) error) error {
+	return a.db.RunInTxInvoiceDomain(ctx, fn)
 }

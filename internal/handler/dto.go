@@ -12,6 +12,7 @@ package handler
 import (
 	"time"
 
+	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
 )
@@ -86,6 +87,96 @@ type AccountResponse struct {
 }
 
 // =============================================================================
+// Invoice endpoints
+// =============================================================================
+
+// CreateInvoiceRequest is the body of POST /v1/invoices.
+type CreateInvoiceRequest struct {
+	CustomerID  string         `json:"customer_id"  validate:"required,uuid"`
+	Code        string         `json:"code"         validate:"required,min=1,max=50"`
+	AmountMinor int64          `json:"amount_minor" validate:"required,gt=0"`
+	DueDate     string         `json:"due_date"     validate:"required,datetime=2006-01-02"`
+	Description string         `json:"description"  validate:"omitempty,max=500"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+// ToCreateInvoiceInput converts the HTTP request to the use case input.
+func (r *CreateInvoiceRequest) ToCreateInvoiceInput(tenantID string) invoice.CreateInvoiceInput {
+	due, _ := time.Parse("2006-01-02", r.DueDate)
+	return invoice.CreateInvoiceInput{
+		TenantID:    tenantID,
+		CustomerID:  r.CustomerID,
+		Code:        r.Code,
+		Amount:      money.NewFromMinor(r.AmountMinor),
+		DueDate:     due,
+		Description: r.Description,
+		Metadata:    r.Metadata,
+	}
+}
+
+// InvoiceResponse is the public representation of an invoice.
+type InvoiceResponse struct {
+	ID             string    `json:"id"`
+	CustomerID     string    `json:"customer_id"`
+	Code           string    `json:"code"`
+	AmountMinor    int64     `json:"amount_minor"`
+	PaidMinor      int64     `json:"paid_minor"`
+	OutstandingMinor int64   `json:"outstanding_minor"`
+	Currency       string    `json:"currency"`
+	DueDate        string    `json:"due_date"`
+	Status         string    `json:"status"`
+	IssuedAt       time.Time `json:"issued_at"`
+	Description    string    `json:"description,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// RecordPaymentRequest is the body of POST /v1/customers/{id}/payments.
+//
+// In manual mode (`X-Allocation-Mode: manual`), `Allocations` is required
+// and must sum to `AmountMinor`. In FIFO mode (default), `Allocations`
+// is ignored.
+type RecordPaymentRequest struct {
+	AmountMinor  int64                  `json:"amount_minor"  validate:"required,gt=0"`
+	Method       string                 `json:"method"       validate:"omitempty,oneof=cash transfer qris manual_adjust"`
+	Description  string                 `json:"description"  validate:"omitempty,max=500"`
+	Allocations  []PaymentAllocationDTO `json:"allocations"  validate:"omitempty,dive"`
+}
+
+// PaymentAllocationDTO is one slice of a manual payment.
+type PaymentAllocationDTO struct {
+	InvoiceID   string `json:"invoice_id"   validate:"required,uuid"`
+	AmountMinor int64  `json:"amount_minor" validate:"required,gt=0"`
+}
+
+// PaymentResultResponse is the response of POST /v1/customers/{id}/payments.
+type PaymentResultResponse struct {
+	PaymentID    string                       `json:"payment_id"`
+	CustomerID   string                       `json:"customer_id"`
+	Method       string                       `json:"method"`
+	TotalMinor   int64                        `json:"total_minor"`
+	Allocations  []PaymentAllocationResponse `json:"allocations"`
+}
+
+// PaymentAllocationResponse is one applied allocation.
+type PaymentAllocationResponse struct {
+	InvoiceID   string `json:"invoice_id"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+// AgingSummaryResponse is the per-bucket aggregation for a customer.
+type AgingSummaryResponse struct {
+	Bucket           string `json:"bucket"`
+	Count            int    `json:"count"`
+	OutstandingMinor int64  `json:"outstanding_minor"`
+}
+
+// SetCreditLimitRequest is the body of POST /v1/customers/{id}/credit-limit.
+type SetCreditLimitRequest struct {
+	LimitAmountMinor int64 `json:"limit_amount_minor" validate:"gte=0"`
+}
+
+// =============================================================================
 // Conversion helpers
 // =============================================================================
 
@@ -154,5 +245,51 @@ func ToAccountResponse(a ledger.Account) AccountResponse {
 		OwnerID:      a.OwnerID,
 		CreatedAt:    a.CreatedAt,
 		UpdatedAt:    a.UpdatedAt,
+	}
+}
+
+// ToInvoiceResponse converts a domain invoice to the HTTP response.
+func ToInvoiceResponse(i invoice.Invoice) InvoiceResponse {
+	return InvoiceResponse{
+		ID:               i.ID,
+		CustomerID:       i.CustomerID,
+		Code:             i.Code,
+		AmountMinor:      i.Amount.Minor(),
+		PaidMinor:        i.PaidAmount.Minor(),
+		OutstandingMinor: i.Outstanding().Minor(),
+		Currency:         "IDR",
+		DueDate:          i.DueDate.Format("2006-01-02"),
+		Status:           string(i.Status),
+		IssuedAt:         i.IssuedAt,
+		Description:      i.Description,
+		CreatedAt:        i.CreatedAt,
+		UpdatedAt:        i.UpdatedAt,
+	}
+}
+
+// ToPaymentResultResponse converts a domain payment result to HTTP.
+func ToPaymentResultResponse(p invoice.PaymentResult) PaymentResultResponse {
+	allocs := make([]PaymentAllocationResponse, 0, len(p.Allocations))
+	for _, a := range p.Allocations {
+		allocs = append(allocs, PaymentAllocationResponse{
+			InvoiceID:   a.InvoiceID,
+			AmountMinor: a.Amount.Minor(),
+		})
+	}
+	return PaymentResultResponse{
+		PaymentID:   p.PaymentID,
+		CustomerID:  p.CustomerID,
+		Method:      string(p.Method),
+		TotalMinor:  p.TotalMinor,
+		Allocations: allocs,
+	}
+}
+
+// ToAgingSummaryResponse converts a domain aging summary to HTTP.
+func ToAgingSummaryResponse(s invoice.AgingSummary) AgingSummaryResponse {
+	return AgingSummaryResponse{
+		Bucket:           string(s.Bucket),
+		Count:            s.Count,
+		OutstandingMinor: s.OutstandingMinor,
 	}
 }

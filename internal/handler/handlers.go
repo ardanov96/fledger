@@ -46,13 +46,17 @@ type AccountAPI interface {
 type Handlers struct {
 	Transfers TransferAPI
 	Accounts  AccountAPI
+	Invoices  InvoiceAPI
 	Validator *validator.Validate
 }
 
-func New(transfers TransferAPI, accounts AccountAPI) *Handlers {
+// New constructs the handlers. Invoices may be nil — invoice routes simply
+// won't be mounted in that case (useful for unit-test scaffolding).
+func New(transfers TransferAPI, accounts AccountAPI, invoices InvoiceAPI) *Handlers {
 	return &Handlers{
 		Transfers: transfers,
 		Accounts:  accounts,
+		Invoices:  invoices,
 		Validator: validator.New(),
 	}
 }
@@ -65,6 +69,15 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	r.Get("/accounts/{id}", h.GetAccount)
 	r.Get("/accounts/{id}/entries", h.ListAccountEntries)
 	r.Post("/transfers", h.CreateTransfer)
+
+	if h.Invoices != nil {
+		r.Post("/invoices", h.CreateInvoice)
+		r.Get("/invoices/{id}", h.GetInvoice)
+		r.Get("/invoices", h.ListInvoices)
+		r.Post("/customers/{id}/payments", h.RecordPayment)
+		r.Get("/customers/{id}/aging", h.GetCustomerAging)
+		r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
+	}
 }
 
 // =============================================================================
@@ -148,7 +161,6 @@ func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListAccountEntries handles GET /v1/accounts/{id}/entries?limit=50.
-// Returns the ledger entries (statement) for the given account, newest first.
 func (h *Handlers) ListAccountEntries(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
@@ -156,7 +168,6 @@ func (h *Handlers) ListAccountEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify account exists (gives 404 instead of empty list for missing accounts)
 	if _, err := h.Accounts.GetByID(r.Context(), id); err != nil {
 		httpx.Error(w, r, err)
 		return
