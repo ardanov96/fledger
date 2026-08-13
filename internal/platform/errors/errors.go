@@ -126,6 +126,7 @@ var (
 var (
 	ErrValidationFailed = New("VALIDATION_FAILED", "Request validation failed", http.StatusBadRequest)
 	ErrInvalidInput     = New("INVALID_INPUT", "Invalid input", http.StatusBadRequest)
+	ErrInvalidState     = New("INVALID_STATE", "Resource is not in the expected state for this operation", http.StatusConflict)
 )
 
 // =============================================================================

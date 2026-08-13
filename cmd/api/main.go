@@ -20,6 +20,7 @@ import (
 
 	"github.com/runut/fmcg-wallet/internal/auth/jwt"
 	"github.com/runut/fmcg-wallet/internal/auth/rbac"
+	"github.com/runut/fmcg-wallet/internal/domain/collection"
 	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/handler"
@@ -30,6 +31,7 @@ import (
 	"github.com/runut/fmcg-wallet/internal/platform/logger"
 	"github.com/runut/fmcg-wallet/internal/repository/postgres"
 	"github.com/runut/fmcg-wallet/internal/usecase"
+	"github.com/runut/fmcg-wallet/internal/worker"
 )
 
 var (
@@ -80,9 +82,15 @@ func run() error {
 	entryRepo := postgres.NewEntryRepository(db)
 	invoiceRepo := postgres.NewInvoiceRepository(db)
 	creditLimitRepo := postgres.NewCreditLimitRepository(db)
+	periodRepo := postgres.NewPeriodRepository(db)
+	reconcilerRepo := postgres.NewReconcilerRepository(db)
+	collectionRepo := postgres.NewCollectionRepository(db)
 
 	txAdapter := &dbTxAdapter{db: db}
 	invoiceTx := &invoiceTxAdapter{db: db}
+	periodTx := &periodTxAdapter{db: db}
+	recTx := &reconcilerTxAdapter{db: db}
+	collTx := &collectionTxAdapter{db: db}
 
 	transferService := usecase.NewTransferService(usecase.TransferServiceDeps{
 		Accounts:     accountRepo,
@@ -98,6 +106,51 @@ func run() error {
 		DB:           invoiceTx,
 		Logger:       log,
 	})
+	periodService := usecase.NewPeriodService(usecase.PeriodServiceDeps{
+		Repo:   periodRepo,
+		DB:     periodTx,
+		Logger: log,
+	})
+	periodAPI := &periodAPIAdapter{svc: periodService}
+
+	// Reconciler (Sprint 10 — Fase 1B).
+	hashChainVerifier := usecase.NewVerifier(log)
+	ledgerProbe := &ledgerProbeAdapter{
+		periodRepo: periodRepo,
+		entryRepo:  entryRepo,
+	}
+	hashChainRunner := &hashChainAdapter{verifier: hashChainVerifier}
+	reconcilerService := usecase.NewReconcilerService(usecase.ReconcilerServiceDeps{
+		Repo:   reconcilerRepo,
+		Ledger: ledgerProbe,
+		Hasher: hashChainRunner,
+		DB:     recTx,
+		Logger: log,
+	})
+	reconcilerAPI := &reconcilerAPIAdapter{svc: reconcilerService}
+
+	// Reconciler background worker.
+	runHashCheck := os.Getenv("RECONCILER_HASH_CHECK") == "true"
+	reconcilerWorker := worker.NewReconcilerWorker(worker.ReconcilerWorkerDeps{
+		Service:            reconcilerService,
+		Logger:             log,
+		Interval:           1 * time.Hour,
+		RunHashCheckOnCron: runHashCheck,
+	})
+	reconcilerWorker.Start(ctx)
+	log.Info("reconciler worker started",
+		"interval", "1h",
+		"hash_check_on_cron", runHashCheck,
+	)
+
+	// Collection (Sprint 11 — Portfolio Sprint 4 / Fase 8 partial).
+	collectionService := usecase.NewCollectionService(usecase.CollectionServiceDeps{
+		Repo:   collectionRepo,
+		Lookup: &invoiceLookupAdapter{invoiceRepo: invoiceRepo},
+		DB:     collTx,
+		Logger: log,
+	})
+	collectionAPI := &collectionAPIAdapter{svc: collectionService}
 
 	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
 
@@ -108,7 +161,7 @@ func run() error {
 	}
 	log.Info("RBAC enforcer loaded", "policy", rbacEnforcer.Source())
 
-	h := handler.New(transferService, accountService, invoiceService)
+	h := handler.New(transferService, accountService, invoiceService, periodAPI, reconcilerAPI, collectionAPI)
 
 	auditRepo := postgres.NewAuditRepository(db)
 	auditHandlers := &handler.AuditHandlers{Repo: auditRepo}
@@ -212,6 +265,47 @@ func buildRouter(
 			r.Post("/customers/{id}/payments", h.RecordPayment)
 			r.Get("/customers/{id}/aging", h.GetCustomerAging)
 			r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
+
+			// Period close workflow (Sprint 9 — Fase 1A).
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionCreate, rbac.ObjectPeriodClose)).Post("/periods/{id}/close-requests", h.RequestPeriodClose)
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionRead, rbac.ObjectPeriodClose)).Get("/close-requests/{id}", h.GetCloseRequest)
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionApprove, rbac.ObjectPeriodClose)).Post("/close-requests/{id}/approve", h.ApproveCloseRequest)
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionReject, rbac.ObjectPeriodClose)).Post("/close-requests/{id}/reject", h.RejectCloseRequest)
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionReopen, rbac.ObjectPeriodClose)).Post("/periods/{id}/reopen", h.ReopenPeriod)
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionRead, rbac.ObjectPeriodClose)).Get("/periods/{id}/snapshots", h.ListSnapshots)
+
+			// Reconciler (Sprint 10 — Fase 1B).
+			if h.Reconcilers != nil {
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRun, rbac.ObjectReconciler)).Post("/reconciler/run", h.RunReconciliation)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectReconciler)).Get("/reconciler/runs", h.ListReconcilerRuns)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectReconciler)).Get("/reconciler/runs/{id}", h.GetReconcilerRun)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectReconciler)).Get("/reconciler/runs/{id}/accounts", h.GetReconcilerRunAccounts)
+			}
+
+			// Collection & Route (Sprint 11 — Portfolio Sprint 4).
+			if h.Collections != nil {
+				r.Post("/routes", h.PlanRoute)
+				r.Get("/routes", h.ListRoutes)
+				r.Get("/routes/{id}", h.GetRoute)
+				r.Post("/routes/{id}/start", h.StartRoute)
+				r.Post("/routes/{id}/complete", h.CompleteRoute)
+				r.Post("/routes/{id}/settle", h.SettleRoute)
+				r.Get("/routes/{id}/stops", h.ListStops)
+				r.Post("/stops/{id}/visits", h.RecordStopVisit)
+				r.Post("/stops/{id}/close", h.CloseStopHandler)
+				r.Get("/stops/{id}/events", h.ListStopEvents)
+				r.Post("/settlements/{id}/decide", h.DecideSettlement)
+			}
 		})
 
 		r.With(middleware.RequirePermission(verifier, rbacEnforcer,
@@ -306,6 +400,10 @@ func versionHandler() http.HandlerFunc {
 
 var startedAt = time.Now()
 
+// =============================================================================
+// Tx adapters — wire domain-flavored Tx to concrete pgx.Tx via DB helpers.
+// =============================================================================
+
 type dbTxAdapter struct {
 	db *postgres.DB
 }
@@ -321,3 +419,7 @@ type invoiceTxAdapter struct {
 func (a *invoiceTxAdapter) ExecuteTx(ctx context.Context, fn func(invoice.Tx) error) error {
 	return a.db.RunInTxInvoiceDomain(ctx, fn)
 }
+
+// suppress "declared but not used" warnings if a future refactor removes the
+// collection import from main.go.
+var _ = collection.SettlementPending

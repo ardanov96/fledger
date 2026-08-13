@@ -19,8 +19,8 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
-	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
+	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 )
 
@@ -44,20 +44,27 @@ type AccountAPI interface {
 // =============================================================================
 
 type Handlers struct {
-	Transfers TransferAPI
-	Accounts  AccountAPI
-	Invoices  InvoiceAPI
-	Validator *validator.Validate
+	Transfers    TransferAPI
+	Accounts     AccountAPI
+	Invoices     InvoiceAPI
+	Periods      PeriodAPI
+	Reconcilers  ReconcilerAPI
+	Collections  CollectionAPI
+	Validator    *validator.Validate
 }
 
-// New constructs the handlers. Invoices may be nil — invoice routes simply
-// won't be mounted in that case (useful for unit-test scaffolding).
-func New(transfers TransferAPI, accounts AccountAPI, invoices InvoiceAPI) *Handlers {
+// New constructs the handlers. Invoices + Periods + Reconcilers + Collections
+// may be nil — those routes simply won't be mounted in that case (useful for
+// unit-test scaffolding).
+func New(transfers TransferAPI, accounts AccountAPI, invoices InvoiceAPI, periods PeriodAPI, reconcilers ReconcilerAPI, collections CollectionAPI) *Handlers {
 	return &Handlers{
-		Transfers: transfers,
-		Accounts:  accounts,
-		Invoices:  invoices,
-		Validator: validator.New(),
+		Transfers:    transfers,
+		Accounts:     accounts,
+		Invoices:     invoices,
+		Periods:      periods,
+		Reconcilers:  reconcilers,
+		Collections:  collections,
+		Validator:    validator.New(),
 	}
 }
 
@@ -77,6 +84,36 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Post("/customers/{id}/payments", h.RecordPayment)
 		r.Get("/customers/{id}/aging", h.GetCustomerAging)
 		r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
+	}
+
+	if h.Periods != nil {
+		r.Post("/periods/{id}/close-requests", h.RequestPeriodClose)
+		r.Get("/close-requests/{id}", h.GetCloseRequest)
+		r.Post("/close-requests/{id}/approve", h.ApproveCloseRequest)
+		r.Post("/close-requests/{id}/reject", h.RejectCloseRequest)
+		r.Post("/periods/{id}/reopen", h.ReopenPeriod)
+		r.Get("/periods/{id}/snapshots", h.ListSnapshots)
+	}
+
+	if h.Reconcilers != nil {
+		r.Post("/reconciler/run", h.RunReconciliation)
+		r.Get("/reconciler/runs", h.ListReconcilerRuns)
+		r.Get("/reconciler/runs/{id}", h.GetReconcilerRun)
+		r.Get("/reconciler/runs/{id}/accounts", h.GetReconcilerRunAccounts)
+	}
+
+	if h.Collections != nil {
+		r.Post("/routes", h.PlanRoute)
+		r.Get("/routes", h.ListRoutes)
+		r.Get("/routes/{id}", h.GetRoute)
+		r.Post("/routes/{id}/start", h.StartRoute)
+		r.Post("/routes/{id}/complete", h.CompleteRoute)
+		r.Post("/routes/{id}/settle", h.SettleRoute)
+		r.Get("/routes/{id}/stops", h.ListStops)
+		r.Post("/stops/{id}/visits", h.RecordStopVisit)
+		r.Post("/stops/{id}/close", h.CloseStopHandler)
+		r.Get("/stops/{id}/events", h.ListStopEvents)
+		r.Post("/settlements/{id}/decide", h.DecideSettlement)
 	}
 }
 

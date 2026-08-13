@@ -37,6 +37,21 @@ Rentang waktu (biasanya 1 bulan) tempat entry dicatat. Setelah di-close, period 
 ### Trial Balance
 Verifikasi bahwa `SUM(semua debit) - SUM(semua kredit) = 0`. Di sistem kita, ini dilakukan via reconciler background job (Fase 1B).
 
+### Imbalance
+Selisih `SUM(semua debit) - SUM(semua kredit)` yang bukan 0 untuk satu accounting period. Reconciler mendeteksi ini via background job (ticker 1 jam) dan menandai run sebagai `imbalanced`. Per-account breakdown di `reconciler_account_results` menunjukkan akun mana yang off-balance (signed_balance ≠ 0). Investigasi: bug di TransferService, manual journal tanpa counterpart, atau data corruption.
+
+### Reconciler Run
+Satu eksekusi trial balance reconciler untuk satu period. Disimpan di tabel `reconciler_runs` dengan field utama: `id`, `tenant_id`, `period_id`, `started_at`, `finished_at`, `status` (`running`/`balanced`/`imbalanced`/`tampered`/`error`), `total_debit`, `total_credit`, `imbalance`, `hash_chain_ok`, `hash_chain_errors`, `triggered_by`. Append-only audit trail — satu kali selesai, row tidak boleh di-edit. Dipakai untuk: dashboard monitoring (last run per period), alerting (run dengan status `imbalanced`/`tampered`/`error`), dan forensic (kapan period X pertama kali imbalance?).
+
+### Hash Chain Tampered
+Status `tampered` di reconciler run jika `HashChainVerifier` mendeteksi mismatch antara `entry_hash` yang tersimpan di DB dan recomputed hash dari entry content (atau `prev_hash` tidak cocok dengan `entry_hash` entry sebelumnya). Menandakan `ledger_entries` sudah dimodifikasi langsung via DB (bypassing application layer) atau ada bug di hash computation. Investigasi: cek audit log untuk akses DB langsung, restore dari backup, atau fix bug lalu re-run reconciler.
+
+### Trigger Source
+Asal trigger reconciler run, disimpan di kolom `triggered_by`:
+- **`scheduler`** — ticker-based background job (interval default 1 jam, configurable). Otomatis iterate semua tenant dan open/closing periods.
+- **`manual`** — debug atau testing, biasanya dari console atau script.
+- **`api`** — manual trigger via endpoint `POST /v1/reconciler/run` oleh operator. Bisa include `run_hash_check=true` untuk sekalian verify hash chain.
+
 ### Cached Balance vs Authoritative Balance
 - **Cached**: kolom `accounts.cached_balance` — cepat, mungkin stale sementara
 - **Authoritative**: `SUM(entries.signed_amount) for this account` — selalu benar, tapi O(n)
@@ -141,3 +156,4 @@ Otoritas Jasa Keuangan. Regulator fintech. Kalau target compliance OJK-grade (re
 - **Idempotency**: Stripe API docs (https://stripe.com/docs/api/idempotent_requests)
 - **Outbox pattern**: microservices.io/patterns/data/transactional-outbox.html
 - **Hash chain**: Bitpay/bitcoin white paper (underlying concept)
+- **Trial balance reconciler**: any accounting textbook (chapter on closing entries & adjusting entries)

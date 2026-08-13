@@ -89,6 +89,10 @@ type EntryDTO struct {
 	Currency      string
 	Metadata      []byte
 	CreatedAt     time.Time
+
+	// Hash chain (Fase 1C — added by migration 000007).
+	PrevHash  string
+	EntryHash string
 }
 
 // TrialBalanceDTO is the global reconciler result.

@@ -30,8 +30,21 @@ p, hq_admin, *, aging_report, read
 p, hq_admin, *, write_off, create
 p, hq_admin, *, write_off, approve
 p, hq_admin, *, audit_log, read
+p, hq_admin, *, period_close, create
+p, hq_admin, *, period_close, read
+p, hq_admin, *, period_close, approve
+p, hq_admin, *, period_close, reject
+p, hq_admin, *, period_close, reopen
+p, hq_admin, *, reconciler, run
+p, hq_admin, *, reconciler, read
+p, hq_admin, *, collection_route, create
+p, hq_admin, *, collection_route, read
+p, hq_admin, *, collection_route, update
+p, hq_admin, *, settlement, approve
+p, hq_admin, *, settlement, reject
+p, hq_admin, *, settlement, read
 
-# ---- HQ Finance: financial operations, no admin ----
+# ---- HQ Finance: financial operations, no admin (cannot reopen) ----
 p, hq_finance, *, transfer, read
 p, hq_finance, *, transfer, list
 p, hq_finance, *, invoice, read
@@ -44,6 +57,17 @@ p, hq_finance, *, aging_report, read
 p, hq_finance, *, write_off, create
 p, hq_finance, *, write_off, approve
 p, hq_finance, *, audit_log, read
+p, hq_finance, *, period_close, create
+p, hq_finance, *, period_close, read
+p, hq_finance, *, period_close, approve
+p, hq_finance, *, period_close, reject
+p, hq_finance, *, reconciler, run
+p, hq_finance, *, reconciler, read
+p, hq_finance, *, collection_route, create
+p, hq_finance, *, collection_route, read
+p, hq_finance, *, settlement, approve
+p, hq_finance, *, settlement, reject
+p, hq_finance, *, settlement, read
 
 # ---- Auditor: read-only across the board ----
 p, auditor, *, account, read
@@ -56,6 +80,10 @@ p, auditor, *, payment, read
 p, auditor, *, credit_limit, read
 p, auditor, *, aging_report, read
 p, auditor, *, audit_log, read
+p, auditor, *, period_close, read
+p, auditor, *, reconciler, read
+p, auditor, *, collection_route, read
+p, auditor, *, settlement, read
 
 # ---- Outlet Manager: scoped to their own outlet's transactions ----
 p, outlet_manager, *, account, read
@@ -68,12 +96,16 @@ p, outlet_manager, *, invoice, list
 p, outlet_manager, *, payment, create
 p, outlet_manager, *, payment, read
 p, outlet_manager, *, aging_report, read
+p, outlet_manager, *, collection_route, read
 
-# ---- Sales Rep: create payments only ----
+# ---- Sales Rep: create routes + record visits + close stops ----
 p, sales_rep, *, payment, create
 p, sales_rep, *, invoice, read
 p, sales_rep, *, invoice, list
 p, sales_rep, *, aging_report, read
+p, sales_rep, *, collection_route, create
+p, sales_rep, *, collection_route, read
+p, sales_rep, *, collection_route, update
 
 # ---- Example user-role assignments (replace with real seeding) ----
 # g, alice-user-uuid, hq_admin, 00000000-0000-0000-0000-000000000001

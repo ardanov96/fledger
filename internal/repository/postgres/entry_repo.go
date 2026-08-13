@@ -169,6 +169,8 @@ func dtoToEntry(dto EntryDTO) ledger.Entry {
 		Currency:      dto.Currency,
 		Metadata:      parseMetadata(dto.Metadata),
 		CreatedAt:     dto.CreatedAt,
+		PrevHash:      dto.PrevHash,
+		EntryHash:     dto.EntryHash,
 	}
 }
 

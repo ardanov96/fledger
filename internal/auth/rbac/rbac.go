@@ -28,6 +28,9 @@ const (
 	ActionDelete  = "delete"
 	ActionList    = "list"
 	ActionApprove = "approve"
+	ActionReject  = "reject"
+	ActionReopen  = "reopen"
+	ActionRun     = "run" // trigger a job/reconciler run
 )
 
 // Object constants — match the resources exposed by the API.
@@ -40,8 +43,11 @@ const (
 	ObjectAgingReport = "aging_report"
 	ObjectAuditLog    = "audit_log"
 	ObjectWriteOff    = "write_off"
+	ObjectPeriodClose = "period_close"
+	ObjectReconciler  = "reconciler"
+	ObjectCollectionRoute = "collection_route"
+	ObjectSettlement  = "settlement"
 )
-
 // Role constants — match policy file.
 const (
 	RoleHQAdmin   = "hq_admin"
@@ -54,44 +60,28 @@ const (
 // Sentinel errors.
 var (
 	ErrNotInitialized = errors.New("rbac: enforcer not initialized")
-	ErrDeny            = errors.New("rbac: permission denied")
+	ErrDeny           = errors.New("rbac: permission denied")
 )
 
 // Enforcer is a thin wrapper around casbin.Enforcer with hot-reload + thread-safety.
-//
-// Hot-reload is implemented as a single RWMutex guarding the underlying
-// casbin.Enforcer pointer; readers (Enforce calls) take a read lock while
-// Reload takes a write lock and atomically swaps the pointer.
 type Enforcer struct {
 	mu     sync.RWMutex
 	inner  *casbin.Enforcer
-	source string // path to the policy file
+	source string
 }
 
 // New constructs an Enforcer from a model + policy file.
-//
-//	modelPath:  path to RBAC .conf file (Casbin model definition)
-//	policyPath: path to .csv policy file
-//
-// Both files must exist; New returns a clear error if either is missing.
 func New(modelPath, policyPath string) (*Enforcer, error) {
 	e, err := casbin.NewEnforcer(modelPath, policyPath)
 	if err != nil {
 		return nil, fmt.Errorf("casbin: load model/policy: %w", err)
 	}
-	// casbin v2 auto-reloads policy file on changes by default.
 	abs, _ := filepath.Abs(policyPath)
 	return &Enforcer{inner: e, source: abs}, nil
 }
 
 // Check reports whether the principal (user, role, tenant) may perform
 // the given action on the given object.
-//
-// Mapping to Casbin's RBAC-with-domains model:
-//   sub = user_id
-//   dom = tenant_id
-//   obj = object
-//   act = action
 func (e *Enforcer) Check(userID, role, tenantID, action, object string) (bool, error) {
 	e.mu.RLock()
 	inner := e.inner
@@ -120,8 +110,7 @@ func (e *Enforcer) MustCheck(userID, role, tenantID, action, object string) {
 	}
 }
 
-// Reload forces a policy reload from disk. Call after editing the policy
-// file manually. Auto-reload also picks up file changes (best-effort).
+// Reload forces a policy reload from disk.
 func (e *Enforcer) Reload() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -131,7 +120,7 @@ func (e *Enforcer) Reload() error {
 	return e.inner.LoadPolicy()
 }
 
-// AddPolicy adds a runtime policy rule. Persists to disk if auto-save is enabled.
+// AddPolicy adds a runtime policy rule.
 func (e *Enforcer) AddPolicy(role, tenant, action, object string) (bool, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
