@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/collection"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // ErrNotCollectionTx is returned when a collection.Tx is not actually a
@@ -33,9 +34,15 @@ func UnwrapPgxTxFromCollection(tx collection.Tx) (pgx.Tx, error) {
 }
 
 // RunInTxCollectionDomain runs fn inside a collection-flavored transaction.
+// Sprint 15: bind RLS GUC vars + sales_rep scope (collection_routes table
+// has additional field-level authz via app.is_sales_rep GUC).
 func (db *DB) RunInTxCollectionDomain(ctx context.Context, fn func(collection.Tx) error) error {
 	return db.runInTx(ctx, defaultTxOpts, func(pgxTx pgx.Tx) error {
-		return fn(wrapCollectionTx(pgxTx))
+		wrapped := wrapCollectionTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }
 

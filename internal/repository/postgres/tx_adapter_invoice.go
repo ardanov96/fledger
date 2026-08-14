@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/invoice"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // invoiceTxAdapter wraps pgx.Tx to satisfy invoice.Tx.
@@ -26,9 +27,14 @@ func wrapInvoiceTx(tx pgx.Tx) invoice.Tx {
 }
 
 // RunInTxInvoiceDomain exposes a pgx.Tx under invoice.Tx.
+// Sprint 15: bind RLS GUC vars at tx start.
 func (db *DB) RunInTxInvoiceDomain(ctx context.Context, fn func(invoice.Tx) error) error {
 	return db.runInTx(ctx, defaultTxOpts, func(pgxTx pgx.Tx) error {
-		return fn(wrapInvoiceTx(pgxTx))
+		wrapped := wrapInvoiceTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }
 

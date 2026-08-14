@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/currency"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // ErrNotCurrencyTx is returned when a currency.Tx is not actually a
@@ -33,9 +34,15 @@ func UnwrapPgxTxFromCurrency(tx currency.Tx) (pgx.Tx, error) {
 }
 
 // RunInTxCurrencyDomain runs fn inside a currency-flavored transaction.
+// Sprint 15: bind RLS GUC vars at tx start (currency is shared lookup
+// data so this is mostly for future-proofing; tx binds tenant id anyway).
 func (db *DB) RunInTxCurrencyDomain(ctx context.Context, fn func(currency.Tx) error) error {
 	return db.runInTx(ctx, defaultTxOpts, func(pgxTx pgx.Tx) error {
-		return fn(wrapCurrencyTx(pgxTx))
+		wrapped := wrapCurrencyTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }
 

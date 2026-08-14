@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/reconciler"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // ErrNotReconcilerTx is returned when a reconciler.Tx is not actually a
@@ -39,9 +40,14 @@ func UnwrapPgxTxFromReconciler(tx reconciler.Tx) (pgx.Tx, error) {
 }
 
 // RunInTxReconcilerDomain runs fn inside a reconciler-flavored transaction.
+// Sprint 15: bind RLS GUC vars at tx start.
 func (db *DB) RunInTxReconcilerDomain(ctx context.Context, fn func(reconciler.Tx) error) error {
 	return db.runInTx(ctx, defaultTxOpts, func(pgxTx pgx.Tx) error {
-		return fn(wrapReconcilerTx(pgxTx))
+		wrapped := wrapReconcilerTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }
 

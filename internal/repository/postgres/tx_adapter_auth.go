@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/auth"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // ErrNotAuthTx is returned when an auth.Tx is not actually an authTxAdapter.
@@ -32,9 +33,19 @@ func UnwrapPgxTxFromAuth(tx auth.Tx) (pgx.Tx, error) {
 }
 
 // RunInTxAuthDomain runs fn inside an auth-flavored transaction.
+// Sprint 15: bind RLS GUC vars at tx start.
+//
+// Note: Login/Logout/Refresh endpoints are mounted OUTSIDE the auth
+// middleware group, so *tenantctx.Info will be nil in those flows.
+// The helper gracefully no-ops when info is nil — auth tables (refresh_tokens
+// has tenant_id, credentials does not) work correctly with or without binding.
 func (db *DB) RunInTxAuthDomain(ctx context.Context, fn func(auth.Tx) error) error {
 	return db.runInTx(ctx, defaultTxOpts, func(pgxTx pgx.Tx) error {
-		return fn(wrapAuthTx(pgxTx))
+		wrapped := wrapAuthTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }
 

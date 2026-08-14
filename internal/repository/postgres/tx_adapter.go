@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // =============================================================================
@@ -49,8 +50,13 @@ type pgxCommandTag struct {
 func (c pgxCommandTag) RowsAffected() int64 { return c.tag.RowsAffected() }
 
 // RunInTxDomain runs fn inside a transaction, exposing a ledger.Tx.
+// Sprint 15: bind RLS GUC vars at tx start.
 func (db *DB) RunInTxDomain(ctx context.Context, fn func(ledger.Tx) error) error {
 	return db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
-		return fn(wrapTx(pgxTx))
+		wrapped := wrapTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }

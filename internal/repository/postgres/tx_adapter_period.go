@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/period"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // periodTxAdapter wraps pgx.Tx to satisfy period.Tx.
@@ -25,9 +26,17 @@ func wrapPeriodTx(tx pgx.Tx) period.Tx {
 }
 
 // RunInTxPeriodDomain exposes a pgx.Tx under period.Tx.
+//
+// Sprint 15: at the start of each tx, bind Postgres RLS GUC vars
+// (app.current_tenant_id, app.current_user_id, app.is_sales_rep).
+// nil *tenantctx.Info (public endpoints / tests) skips binding.
 func (db *DB) RunInTxPeriodDomain(ctx context.Context, fn func(period.Tx) error) error {
 	return db.runInTx(ctx, defaultTxOpts, func(pgxTx pgx.Tx) error {
-		return fn(wrapPeriodTx(pgxTx))
+		wrapped := wrapPeriodTx(pgxTx)
+		if err := tenantctx.SetTenantContext(ctx, wrapped, tenantctx.InfoFromContext(ctx)); err != nil {
+			return err
+		}
+		return fn(wrapped)
 	})
 }
 

@@ -318,6 +318,10 @@ func buildRouter(
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(verifier))
+			// Sprint 15: extract Principal → typed *tenantctx.Info in request context.
+			// Each use case tx closure will pick this up and call
+			// tenantctx.SetTenantContext(ctx, tx, info) at the start of the tx.
+			r.Use(middleware.TenantContextMiddleware())
 
 			r.Post("/accounts", h.CreateAccount)
 			r.Get("/accounts", h.ListAccounts)

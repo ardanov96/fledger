@@ -206,6 +206,10 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 	var result ledger.Transaction
 
 	err = s.db.ExecuteTx(ctx, func(tx ledger.Tx) error {
+		// Sprint 15: RLS GUC vars are auto-bound by RunInTxDomain in tx_adapter.go
+		// (sees *tenantctx.Info from context, sets Postgres session vars).
+		// No per-closure binding needed here.
+
 		// 4a. Lock both accounts (deterministic order to avoid deadlocks)
 		firstID, secondID := input.FromAccountID, input.ToAccountID
 		if firstID > secondID {
