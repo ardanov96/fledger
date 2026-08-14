@@ -1,0 +1,57 @@
+# Dependabot configuration — auto-PR for dependency updates.
+# Updates both Go modules and GitHub Actions workflows.
+#
+# Grouped by ecosystem + minor/patch to reduce PR noise.
+
+version: 2
+updates:
+  # Go modules (direct + indirect).
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Group all patch + minor updates into a single weekly PR.
+    groups:
+      go-direct-minor-patch:
+        dependency-type: "direct"
+        update-types: ["minor", "patch"]
+      go-indirect-minor-patch:
+        dependency-type: "indirect"
+        update-types: ["minor", "patch"]
+    # Major version updates: separate PR per package (more review needed).
+    # (no group config = default behavior)
+
+  # GitHub Actions — keep workflow deps current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Docker base images (postgres, redis, nats in docker-compose).
+  - package-ecosystem: "docker"
+    directory: "/deployments"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+
+# Commit message prefix + auto-merge for trivial updates.
+# (auto-merge requires the "Allow auto-merge" setting on the repo)
+labels:
+  - "dependencies"
+  - "automated-pr"
+
+# Ignore major version updates for risky deps (review manually instead).
+ignore:
+  # Major Go version updates: review carefully (could break compile).
+  - dependency-name: "github.com/jackc/pgx/v5"
+    versions: ">=6.x"
+  - dependency-name: "github.com/golang-jwt/jwt/v5"
+    versions: ">=6.x"
+  # Major version updates for tooling.
+  - dependency-name: "golangci-lint"
+    versions: ">=2.x"

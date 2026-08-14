@@ -271,6 +271,78 @@ func formatIntComma(n int64) string {
 	return b.String()
 }
 
+// Convert applies an FX rate and shifts minor-unit decimal places between
+// currencies. Used by cross-currency transfers (Sprint 12 / Fase 1D).
+//
+//	amount        — money in source currency's minor units
+//	fromDecimals  — source currency's decimal places (e.g. USD=2, JPY=0)
+//	toDecimals    — target currency's decimal places (e.g. IDR=2)
+//	rate          — multiplicative FX rate (source→target major units)
+//
+// Algorithm:
+//  1. Convert source minor units to source major units (decimal).
+//  2. Multiply by rate (still decimal, target major units).
+//  3. Convert to target minor units (round half-up to nearest minor).
+//
+// Returns ErrInvalidAmount on non-positive input or ErrInvalidRate on
+// rate <= 0. Rounding is half-up (banker's rounding is NOT used — see Mul
+// for rationale).
+//
+// Example: Convert(10000 USD-minor, 2, 2, 15750) -> 1,575,000 IDR-minor
+//   (USD 100.00 × 15,750 = IDR 1,575,000.00)
+func Convert(amount Money, fromDecimals, toDecimals int, rate decimal.Decimal) (Money, error) {
+	if amount < 0 {
+		return 0, fmt.Errorf("%w: negative amount", ErrInvalidAmount)
+	}
+	if rate.IsZero() || rate.IsNegative() {
+		return 0, fmt.Errorf("%w: rate must be > 0", ErrInvalidRate)
+	}
+	if fromDecimals < 0 || fromDecimals > 6 || toDecimals < 0 || toDecimals > 6 {
+		return 0, fmt.Errorf("%w: decimal places out of range", ErrInvalidAmount)
+	}
+
+	// 1. amount / 10^fromDecimals -> source major units (decimal)
+	srcMajor := decimal.NewFromInt(int64(amount)).
+		Div(decimal.NewFromInt(int64(pow10(fromDecimals))))
+
+	// 2. × rate -> target major units (decimal)
+	tgtMajor := srcMajor.Mul(rate)
+
+	// 3. × 10^toDecimals -> target minor units, rounded half-up
+	scale := decimal.NewFromInt(int64(pow10(toDecimals)))
+	tgtMinor := tgtMajor.Mul(scale).Round(0)
+
+	if !tgtMinor.IsInteger() {
+		return 0, fmt.Errorf("%w: rounding produced fractional minor unit", ErrInvalidAmount)
+	}
+	return Money(tgtMinor.IntPart()), nil
+}
+
+// ErrInvalidRate is returned by Convert when rate <= 0.
+var ErrInvalidRate = errors.New("money: invalid fx rate")
+
+// pow10 returns 10^n for n in [0, 6]. Inline to avoid math.Pow precision issues.
+func pow10(n int) int64 {
+	switch n {
+	case 0:
+		return 1
+	case 1:
+		return 10
+	case 2:
+		return 100
+	case 3:
+		return 1000
+	case 4:
+		return 10000
+	case 5:
+		return 100000
+	case 6:
+		return 1000000
+	default:
+		return 1 // unreachable due to caller validation
+	}
+}
+
 // Sum returns the sum of a slice of Money.
 // Convenience for aggregating entries in a transaction.
 func Sum(amounts ...Money) Money {

@@ -12,6 +12,8 @@ package handler
 import (
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
@@ -32,6 +34,11 @@ type TransferRequest struct {
 	RefType        string `json:"ref_type,omitempty"  validate:"omitempty,max=50"`
 	RefID          string `json:"ref_id,omitempty"    validate:"omitempty,uuid"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
+
+	// Sprint 12 / Fase 1D — cross-currency support (optional).
+	// If both account currencies match, these are ignored.
+	ExpectedFxRateID   string `json:"expected_fx_rate_id,omitempty"   validate:"omitempty,uuid"`
+	ExpectedRateLockAt string `json:"expected_rate_lock_at,omitempty" validate:"omitempty,datetime"`
 }
 
 // TransferResponse is the body of a successful transfer response.
@@ -45,6 +52,10 @@ type TransferResponse struct {
 	Description   string         `json:"description"`
 	PostedAt      time.Time      `json:"posted_at"`
 	Entries       []EntryDTO     `json:"entries"`
+
+	// Cross-currency snapshot (Sprint 12). Empty for same-currency transfers.
+	FxRateID        string `json:"fx_rate_id,omitempty"`
+	FxRateLockedAt  string `json:"fx_rate_locked_at,omitempty"`
 }
 
 // EntryDTO is the public representation of a ledger entry.
@@ -182,7 +193,7 @@ type SetCreditLimitRequest struct {
 
 // ToTransferInput converts the HTTP request to a use case input.
 func (r *TransferRequest) ToTransferInput(tenantID string) ledger.TransferInput {
-	return ledger.TransferInput{
+	out := ledger.TransferInput{
 		FromAccountID:  r.FromAccountID,
 		ToAccountID:    r.ToAccountID,
 		Amount:         money.NewFromMinor(r.AmountMinor),
@@ -195,6 +206,19 @@ func (r *TransferRequest) ToTransferInput(tenantID string) ledger.TransferInput 
 		// TenantID comes from the JWT in Fase 2; for now, use the
 		// source account's tenant (resolved by the use case).
 	}
+
+	// Sprint 12 — cross-currency snapshot fields (optional).
+	if r.ExpectedFxRateID != "" {
+		if id, err := uuid.Parse(r.ExpectedFxRateID); err == nil {
+			out.ExpectedFxRateID = &id
+		}
+	}
+	if r.ExpectedRateLockAt != "" {
+		if t, err := time.Parse(time.RFC3339, r.ExpectedRateLockAt); err == nil {
+			out.ExpectedRateLockAt = &t
+		}
+	}
+	return out
 }
 
 // ToTransferResponse converts a use case result to the HTTP response.
@@ -207,7 +231,7 @@ func ToTransferResponse(t ledger.Transaction) TransferResponse {
 	if t.PostedAt != nil {
 		postedAt = *t.PostedAt
 	}
-	return TransferResponse{
+	resp := TransferResponse{
 		TransactionID: t.ID,
 		Status:        string(t.Status),
 		// FromAccountID/ToAccountID: derived from entries
@@ -217,6 +241,14 @@ func ToTransferResponse(t ledger.Transaction) TransferResponse {
 		PostedAt:     postedAt,
 		Entries:      entries,
 	}
+	// Cross-currency snapshot (Sprint 12).
+	if t.FxRateID != nil {
+		resp.FxRateID = t.FxRateID.String()
+	}
+	if t.FxRateLockedAt != nil {
+		resp.FxRateLockedAt = t.FxRateLockedAt.Format(time.RFC3339)
+	}
+	return resp
 }
 
 // ToEntryDTO converts a domain entry to its public DTO.

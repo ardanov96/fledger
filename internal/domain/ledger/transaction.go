@@ -2,6 +2,8 @@ package ledger
 
 import (
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // TransactionStatus is the lifecycle state of a multi-entry transaction.
@@ -36,6 +38,12 @@ type Transaction struct {
 	PostedAt      *time.Time     // nil if not yet posted
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// Cross-currency snapshot (Sprint 12 / Fase 1D). NULL when same-currency.
+	// fx_rate_locked_at is the time at which the rate was frozen to the txn.
+	FxRateID        *uuid.UUID
+	FxRateLockedAt  *time.Time
+
 	// Entries are populated when loading a transaction; not stored on the
 	// transaction row itself (they live in the entries table).
 	Entries []Entry `json:"entries,omitempty"`

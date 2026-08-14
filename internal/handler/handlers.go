@@ -50,21 +50,33 @@ type Handlers struct {
 	Periods      PeriodAPI
 	Reconcilers  ReconcilerAPI
 	Collections  CollectionAPI
+	Currencies   CurrencyAPI // Sprint 12 — multi-currency
+	Auth         AuthAPI    // Sprint 13 — login/refresh/MFA
 	Validator    *validator.Validate
 }
 
-// New constructs the handlers. Invoices + Periods + Reconcilers + Collections
-// may be nil — those routes simply won't be mounted in that case (useful for
-// unit-test scaffolding).
-func New(transfers TransferAPI, accounts AccountAPI, invoices InvoiceAPI, periods PeriodAPI, reconcilers ReconcilerAPI, collections CollectionAPI) *Handlers {
+// New constructs the handlers. All API deps may be nil — those routes simply
+// won't be mounted in that case (useful for unit-test scaffolding).
+func New(
+	transfers TransferAPI,
+	accounts AccountAPI,
+	invoices InvoiceAPI,
+	periods PeriodAPI,
+	reconcilers ReconcilerAPI,
+	collections CollectionAPI,
+	currencies CurrencyAPI,
+	auth AuthAPI,
+) *Handlers {
 	return &Handlers{
-		Transfers:    transfers,
-		Accounts:     accounts,
-		Invoices:     invoices,
-		Periods:      periods,
-		Reconcilers:  reconcilers,
-		Collections:  collections,
-		Validator:    validator.New(),
+		Transfers:   transfers,
+		Accounts:    accounts,
+		Invoices:    invoices,
+		Periods:     periods,
+		Reconcilers: reconcilers,
+		Collections: collections,
+		Currencies:  currencies,
+		Auth:        auth,
+		Validator:   validator.New(),
 	}
 }
 
@@ -114,6 +126,31 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Post("/stops/{id}/close", h.CloseStopHandler)
 		r.Get("/stops/{id}/events", h.ListStopEvents)
 		r.Post("/settlements/{id}/decide", h.DecideSettlement)
+	}
+
+	if h.Currencies != nil {
+		// Currencies
+		r.Get("/currencies", h.ListCurrencies)
+		r.Get("/currencies/{code}", h.GetCurrency)
+		r.Post("/currencies", h.CreateCurrencyHandler)
+		r.Patch("/currencies/{code}", h.UpdateCurrencyHandler)
+		r.Post("/currencies/convert", h.ConvertCurrencyHandler)
+
+		// FX rates
+		r.Get("/fx-rates", h.ListFxRates)
+		r.Get("/fx-rates/latest", h.GetLatestFxRateHandler)
+		r.Get("/fx-rates/{id}", h.GetFxRate)
+		r.Post("/fx-rates", h.CreateFxRateHandler)
+	}
+
+	if h.Auth != nil {
+		// Sprint 13 — auth (PUBLIC routes, no auth middleware required).
+		// /mfa/setup and /mfa/verify require access token — caller passes via Bearer.
+		r.Post("/auth/login", h.Login)
+		r.Post("/auth/refresh", h.Refresh)
+		r.Post("/auth/logout", h.Logout)
+		r.Post("/auth/mfa/setup", h.SetupMFA)
+		r.Post("/auth/mfa/verify", h.VerifyMFA)
 	}
 }
 

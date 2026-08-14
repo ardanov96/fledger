@@ -47,6 +47,8 @@ const (
 	ObjectReconciler  = "reconciler"
 	ObjectCollectionRoute = "collection_route"
 	ObjectSettlement  = "settlement"
+	ObjectCurrency    = "currency" // Sprint 12 / Fase 1D
+	ObjectFxRate      = "fx_rate"  // Sprint 12 / Fase 1D
 )
 // Role constants — match policy file.
 const (

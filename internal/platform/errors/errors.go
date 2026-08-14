@@ -115,6 +115,7 @@ var (
 
 var (
 	ErrIdempotencyKeyMissing = New("IDEMPOTENCY_KEY_MISSING", "Idempotency-Key header is required", http.StatusBadRequest)
+	ErrTooManyRequests      = New("RATE_LIMITED", "Too many requests", http.StatusTooManyRequests)
 	ErrIdempotencyConflict   = New("IDEMPOTENCY_CONFLICT", "Idempotency key reused with different payload", http.StatusConflict)
 	ErrConcurrentModification = New("CONCURRENT_MODIFICATION", "Resource was modified concurrently; please retry", http.StatusConflict)
 )

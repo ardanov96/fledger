@@ -76,8 +76,20 @@ Pembayaran yang tidak menutup satu invoice penuh. Bisa di-allocate ke multiple i
 ### Collection Route
 Rute harian sales rep: kumpulan customer yang dikunjungi, beserta invoice yang harus di-collect. Tiap stop = 1 customer + N invoice.
 
+### Route Stop
+Sebuah customer visit pada sebuah collection route. Sequence-ordered (sales rep punya urutan kunjungan). Status: `pending` (belum dikunjungi) → `visited` (sales rep sudah catat visit) → `closed` (collection event sudah final / stop di-skip). Optional `latitude`/`longitude` untuk geolocation (nullable, belum dipakai).
+
+### Collection Event
+Immutable append-only audit row dari satu collection aktual. Field utama: `id`, `stop_id`, `amount_minor`, `payment_method` (cash/qris/transfer/cheque), `reference`, `recorded_at`. Tidak bisa di-edit setelah insert (audit-grade artifact). Total per stop di-maintain via DB trigger `route_stop_apply_collection_event`.
+
 ### Settlement
-Proses sales rep menyetorkan total collection ke HQ. Discrepancy = setoran vs catatan tidak cocok.
+Proses sales rep menyetorkan total collection ke HQ pada akhir hari. Field: `expected_amount_minor` (sum dari collection events), `actual_amount_minor` (yang di-setorkan sales rep), `discrepancy` = actual - expected. Status `approved` (auto, jika discrepancy == 0) atau `pending` (perlu supervisor review, jika discrepancy != 0). Supervisor decide via `POST /v1/settlements/{id}/decide`.
+
+### Settlement Discrepancy
+Selisih actual vs expected collection amount. ANY discrepancy != 0 mengunci settlement ke status `pending` dan butuh supervisor approval (no threshold config di MVP — semua discrepancy sama urgentnya). Common cause: customer bayar partial, koleksi tertinggal, atau human error counting cash.
+
+### fx_rate_locked_at
+Timestamp pada saat FX rate di-capture untuk satu transaction (Sprint 12). Immutable snapshot — rate tidak bisa berubah setelah transaction dibuat, jadi historical reporting konsisten walaupun rate master berubah. Berpasangan dengan kolom `fx_rate_id` di `transactions` yang reference ke `fx_rates.id`.
 
 ### Write-off
 Penghapusan piutang yang tidak bisa ditagih. Lewat approval flow (finance HQ). Hasilnya: ledger adjustment yang mengurangi receivable dan承认 bad debt expense.

@@ -1,0 +1,53 @@
+# Files excluded from Docker build context (saves build time + image size).
+# See https://docs.docker.com/engine/reference/builder/#dockerignore-file
+
+# VCS metadata
+.git
+.gitignore
+.gitattributes
+
+# Documentation (not needed in production image)
+README.md
+CONTRIBUTING.md
+LICENSE
+docs/
+*.md
+
+# CI / GitHub config
+.github/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Local build artifacts
+bin/
+site/
+coverage.out
+coverage.html
+
+# Local env / secrets (defense-in-depth; secrets should be via runtime env)
+.env
+.env.local
+*.env
+
+# Test artifacts
+*.test
+*.out
+tmp/
+
+# Node / frontend (not used in Go API image)
+web/
+node_modules/
+package.json
+package-lock.json
+yarn.lock
+
+# Scripts (local dev only, not runtime)
+scripts/
+
+# Test files (we compile these in CI but not ship them in production image)
+*_test.go

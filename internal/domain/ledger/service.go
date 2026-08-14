@@ -2,6 +2,9 @@ package ledger
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/runut/fmcg-wallet/internal/platform/money"
 )
@@ -17,6 +20,17 @@ type TransferInput struct {
 	RefType        string
 	RefID          string
 	Metadata       map[string]any
+
+	// Cross-currency fields (Sprint 12 / Fase 1D). All optional for
+	// same-currency transfers.
+	//
+	// ExpectedFxRateID — if set, the transfer is locked to this FX rate.
+	//                       If nil and currencies differ, server looks up the
+	//                       latest active rate at transfer time.
+	// ExpectedRateLockAt — if set, validates against server-side lock time
+	//                       (within tolerance window, e.g. 60s).
+	ExpectedFxRateID    *uuid.UUID
+	ExpectedRateLockAt  *time.Time
 }
 
 // TransferService orchestrates the double-entry transfer use case.

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,6 +34,11 @@ import (
 	"github.com/runut/fmcg-wallet/internal/usecase"
 	"github.com/runut/fmcg-wallet/internal/worker"
 )
+
+// parseFloat parses a string to float64.
+func parseFloat(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
+}
 
 var (
 	version   = "dev"
@@ -85,18 +91,43 @@ func run() error {
 	periodRepo := postgres.NewPeriodRepository(db)
 	reconcilerRepo := postgres.NewReconcilerRepository(db)
 	collectionRepo := postgres.NewCollectionRepository(db)
+	currencyRepo := postgres.NewCurrencyRepository(db) // Sprint 12 / Fase 1D
+	authRepo := postgres.NewAuthRepository(db)         // Sprint 13
 
 	txAdapter := &dbTxAdapter{db: db}
 	invoiceTx := &invoiceTxAdapter{db: db}
 	periodTx := &periodTxAdapter{db: db}
 	recTx := &reconcilerTxAdapter{db: db}
 	collTx := &collectionTxAdapter{db: db}
+	currencyTx := &currencyTxAdapter{db: db} // Sprint 12
+	authTx := &authTxAdapter{db: db}         // Sprint 13
+
+	// JWT signer + verifier (Sprint 13).
+	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
+	jwtSigner := jwt.NewSigner(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
+
+	// Currency service + FxRateLookup adapter (Sprint 12).
+	currencyService := usecase.NewCurrencyService(currencyRepo, currencyTx)
+	fxRateLk := &fxRateLookupAdapter{svc: currencyService}
+
+	// Auth service (Sprint 13).
+	authService := usecase.NewAuthService(
+		authRepo,
+		authTx,
+		passwordHasher,
+		tokenGenerator,
+		totpGenerator,
+		jwtSigner,
+		usecase.DefaultAuthConfig(),
+		log,
+	)
 
 	transferService := usecase.NewTransferService(usecase.TransferServiceDeps{
 		Accounts:     accountRepo,
 		Transactions: transactionRepo,
 		Entries:      entryRepo,
 		DB:           txAdapter,
+		CurrencyLk:   fxRateLk,
 		Logger:       log,
 	})
 	accountService := usecase.NewAccountService(accountRepo, entryRepo)
@@ -113,7 +144,7 @@ func run() error {
 	})
 	periodAPI := &periodAPIAdapter{svc: periodService}
 
-	// Reconciler (Sprint 10 — Fase 1B).
+	// Reconciler (Sprint 10).
 	hashChainVerifier := usecase.NewVerifier(log)
 	ledgerProbe := &ledgerProbeAdapter{
 		periodRepo: periodRepo,
@@ -143,7 +174,7 @@ func run() error {
 		"hash_check_on_cron", runHashCheck,
 	)
 
-	// Collection (Sprint 11 — Portfolio Sprint 4 / Fase 8 partial).
+	// Collection (Sprint 11).
 	collectionService := usecase.NewCollectionService(usecase.CollectionServiceDeps{
 		Repo:   collectionRepo,
 		Lookup: &invoiceLookupAdapter{invoiceRepo: invoiceRepo},
@@ -152,8 +183,6 @@ func run() error {
 	})
 	collectionAPI := &collectionAPIAdapter{svc: collectionService}
 
-	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
-
 	modelPath, policyPath := resolveRBACPaths()
 	rbacEnforcer, err := rbac.New(modelPath, policyPath)
 	if err != nil {
@@ -161,12 +190,36 @@ func run() error {
 	}
 	log.Info("RBAC enforcer loaded", "policy", rbacEnforcer.Source())
 
-	h := handler.New(transferService, accountService, invoiceService, periodAPI, reconcilerAPI, collectionAPI)
+	currencyAPI := &currencyAPIAdapter{svc: currencyService}
+	authAPI := &authAPIAdapter{svc: authService}
+	h := handler.New(transferService, accountService, invoiceService, periodAPI, reconcilerAPI, collectionAPI, currencyAPI, authAPI)
+
+	// Sprint 14 - rate limiter for login (brute-force defense).
+	// Per-IP token bucket: 5 burst, 0.5 rps sustained.
+	// Enable via RATE_LIMIT_LOGIN_ENABLED=true.
+	rateEnabled := os.Getenv("RATE_LIMIT_LOGIN_ENABLED") == "true"
+	var authLimiter *middleware.RateLimiter
+	if rateEnabled {
+		burst := 5.0
+		rps := 0.5
+		if v := os.Getenv("RATE_LIMIT_LOGIN_BURST"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				burst = f
+			}
+		}
+		if v := os.Getenv("RATE_LIMIT_LOGIN_RPS"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				rps = f
+			}
+		}
+		authLimiter = middleware.NewRateLimiter(burst, rps)
+		log.Info("rate limiter enabled for login", "burst", burst, "rps", rps)
+	}
 
 	auditRepo := postgres.NewAuditRepository(db)
 	auditHandlers := &handler.AuditHandlers{Repo: auditRepo}
 
-	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer)
+	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
@@ -224,12 +277,14 @@ func buildRouter(
 	h *handler.Handlers,
 	auditHandlers *handler.AuditHandlers,
 	verifier jwt.Verifier, rbacEnforcer *rbac.Enforcer,
+	authLimiter *middleware.RateLimiter,
 ) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RealIP)
 	r.Use(httpx.RequestIDMiddleware)
 	r.Use(chimw.RequestID)
+	r.Use(middleware.TraceMiddleware()) // Sprint 18 - W3C trace propagation
 	r.Use(structuredLogger(log))
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(60 * time.Second))
@@ -247,6 +302,19 @@ func buildRouter(
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
 			httpx.JSON(w, http.StatusOK, map[string]string{"message": "pong"})
 		})
+
+		// Sprint 13: PUBLIC auth routes (mounted OUTSIDE auth middleware).
+		if h.Auth != nil {
+			// Sprint 14 - rate limit on login (brute-force defense).
+			loginHandler := middleware.RateLimitMiddleware(authLimiter, middleware.RateLimitByIP)(http.HandlerFunc(h.Login))
+			r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+				loginHandler.ServeHTTP(w, r)
+			})
+			r.Post("/auth/refresh", h.Refresh)
+			r.Post("/auth/logout", h.Logout)
+			r.Post("/auth/mfa/setup", h.SetupMFA)
+			r.Post("/auth/mfa/verify", h.VerifyMFA)
+		}
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(verifier))
@@ -266,7 +334,7 @@ func buildRouter(
 			r.Get("/customers/{id}/aging", h.GetCustomerAging)
 			r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
 
-			// Period close workflow (Sprint 9 — Fase 1A).
+			// Period close workflow (Sprint 9).
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
 				rbac.ActionCreate, rbac.ObjectPeriodClose)).Post("/periods/{id}/close-requests", h.RequestPeriodClose)
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
@@ -280,7 +348,7 @@ func buildRouter(
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
 				rbac.ActionRead, rbac.ObjectPeriodClose)).Get("/periods/{id}/snapshots", h.ListSnapshots)
 
-			// Reconciler (Sprint 10 — Fase 1B).
+			// Reconciler (Sprint 10).
 			if h.Reconcilers != nil {
 				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
 					rbac.ActionRun, rbac.ObjectReconciler)).Post("/reconciler/run", h.RunReconciliation)
@@ -292,7 +360,7 @@ func buildRouter(
 					rbac.ActionRead, rbac.ObjectReconciler)).Get("/reconciler/runs/{id}/accounts", h.GetReconcilerRunAccounts)
 			}
 
-			// Collection & Route (Sprint 11 — Portfolio Sprint 4).
+			// Collection & Route (Sprint 11).
 			if h.Collections != nil {
 				r.Post("/routes", h.PlanRoute)
 				r.Get("/routes", h.ListRoutes)
@@ -305,6 +373,29 @@ func buildRouter(
 				r.Post("/stops/{id}/close", h.CloseStopHandler)
 				r.Get("/stops/{id}/events", h.ListStopEvents)
 				r.Post("/settlements/{id}/decide", h.DecideSettlement)
+			}
+
+			// Currency & FX rates (Sprint 12).
+			if h.Currencies != nil {
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectCurrency)).Get("/currencies", h.ListCurrencies)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectCurrency)).Get("/currencies/{code}", h.GetCurrency)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionCreate, rbac.ObjectCurrency)).Post("/currencies", h.CreateCurrencyHandler)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionUpdate, rbac.ObjectCurrency)).Patch("/currencies/{code}", h.UpdateCurrencyHandler)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectCurrency)).Post("/currencies/convert", h.ConvertCurrencyHandler)
+
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectFxRate)).Get("/fx-rates", h.ListFxRates)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectFxRate)).Get("/fx-rates/latest", h.GetLatestFxRateHandler)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionRead, rbac.ObjectFxRate)).Get("/fx-rates/{id}", h.GetFxRate)
+				r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+					rbac.ActionCreate, rbac.ObjectFxRate)).Post("/fx-rates", h.CreateFxRateHandler)
 			}
 		})
 
@@ -400,10 +491,6 @@ func versionHandler() http.HandlerFunc {
 
 var startedAt = time.Now()
 
-// =============================================================================
-// Tx adapters — wire domain-flavored Tx to concrete pgx.Tx via DB helpers.
-// =============================================================================
-
 type dbTxAdapter struct {
 	db *postgres.DB
 }
@@ -420,6 +507,5 @@ func (a *invoiceTxAdapter) ExecuteTx(ctx context.Context, fn func(invoice.Tx) er
 	return a.db.RunInTxInvoiceDomain(ctx, fn)
 }
 
-// suppress "declared but not used" warnings if a future refactor removes the
-// collection import from main.go.
+// suppress unused warning if collection import is removed.
 var _ = collection.SettlementPending

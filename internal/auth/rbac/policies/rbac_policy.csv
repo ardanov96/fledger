@@ -43,6 +43,11 @@ p, hq_admin, *, collection_route, update
 p, hq_admin, *, settlement, approve
 p, hq_admin, *, settlement, reject
 p, hq_admin, *, settlement, read
+p, hq_admin, *, currency, create
+p, hq_admin, *, currency, read
+p, hq_admin, *, currency, update
+p, hq_admin, *, fx_rate, create
+p, hq_admin, *, fx_rate, read
 
 # ---- HQ Finance: financial operations, no admin (cannot reopen) ----
 p, hq_finance, *, transfer, read
@@ -68,6 +73,9 @@ p, hq_finance, *, collection_route, read
 p, hq_finance, *, settlement, approve
 p, hq_finance, *, settlement, reject
 p, hq_finance, *, settlement, read
+p, hq_finance, *, currency, read
+p, hq_finance, *, fx_rate, create
+p, hq_finance, *, fx_rate, read
 
 # ---- Auditor: read-only across the board ----
 p, auditor, *, account, read
@@ -84,6 +92,8 @@ p, auditor, *, period_close, read
 p, auditor, *, reconciler, read
 p, auditor, *, collection_route, read
 p, auditor, *, settlement, read
+p, auditor, *, currency, read
+p, auditor, *, fx_rate, read
 
 # ---- Outlet Manager: scoped to their own outlet's transactions ----
 p, outlet_manager, *, account, read

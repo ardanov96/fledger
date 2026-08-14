@@ -14,34 +14,45 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/runut/fmcg-wallet/internal/domain/currency"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
+	"github.com/runut/fmcg-wallet/internal/platform/money"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 )
 
 // TransferService implements ledger.TransferService.
 //
 // Algorithm (single DB transaction):
-//  1. Resolve accounts (must exist, both active, same currency)
-//  2. Order account IDs lexicographically and lock BOTH with SELECT FOR UPDATE
+//  1. Resolve accounts (must exist, both active)
+//  2. If cross-currency, lookup FX rate via CurrencyLookup and convert amount
+//  3. Order account IDs lexicographically and lock BOTH with SELECT FOR UPDATE
 //     (prevents deadlocks; see ADR-0004-locking-strategy)
-//  3. Check sufficient balance on the source
-//  4. Find or create the current accounting period (single open period for MVP)
-//  5. Insert transaction header (status: pending) with idempotency_key
-//  6. Insert 2 entries (debit source, credit destination)
-//  7. Update cached_balance on both accounts
-//  8. Mark transaction as posted
-//  9. Commit
+//  4. Check sufficient balance on the source
+//  5. Find or create the current accounting period (single open period for MVP)
+//  6. Insert transaction header (status: pending) with idempotency_key + fx_rate_id
+//  7. Insert 2 entries (debit source, credit destination) — asymmetric amounts
+//     if cross-currency, each entry in its own account currency
+//  8. Update cached_balance on both accounts
+//  9. Mark transaction as posted
+// 10. Commit
 //
 // On any error, rollback.
 //
 // Idempotency: if a transaction with the same idempotency_key already exists
 // (and was posted), we return it instead of creating a new one.
+//
+// Cross-currency invariant (Sprint 12 / Fase 1D):
+//   - SUM(debit.minor) == SUM(credit.minor) within a single currency scope.
+//   - Tiap entry tetap dalam currency akun-nya; cross-currency tidak
+//     memaksa "total debit == total credit" di angka absolut, tapi
+//     konversi dilakukan via FX rate yang di-snapshot ke transaction.
 type TransferService struct {
-	accounts     ledger.AccountRepository
-	transactions ledger.TransactionRepository
-	entries      ledger.EntryRepository
-	db           TxRunner
-	log          *slog.Logger
+	accounts      ledger.AccountRepository
+	transactions  ledger.TransactionRepository
+	entries       ledger.EntryRepository
+	db            TxRunner
+	currencyLk    CurrencyLookup // Sprint 12 — nil if same-currency only
+	log           *slog.Logger
 }
 
 // TxRunner is the minimal interface we need from the DB to run a transaction.
@@ -50,13 +61,22 @@ type TxRunner interface {
 	ExecuteTx(ctx context.Context, fn func(ledger.Tx) error) error
 }
 
+// CurrencyLookup is the narrow interface used by TransferService to resolve
+// FX rates for cross-currency transfers (Sprint 12). Implemented by an
+// adapter over currency.Service. May be nil if multi-currency is disabled.
+type CurrencyLookup interface {
+	GetLatestFxRate(ctx context.Context, tenantID uuid.UUID, from, to string, at time.Time) (currency.FxRate, error)
+	GetCurrency(ctx context.Context, code string) (currency.Currency, error)
+}
+
 // TransferServiceDeps bundles all dependencies for TransferService.
 type TransferServiceDeps struct {
-	Accounts     ledger.AccountRepository
-	Transactions ledger.TransactionRepository
-	Entries      ledger.EntryRepository
-	DB           TxRunner
-	Logger       *slog.Logger
+	Accounts      ledger.AccountRepository
+	Transactions  ledger.TransactionRepository
+	Entries       ledger.EntryRepository
+	DB            TxRunner
+	CurrencyLk    CurrencyLookup // optional; nil disables cross-currency
+	Logger        *slog.Logger
 }
 
 // NewTransferService creates a new transfer service.
@@ -70,6 +90,7 @@ func NewTransferService(deps TransferServiceDeps) *TransferService {
 		transactions: deps.Transactions,
 		entries:      deps.Entries,
 		db:           deps.DB,
+		currencyLk:   deps.CurrencyLk,
 		log:          log,
 	}
 }
@@ -114,8 +135,69 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 	if dstBefore.Status != ledger.AccountStatusActive {
 		return ledger.Transaction{}, apperrors.ErrAccountFrozen
 	}
+
+	// 2b. Cross-currency path (Sprint 12 / Fase 1D).
+	// If currencies differ, we need an FX rate lookup. If currencies are
+	// the same, this is a no-op (same-currency transfer).
+	var (
+		fxRate        *currency.FxRate
+		fxRateLockAt  *time.Time
+		toAmount      money.Money
+		isCrossCur    bool
+	)
 	if srcBefore.Currency != dstBefore.Currency {
-		return ledger.Transaction{}, apperrors.ErrCurrencyMismatch
+		if s.currencyLk == nil {
+			return ledger.Transaction{}, fmt.Errorf(
+				"%w: cross-currency transfer requires CurrencyLookup (multi-currency not enabled)",
+				apperrors.ErrCurrencyMismatch,
+			)
+		}
+		isCrossCur = true
+
+		// If client pinned an FX rate, validate it; else lookup latest active.
+		var rate currency.FxRate
+		var err error
+		if input.ExpectedFxRateID != nil {
+			// Validate pinned rate matches the (from, to) pair.
+			if !input.ExpectedRateLockAt.IsZero() && time.Since(*input.ExpectedRateLockAt).Abs() > 5*time.Minute {
+				return ledger.Transaction{}, fmt.Errorf(
+					"%w: expected_rate_lock_at outside tolerance window",
+					currency.ErrInvalidWindow,
+				)
+			}
+			// Pinned path: try GetLatestFxRate at the client-specified time;
+			// if not available at that time, return not-found.
+			at := time.Now().UTC()
+			if input.ExpectedRateLockAt != nil {
+				at = *input.ExpectedRateLockAt
+			}
+			rate, err = s.currencyLk.GetLatestFxRate(ctx, parseUUID(srcBefore.TenantID), srcBefore.Currency, dstBefore.Currency, at)
+		} else {
+			rate, err = s.currencyLk.GetLatestFxRate(ctx, parseUUID(srcBefore.TenantID), srcBefore.Currency, dstBefore.Currency, time.Now().UTC())
+		}
+		if err != nil {
+			return ledger.Transaction{}, fmt.Errorf("fx rate lookup: %w", err)
+		}
+
+		// Convert amount from source currency to destination currency.
+		fromCur, err := s.currencyLk.GetCurrency(ctx, srcBefore.Currency)
+		if err != nil {
+			return ledger.Transaction{}, fmt.Errorf("load source currency: %w", err)
+		}
+		toCur, err := s.currencyLk.GetCurrency(ctx, dstBefore.Currency)
+		if err != nil {
+			return ledger.Transaction{}, fmt.Errorf("load dest currency: %w", err)
+		}
+		converted, err := money.Convert(input.Amount, fromCur.DecimalPlaces, toCur.DecimalPlaces, rate.Rate)
+		if err != nil {
+			return ledger.Transaction{}, fmt.Errorf("convert amount: %w", err)
+		}
+		fxRate = &rate
+		lockAt := time.Now().UTC()
+		fxRateLockAt = &lockAt
+		toAmount = converted
+	} else {
+		toAmount = input.Amount
 	}
 
 	// 3. Generate ID up front
@@ -147,7 +229,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 		}
 
 		// 4b. Re-validate under lock
-		if src.Currency != dst.Currency {
+		if src.Currency != dst.Currency && !isCrossCur {
 			return apperrors.ErrCurrencyMismatch
 		}
 		if src.Status != ledger.AccountStatusActive {
@@ -157,7 +239,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 			return apperrors.ErrAccountFrozen
 		}
 
-		// 4c. Sufficient balance
+		// 4c. Sufficient balance (in source currency)
 		if src.CachedBalance < input.Amount {
 			return fmt.Errorf(
 				"insufficient balance on account %s: have %s, need %s: %w",
@@ -173,7 +255,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 
 		// 4e. Insert transaction header
 		newBalance := src.CachedBalance.Sub(input.Amount)
-		dstBalance := dst.CachedBalance.Add(input.Amount)
+		dstBalance := dst.CachedBalance.Add(toAmount)
 
 		txn := ledger.Transaction{
 			ID:             txID,
@@ -189,11 +271,19 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}
+		// Cross-currency snapshot fields (Sprint 12).
+		if isCrossCur && fxRate != nil {
+			txn.FxRateID = &fxRate.ID
+			txn.FxRateLockedAt = fxRateLockAt
+		}
 		if err := s.transactions.Create(ctx, tx, txn); err != nil {
 			return fmt.Errorf("create transaction: %w", err)
 		}
 
-		// 4f. Insert 2 entries (double-entry)
+		// 4f. Insert 2 entries (double-entry, asymmetric if cross-currency).
+		// For same-currency: debit = credit = input.Amount.
+		// For cross-currency: debit = input.Amount (src.Currency),
+		//                    credit = toAmount (dst.Currency).
 		entries := []ledger.Entry{
 			{
 				ID:            uuid.NewString(),
@@ -213,7 +303,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 				ID:            uuid.NewString(),
 				TransactionID: txID,
 				AccountID:     dst.ID,
-				Amount:        input.Amount,
+				Amount:        toAmount,
 				Type:          ledger.EntryTypeCredit,
 				RefType:       input.RefType,
 				RefID:         input.RefID,
@@ -228,7 +318,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 			return fmt.Errorf("insert entries: %w", err)
 		}
 
-		// 4g. Update cached balances
+		// 4g. Update cached balances (each in its own currency).
 		if err := s.accounts.UpdateBalance(ctx, tx, src.ID, newBalance); err != nil {
 			return fmt.Errorf("update source balance: %w", err)
 		}
@@ -245,6 +335,8 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 		result = txn
 		result.Status = ledger.TransactionStatusPosted
 		result.PostedAt = &postedAt
+		result.FxRateID = txn.FxRateID
+		result.FxRateLockedAt = txn.FxRateLockedAt
 		result.Entries = entries
 
 		s.log.Info("transfer completed",
@@ -282,6 +374,17 @@ func (s *TransferService) validateInput(input ledger.TransferInput) error {
 		return fmt.Errorf("%w: amount must be positive, got %s", apperrors.ErrInvalidInput, input.Amount)
 	}
 	return nil
+}
+
+// parseUUID parses a string tenantID into uuid.UUID. Returns uuid.Nil on
+// parse failure — caller is expected to use uuid.Nil as a "missing tenant"
+// sentinel. Sprint 12 helper for cross-currency FX rate lookup.
+func parseUUID(s string) uuid.UUID {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
 }
 
 func (s *TransferService) ensureOpenPeriod(_ context.Context, _ ledger.Tx, _ string, _ time.Time) (string, error) {

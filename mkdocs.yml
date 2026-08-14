@@ -1,0 +1,144 @@
+# MkDocs configuration for FMCG Wallet documentation site.
+# Deployed automatically to GitHub Pages by .github/workflows/docs.yml
+# on every push to main.
+#
+# Build locally: pip install mkdocs mkdocs-material && mkdocs serve
+# Or via docker: docker run --rm -v ${PWD}:/docs squidfunk/mkdocs-material build
+
+site_name: FMCG Wallet
+site_description: Production-grade hybrid wallet backend for Indonesian FMCG/F&B distributors — double-entry ledger, receivables, collection routes, and real-time net-off calculation.
+site_author: FMCG Wallet Team
+
+# GitHub Pages deployment
+repo_url: https://github.com/runut/fmcg-wallet
+repo_name: runut/fmcg-wallet
+edit_uri: edit/main/docs/
+
+# Don't fail the build on broken internal links (use strict later).
+strict: false
+# Warn on missing docs (good for catching typos).
+warn_on_missing_docs: true
+
+theme:
+  name: material
+  features:
+    - navigation.instant       # client-side navigation, no full page reload
+    - navigation.tracking       # update URL with anchor on scroll
+    - navigation.tabs            # top-level nav as tabs (Overview / Architecture / ...)
+    - navigation.sections       # render nested sections in sidebar
+    - navigation.indexes         # section index pages
+    - navigation.top            # back-to-top button
+    - search.suggest             # show suggestions while typing
+    - search.highlight           # highlight matches
+    - search.share               # share search query via URL
+    - content.code.copy         # one-click copy on code blocks
+    - content.code.annotate     # annotate code blocks (e.g. highlight lines)
+    - content.tabs.link         # synced tabs across the whole site
+    - toc.follow                 # scroll TOC with the page
+    - palette.toggle             # dark/light mode toggle
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+# Markdown extensions.
+markdown_extensions:
+  - admonition            # !!! note, !!! warning, etc.
+  - attr_list             # {: .key } class on lists
+  - def_list              # term / definition lists
+  - footnotes             # [^1] footnotes
+  - md_in_html            # markdown inside raw HTML (for mermaid divs)
+  - tables                # GitHub-style tables
+  - toc:
+      permalink: true     # anchor links on headings
+  - pymdownx.highlight:    # code highlighting + line numbers
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences:  # nested fenced code blocks
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:       # content tabs (e.g. switch between curl / httpie examples)
+      alternate_style: true
+  - pymdownx.tasklist:     # GitHub-style task lists
+      custom_checkbox: true
+
+# Plugins.
+plugins:
+  - search                  # full-text search (built-in)
+  - awesome-pages           # optional: pretty section index pages
+  - git-committers:         # optional: enrich git history metadata
+      enabled: !ENV [CI]
+  - git-revision-date-localized:  # show "last updated" timestamps
+      enabled: !ENV [CI]
+      type: date
+      fallback_to_build_date: true
+      strict: false
+
+# Navigation structure.
+nav:
+  - Home: index.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - C4 Diagrams: architecture/c4-diagrams.md
+      - Sequence Flows: architecture/sequences.md
+      - Domain Glossary: domain/glossary.md
+  - Architecture Decision Records:
+      - Overview: adr/index.md
+      - ADR-0001: Go as backend: adr/0001-go-as-backend-language.md
+      - ADR-0002: sqlc over ORM: adr/0002-sqlc-over-orm.md
+      - ADR-0003: Double-entry ledger: adr/0003-double-entry-ledger.md
+      - ADR-0004: Locking strategy: adr/0004-locking-strategy.md
+      - ADR-0005: Multi-currency strategy: adr/0005-multi-currency-strategy.md
+  - API Reference:
+      - Overview: api/overview.md
+      - Authentication: api/auth.md
+      - Transfers: api/transfers.md
+      - Invoices: api/invoices.md
+      - Periods: api/periods.md
+      - Reconciler: api/reconciler.md
+      - Collection Routes: api/collection.md
+      - Currencies & FX: api/currencies.md
+      - Audit Log: api/audit.md
+  - Runbooks:
+      - Integration Tests: runbooks/integration-tests.md
+      - Backup & Restore: runbooks/backup-restore.md
+      - Secret Rotation: runbooks/secret-rotation.md
+      - Observability: runbooks/observability.md
+      - Incident Response: runbooks/incident-response.md
+  - Sprint Log:
+      - Overview: SPRINTS.md
+  - Interview Prep:
+      - Q&A Index: interview/index.md
+      - Fintech: interview/q-fintech.md
+      - Distributed Systems: interview/q-distributed-systems.md
+      - Security: interview/q-security.md
+      - Demo Script: interview/demo-script.md
+  - Load Testing:
+      - Transfer Endpoint: load-test/transfer.md
+
+# Build settings.
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+
+# Don't include these in build.
+exclude_docs: |
+  SPRINTS.md.bak
+  adr/*.tmp
+  diagrams/.gitkeep
