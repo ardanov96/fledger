@@ -373,7 +373,8 @@ func buildRouter(
 		r.Group(func(r chi.Router) {
 		// Sprint 14 follow-up: multi-tier rate limit (per-IP + per-user + per-tenant)
 			// Applied AFTER auth so we have Principal for user/tenant tiers.
-			r.Use(middleware.MultiTierMiddleware(globalLimiter, nil))
+			multiTierMetrics := middleware.NewMultiTierLimiterMetrics()
+			r.Use(middleware.MultiTierMiddleware(globalLimiter, multiTierMetrics))
 			r.Use(middleware.RequireAuth(verifier))
 			// Sprint 15: extract Principal → typed *tenantctx.Info in request context.
 			// Each use case tx closure will pick this up and call
@@ -571,3 +572,4 @@ func (a *invoiceTxAdapter) ExecuteTx(ctx context.Context, fn func(invoice.Tx) er
 
 // suppress unused warning if collection import is removed.
 var _ = collection.SettlementPending
+
