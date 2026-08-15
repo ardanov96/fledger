@@ -125,6 +125,8 @@ nav:
       - Incident Response: runbooks/incident-response.md
   - Sprint Log:
       - Overview: SPRINTS.md
+  - Web Dashboard:
+      - Overview: ../web/README.md
   - Interview Prep:
       - Q&A Index: interview/index.md
       - Fintech: interview/q-fintech.md

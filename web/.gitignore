@@ -1,0 +1,46 @@
+# web/.gitignore
+# Node.js specific (none of these should be committed for our minimal SPA)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json   # we don't have deps, no need to lock
+yarn.lock
+
+# Runtime
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts (currently no build, but future-proof)
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+
+# Local testing artifacts
+*.log.test
+test-results/
+playwright-report/
