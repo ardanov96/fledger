@@ -217,7 +217,10 @@ func run() error {
 	}
 
 	auditRepo := postgres.NewAuditRepository(db)
-	auditHandlers := &handler.AuditHandlers{Repo: auditRepo}
+	auditHandlers := &handler.AuditHandlers{
+		Repo:    auditRepo,
+		GUCRepo: newAuditGUCAdapter(auditRepo), // Sprint 23 / 22B.5 — type-bridge to handler
+	}
 
 	// Sprint 14 follow-up: multi-tier rate limiter for /v1/* (per-IP + per-user + per-tenant).
 	// Enable via RATE_LIMIT_GLOBAL_ENABLED=true. Independent from /auth/login limiter.
@@ -461,8 +464,13 @@ func buildRouter(
 			}
 		})
 
+		// Sprint 23 / 22B.5: GUC bind audit endpoint for forensic investigation.
+		// Mounted OUTSIDE the auth group because audit access is gated by
+		// RequirePermission (which already calls AuthMiddleware internally).
 		r.With(middleware.RequirePermission(verifier, rbacEnforcer,
 			rbac.ActionRead, rbac.ObjectAuditLog)).Get("/audit", auditHandlers.ListAudit)
+		r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+			rbac.ActionRead, rbac.ObjectAuditLog)).Get("/audit/guc-binds", auditHandlers.ListGUCBinds)
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {

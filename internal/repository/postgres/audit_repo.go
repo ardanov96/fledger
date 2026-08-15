@@ -26,6 +26,87 @@ func NewAuditRepository(db *DB) *AuditRepository {
 // Compile-time interface check.
 var _ audit.Repository = (*AuditRepository)(nil)
 
+// Compile-time check: implements handler.AuditRepositoryExtension (Sprint 23/22B.5).
+// Defined inline here so the repo file does not import the handler package
+// (avoids import cycle: handler imports repo indirectly via cmd/api).
+var _ AuditRepoExtension = (*AuditRepository)(nil)
+
+// AuditRepoExtension is a duplicate of handler.AuditRepositoryExtension so
+// we can satisfy it without an import cycle. Both interfaces have
+// identical shape (duck-typed by compile-time check above).
+type AuditRepoExtension interface {
+	ListGUCBinds(ctx context.Context, tenantID, sinceRFC3339 string, limit int) ([]GUCBindRow, error)
+}
+
+// GUCBindRow mirrors a row of guc_bind_audit (migration 000017).
+type GUCBindRow struct {
+	ID         int64
+	TenantID   string
+	UserID     string
+	IsSalesRep bool
+	RequestID  string
+	BoundAt    time.Time
+}
+
+// ListGUCBinds returns recent GUC bind events for a tenant (Sprint 23 / 22B.5).
+//
+// tenantID: required (caller should derive from JWT Principal — never from client).
+// sinceRFC3339: optional RFC3339 timestamp; empty means "all history".
+// limit: clamped to [1, 500].
+//
+// RLS note: the table has a tenant-scoped policy + app_admin bypass (migration 000017).
+// If the calling role is `fmcg`, RLS automatically filters by tenant_id set via
+// the GUC variables bound by tenantctx.SetTenantContext at the start of the tx.
+func (r *AuditRepository) ListGUCBinds(ctx context.Context, tenantID, sinceRFC3339 string, limit int) ([]GUCBindRow, error) {
+	if tenantID == "" {
+		return nil, fmt.Errorf("list guc binds: tenant_id required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	// The query uses tenant_id directly rather than the GUC vars because
+	// tenantctx info isn't always set in this read path (audit endpoint runs
+	// outside of any business tx). The authoriser (RBAC) has already gated
+	// that the caller has audit_log read on this tenant, so we trust the
+	// caller-supplied tenantID here.
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if sinceRFC3339 != "" {
+		rows, err = r.db.Pool.Query(ctx, `
+			SELECT id, tenant_id, user_id, is_sales_rep, COALESCE(request_id, ''), bound_at
+			FROM guc_bind_audit
+			WHERE tenant_id = $1 AND bound_at >= $2::timestamptz
+			ORDER BY bound_at DESC
+			LIMIT $3
+		`, tenantID, sinceRFC3339, limit)
+	} else {
+		rows, err = r.db.Pool.Query(ctx, `
+			SELECT id, tenant_id, user_id, is_sales_rep, COALESCE(request_id, ''), bound_at
+			FROM guc_bind_audit
+			WHERE tenant_id = $1
+			ORDER BY bound_at DESC
+			LIMIT $2
+		`, tenantID, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list guc binds: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]GUCBindRow, 0, limit)
+	for rows.Next() {
+		var row GUCBindRow
+		if err := rows.Scan(&row.ID, &row.TenantID, &row.UserID, &row.IsSalesRep, &row.RequestID, &row.BoundAt); err != nil {
+			return nil, fmt.Errorf("scan guc bind row: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // auditEntryRow mirrors the audit_logs table row.
 type auditEntryRow struct {
 	ID           uuid.UUID
