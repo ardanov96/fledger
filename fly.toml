@@ -1,0 +1,155 @@
+# =============================================================================
+# Fly.io Configuration — FMCG Wallet Demo
+# =============================================================================
+#
+# Purpose: Single-app deployment for interview/portfolio demo.
+# Region: Singapore (sin) — closest to Indonesia, low latency for local users.
+# Cost target: $0/month (strict free tier compliance).
+#
+# FREE TIER LIMITS (DO NOT EXCEED):
+#   - Up to 3 shared-cpu-1x VMs (256MB RAM each)
+#   - Up to 3GB persistent volume storage
+#   - 100GB outbound data transfer per month
+#   - Unlimited IPv6, free Let's Encrypt certs
+#
+# WHAT THIS CONFIG USES:
+#   - 1 shared-cpu-1x VM with 512MB RAM (still within free tier memory allowance)
+#   - 1GB persistent volume for Postgres data
+#   - Single region, no horizontal scaling
+#   - Auto-stop machines=false (keeps demo URL always-on, no cold start for interviewers)
+#
+# PRODUCTION NOTE:
+#   For real production, split into 2 separate Fly apps:
+#     - fmcg-wallet-api (this config)
+#     - fmcg-wallet-db (separate VM with Postgres only, daily backups)
+#   This single-app config is for DEMO ONLY (single point of failure acceptable).
+# =============================================================================
+
+app = "fmcg-wallet-demo"
+primary_region = "sin"
+kill_signal = "SIGINT"
+kill_timeout = "30s"
+
+# ---------------------------------------------------------------------------
+# Build Configuration
+# ---------------------------------------------------------------------------
+[build]
+  dockerfile = "Dockerfile.fly"
+
+# ---------------------------------------------------------------------------
+# VM Configuration (FREE TIER — DO NOT CHANGE WITHOUT VERIFYING FREE TIER LIMITS)
+# ---------------------------------------------------------------------------
+[vm]
+  size = "shared-cpu-1x"   # Free tier; DO NOT use "performance-1x" or larger
+  memory = "512mb"         # Within free tier memory allowance (256MB-512MB free)
+  cpu_kind = "shared"      # Free tier; "dedicated" costs money
+
+# ---------------------------------------------------------------------------
+# HTTP Service Configuration
+# ---------------------------------------------------------------------------
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false   # Keep demo URL always-warm (no cold start)
+  auto_start_machines = true
+  min_machines_running = 1      # Always-on for demo (1 machine = free)
+  # max_machines_running = 1   # Implicit: don't scale horizontally
+
+  # Health check via /healthz endpoint
+  [http_service.checks]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"      # Allow migrations to run on first boot
+    method = "GET"
+    path = "/healthz"
+
+  # Concurrency limit per machine (prevents OOM)
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 100
+    soft_limit = 80
+
+# ---------------------------------------------------------------------------
+# Persistent Volume (Postgres data)
+# ---------------------------------------------------------------------------
+# Created via: fly volumes create pg_data --size 1 --region sin
+[[mounts]]
+  source = "pg_data"
+  destination = "/var/lib/postgresql/data"
+
+# ---------------------------------------------------------------------------
+# Environment Variables (non-secret)
+# ---------------------------------------------------------------------------
+[env]
+  APP_NAME = "fmcg-wallet"
+  APP_ENV = "production"
+  APP_PORT = "8080"
+  APP_LOG_LEVEL = "info"
+  APP_LOG_FORMAT = "json"
+  APP_TZ = "Asia/Jakarta"
+
+  # Database — Postgres runs on same machine (demo only)
+  DB_HOST = "127.0.0.1"
+  DB_PORT = "5432"
+  DB_NAME = "fmcg_wallet"
+  DB_USER = "fmcg"
+  DB_SSLMODE = "disable"
+  DB_MAX_CONNS = "10"        # Conservative for 512MB RAM
+  DB_MIN_CONNS = "1"
+  DB_STATEMENT_TIMEOUT = "10s"
+
+  # Auth
+  JWT_ACCESS_TTL = "15m"
+  JWT_REFRESH_TTL = "168h"
+  JWT_ISSUER = "fmcg-wallet"
+  JWT_AUDIENCE = "fmcg-wallet-api"
+  BCRYPT_COST = "10"         # Lower than prod (12) for demo perf
+
+  # CORS
+  WEB_ORIGIN = "*"           # Permissive for demo; restrict in production
+
+  # Observability
+  METRICS_ENABLED = "true"
+  METRICS_PATH = "/metrics"
+
+  # Demo mode flag — enables demo data check + welcome banner
+  DEMO_MODE = "true"
+
+# ---------------------------------------------------------------------------
+# Secrets (set via `fly secrets set`, NOT in this file)
+# ---------------------------------------------------------------------------
+# JWT_SECRET — generate via: openssl rand -hex 32
+# DB_PASSWORD — auto-generated during first deploy
+
+# ---------------------------------------------------------------------------
+# Deploy Strategy
+# ---------------------------------------------------------------------------
+[deploy]
+  strategy = "rolling"        # Zero-downtime deploys (single machine means brief restart)
+  release_command = "echo 'Release deployed at $(date)'"
+  # Note: Migrations run inside container via Dockerfile.fly entrypoint,
+  # NOT via release_command (release_command runs in ephemeral VM context).
+
+# ---------------------------------------------------------------------------
+# Health Check Override (alternative to http_service.checks)
+# ---------------------------------------------------------------------------
+# [checks]
+#   [checks.healthz]
+#     port = 8080
+#     type = "http"
+#     interval = "30s"
+#     timeout = "5s"
+#     path = "/healthz"
+
+# ---------------------------------------------------------------------------
+# Metrics (Fly.io built-in)
+# ---------------------------------------------------------------------------
+[metrics]
+  port = 8080
+  path = "/metrics"
+
+# ---------------------------------------------------------------------------
+# Experimental: Auto-suspend (DISABLED for demo — keeps URL always-warm)
+# ---------------------------------------------------------------------------
+# [experimental]
+#   auto_rollback = true

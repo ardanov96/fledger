@@ -117,6 +117,8 @@ nav:
       - Audit Log: api/audit.md
   - Runbooks:
       - Integration Tests: runbooks/integration-tests.md
+      - Load Testing: runbooks/load-test.md
+      - Deployment (Fly.io): runbooks/deployment-fly.md
       - Backup & Restore: runbooks/backup-restore.md
       - Secret Rotation: runbooks/secret-rotation.md
       - Observability: runbooks/observability.md

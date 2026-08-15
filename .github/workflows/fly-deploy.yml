@@ -1,0 +1,152 @@
+# =============================================================================
+# GitHub Actions: Auto-deploy to Fly.io on push to main
+# =============================================================================
+#
+# Setup:
+#   1. Install flyctl locally: curl -L https://fly.io/install.sh | sh
+#   2. Get API token: fly auth token
+#   3. Add to GitHub repo secrets: Settings > Secrets > New repository secret
+#      Name: FLY_API_TOKEN
+#      Value: <paste token>
+#
+# Behavior:
+#   - On push to main → auto-deploy to Fly.io
+#   - On PR → build only (no deploy)
+#   - Uses Dockerfile.fly (separate from production Dockerfile)
+#
+# Cost: $0/month (free tier, see fly.toml for constraints)
+# =============================================================================
+
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'migrations/**'
+      - 'deployments/fly/**'
+      - 'Dockerfile.fly'
+      - 'fly.toml'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/fly-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'migrations/**'
+      - 'deployments/fly/**'
+      - 'Dockerfile.fly'
+      - 'fly.toml'
+      - 'go.mod'
+      - 'go.sum'
+
+# Cancel in-progress deploys on new push to main
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build (PR only — verify build succeeds before merge)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Verify fly.toml
+        run: flyctl config validate --config fly.toml
+
+      - name: Verify Dockerfile.fly syntax
+        run: |
+          # Extract first FROM line and base image to verify syntax
+          head -5 Dockerfile.fly
+          # Check for required COPY commands
+          grep -q "COPY deployments/fly/entrypoint.sh" Dockerfile.fly || (echo "Missing entrypoint.sh COPY" && exit 1)
+          grep -q "COPY deployments/fly/supervisord.conf" Dockerfile.fly || (echo "Missing supervisord.conf COPY" && exit 1)
+
+  # ---------------------------------------------------------------------------
+  # Deploy (main only)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://fmcg-wallet-demo.fly.dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        id: deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy \
+            --config fly.toml \
+            --strategy rolling \
+            --wait-timeout 300
+        timeout-minutes: 10
+
+      - name: Verify deployment
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Wait for health check
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -sf https://fmcg-wallet-demo.fly.dev/healthz >/dev/null 2>&1; then
+              echo "✅ Health check passed"
+              curl -s https://fmcg-wallet-demo.fly.dev/healthz
+              exit 0
+            fi
+            echo "Waiting for health check ($i/10)..."
+            sleep 5
+          done
+          echo "❌ Health check failed"
+          flyctl logs --app fmcg-wallet-demo
+          exit 1
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### ✅ Deployed to Fly.io" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: https://fmcg-wallet-demo.fly.dev" >> "$GITHUB_STEP_SUMMARY"
+          echo "Health: https://fmcg-wallet-demo.fly.dev/healthz" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Demo credentials:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- admin@demo.fmcg-wallet / demo123 (hq_admin)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- sales@demo.fmcg-wallet / demo123 (sales_rep)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GITHUB_STEP_SUMMARY: ${{ env.GITHUB_STEP_SUMMARY }}
+
+      - name: Deploy failed
+        if: failure()
+        run: |
+          echo "### ❌ Deploy failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check logs: \`fly logs --app fmcg-wallet-demo\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check status: \`fly status --app fmcg-wallet-demo\`" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GITHUB_STEP_SUMMARY: ${{ env.GITHUB_STEP_SUMMARY }}

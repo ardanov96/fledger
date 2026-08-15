@@ -1,0 +1,100 @@
+# =============================================================================
+# FMCG Wallet — Fly.io Multi-Process Dockerfile
+# =============================================================================
+#
+# Builds on existing Dockerfile, adds:
+#   - PostgreSQL 16 binary (for single-machine demo deployment)
+#   - supervisor (process manager — postgres + migrator + api in 1 container)
+#   - entrypoint.sh that runs migrations before starting supervisor
+#
+# Usage:
+#   docker build -f Dockerfile.fly -t fmcg-wallet-fly .
+#   docker run -p 8080:8080 fmcg-wallet-fly
+#
+# For Fly.io deployment, see scripts/fly-deploy.sh and fly.toml.
+#
+# PRODUCTION NOTE:
+#   This Dockerfile is optimized for Fly.io DEMO deployment (single VM,
+#   multi-process, free tier). For production, split into separate services:
+#     - API service (this Dockerfile minus Postgres)
+#     - Managed Postgres (Fly Postgres, AWS RDS, etc.)
+# =============================================================================
+
+# --- Stage 1: Build ---
+FROM golang:1.23-alpine AS builder
+
+# Build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# Build all binaries (api + worker + migrator) — same as production Dockerfile
+ARG VERSION=dev
+ARG BUILD_TIME
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
+    -o /out/api ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
+    -o /out/worker ./cmd/worker && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+    -ldflags="-s -w" \
+    -o /out/migrator ./cmd/migrator
+
+# --- Stage 2: Runtime (Alpine + Postgres + supervisor) ---
+FROM alpine:3.20
+
+# Install runtime dependencies:
+#   - postgresql16 + postgresql16-contrib: server + extensions (uuid-ossp, etc.)
+#   - supervisor: process manager for multi-process container
+#   - bash: for entrypoint script
+#   - ca-certificates, tzdata: SSL certs + timezone
+RUN apk add --no-cache \
+    bash \
+    ca-certificates \
+    postgresql16 \
+    postgresql16-contrib \
+    supervisor \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+
+# Prepare directories
+RUN mkdir -p /app /var/lib/postgresql/data /var/run/postgresql /var/log/supervisor \
+    && chown -R postgres:postgres /var/lib/postgresql /var/run/postgresql
+
+# Set timezone (override with TZ env)
+ENV TZ=UTC
+
+# Copy binaries from builder
+COPY --from=builder /out/api /app/api
+COPY --from=builder /out/worker /app/worker
+COPY --from=builder /out/migrator /app/migrator
+
+# Copy entrypoint + supervisor + postgres init scripts
+COPY deployments/fly/entrypoint.sh /app/entrypoint.sh
+COPY deployments/fly/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY deployments/fly/initdb.sql /docker-entrypoint-initdb.d/initdb.sql
+
+# Make scripts executable
+RUN chmod +x /app/entrypoint.sh
+
+WORKDIR /app
+
+# Expose ports:
+#   8080 — API (public via Fly http_service)
+#   5432 — Postgres (internal only, same machine)
+EXPOSE 8080 5432
+
+# Health check (Fly.io uses this via http_service.checks)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -qO- http://localhost:8080/healthz || exit 1
+
+# Entrypoint: init postgres (if first boot), run migrations, start supervisord
+ENTRYPOINT ["/app/entrypoint.sh"]

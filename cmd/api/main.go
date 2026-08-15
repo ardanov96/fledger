@@ -427,6 +427,7 @@ func structuredLogger(log *slog.Logger) func(http.Handler) http.Handler {
 				"bytes", ww.BytesWritten(),
 				"duration_ms", time.Since(start).Milliseconds(),
 				"request_id", httpx.GetRequestID(r.Context()),
+				"trace_id", middleware.TraceIDFromContext(r.Context()),
 				"remote_addr", r.RemoteAddr,
 			)
 		})
