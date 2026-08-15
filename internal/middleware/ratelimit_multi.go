@@ -27,6 +27,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -259,7 +260,6 @@ func MetricsMiddleware(metrics *MultiTierLimiterMetrics) func(http.Handler) http
 			if r.URL.Path == "/internal/ratelimit-metrics" && metrics != nil {
 				w.Header().Set("Content-Type", "application/json")
 				snap := metrics.Snapshot()
-				// simple JSON serialization
 				_, _ = w.Write([]byte(formatMetricsJSON(snap)))
 				return
 			}
@@ -280,25 +280,10 @@ func formatMetricsJSON(m map[string]uint64) string {
 		sb.WriteString(`"`)
 		sb.WriteString(k)
 		sb.WriteString(`":`)
-		// manual int formatting (avoid strconv import in hot path)
-		sb.WriteString(itoa(v))
+		sb.WriteString(strconv.FormatUint(v, 10))
 	}
 	sb.WriteString("}")
 	return sb.String()
-}
-
-func itoa(v uint64) string {
-	if v == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for v > 0 {
-		i--
-		buf[i] = byte('0' + v%10)
-		v /= 10
-	}
-	return string(buf[i:])
 }
 
 // Keep time import used even if unused in some refactors
