@@ -169,6 +169,7 @@ var (
 	LoginFailureMFAFailed          = LoginAttemptFailureReason("mfa_failed")
 	LoginFailureAccountLocked      = LoginAttemptFailureReason("account_locked")
 	LoginFailureRateLimited        = LoginAttemptFailureReason("rate_limited")
+	LoginFailurePolicyViolation    = LoginAttemptFailureReason("password_policy_violation") // Sprint 23 / 22B.4
 )
 
 // LoginAttempt records one login attempt (success or failure).

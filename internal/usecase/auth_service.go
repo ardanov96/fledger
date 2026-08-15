@@ -27,6 +27,7 @@ import (
 
 	"github.com/runut/fmcg-wallet/internal/auth/jwt"
 	"github.com/runut/fmcg-wallet/internal/domain/auth"
+	platformauth "github.com/runut/fmcg-wallet/internal/platform/auth"
 )
 
 // =============================================================================
@@ -76,6 +77,11 @@ type AuthConfig struct {
 	MFASessionTTL     time.Duration // default 5 min (challenge token lifetime)
 	LockoutThreshold  int           // default 5 failed attempts
 	LockoutDuration   time.Duration // default 15 min
+	// PasswordPolicy is enforced on Login (Sprint 23 / 22B.4). The empty
+	// value falls back to platformauth.DefaultPasswordPolicy() — supply one
+	// to override (e.g. legacy demo data with weak passwords bypass via
+	// production: skip policy by setting MinLength: 1).
+	PasswordPolicy platformauth.PasswordPolicy
 }
 
 // DefaultAuthConfig returns sensible defaults.
@@ -86,6 +92,7 @@ func DefaultAuthConfig() AuthConfig {
 		MFASessionTTL:    5 * time.Minute,
 		LockoutThreshold: 5,
 		LockoutDuration:  15 * time.Minute,
+		PasswordPolicy:   platformauth.DefaultPasswordPolicy(),
 	}
 }
 
@@ -229,6 +236,20 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginResult, e
 			return nil, auth.ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("login: lookup credentials: %w", err)
+	}
+
+	// Sprint 23 (22B.4): enforce password policy BEFORE bcrypt to prevent
+	// an attacker from probing weak passwords against the bcrypt timing
+	// oracle (success/failure latency differs by ~250ms). The check is
+	// only meaningful if the password satisfies the policy.
+	//
+	// Trade-off: this exposes the policy as a separate error path before
+	// the user is identified. We treat it as "weak password supplied"
+	// rather than leaking policy details — see Validate() for the
+	// deliberate "missing required character class" generic message.
+	if err := s.cfg.PasswordPolicy.Validate(in.Password); err != nil {
+		_ = s.recordAttempt(ctx, in.TenantID, &creds.UserID, in.Username, false, &auth.LoginFailurePolicyViolation, in.IPAddress, in.UserAgent)
+		return nil, err
 	}
 
 	// Lockout check.

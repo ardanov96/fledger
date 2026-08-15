@@ -105,6 +105,9 @@ nav:
       - ADR-0003: Double-entry ledger: adr/0003-double-entry-ledger.md
       - ADR-0004: Locking strategy: adr/0004-locking-strategy.md
       - ADR-0005: Multi-currency strategy: adr/0005-multi-currency-strategy.md
+      - ADR-0006: Tenant RLS strategy: adr/0006-tenant-rls-strategy.md
+      - ADR-0007: app_admin role for RLS bypass: adr/0007-app-admin-rls-bypass.md
+      - ADR-0008: Sprint 22B hardening roadmap: adr/0008-sprint-22b-hardening-roadmap.md
   - API Reference:
       - Overview: api/overview.md
       - Authentication: api/auth.md

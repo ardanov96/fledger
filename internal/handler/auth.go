@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
+	platformauth "github.com/runut/fmcg-wallet/internal/platform/auth"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 	"github.com/runut/fmcg-wallet/internal/domain/auth"
 	"github.com/runut/fmcg-wallet/internal/usecase"
@@ -306,6 +307,11 @@ func mapAuthErr(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.Error(w, r, apperrors.New("REFRESH_TOKEN_REVOKED", "refresh token revoked", http.StatusUnauthorized))
 	case errors.Is(err, auth.ErrRefreshTokenReuse):
 		httpx.Error(w, r, apperrors.New("REFRESH_TOKEN_REUSE", "refresh token reuse detected — all sessions revoked", http.StatusUnauthorized))
+	case errors.Is(err, platformauth.ErrPasswordPolicyFail):
+		// Sprint 23 / 22B.4: weak password rejected before bcrypt verify.
+		// Do not echo which check failed (don't leak policy details);
+		// surface as 422 with a generic message + audit row already recorded.
+		httpx.Error(w, r, apperrors.New("PASSWORD_POLICY", "password does not meet security requirements", http.StatusUnprocessableEntity))
 	default:
 		httpx.Error(w, r, err)
 	}
