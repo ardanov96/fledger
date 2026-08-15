@@ -219,7 +219,17 @@ func run() error {
 	auditRepo := postgres.NewAuditRepository(db)
 	auditHandlers := &handler.AuditHandlers{Repo: auditRepo}
 
-	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter)
+	// Sprint 14 follow-up: multi-tier rate limiter for /v1/* (per-IP + per-user + per-tenant).
+	// Enable via RATE_LIMIT_GLOBAL_ENABLED=true. Independent from /auth/login limiter.
+	var globalLimiter *middleware.MultiTierLimiter
+	var transferLimiter *middleware.MultiTierLimiter
+	if os.Getenv("RATE_LIMIT_GLOBAL_ENABLED") == "true" {
+		globalLimiter = middleware.NewGlobalLimiter()
+		transferLimiter = middleware.NewTransferLimiter()
+		log.Info("multi-tier rate limiters enabled (global + transfer)")
+	}
+
+	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter, globalLimiter, transferLimiter)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
@@ -278,6 +288,8 @@ func buildRouter(
 	auditHandlers *handler.AuditHandlers,
 	verifier jwt.Verifier, rbacEnforcer *rbac.Enforcer,
 	authLimiter *middleware.RateLimiter,
+	globalLimiter *middleware.MultiTierLimiter,
+	transferLimiter *middleware.MultiTierLimiter,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -317,6 +329,9 @@ func buildRouter(
 		}
 
 		r.Group(func(r chi.Router) {
+			// Sprint 14 follow-up: multi-tier rate limit (per-IP + per-user + per-tenant)
+			// Applied AFTER auth so we have Principal for user/tenant tiers.
+			r.Use(middleware.MultiTierMiddleware(globalLimiter))
 			r.Use(middleware.RequireAuth(verifier))
 			// Sprint 15: extract Principal → typed *tenantctx.Info in request context.
 			// Each use case tx closure will pick this up and call
