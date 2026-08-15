@@ -3,9 +3,9 @@
 // Extends the single-tier `RateLimiter` (Sprint 14) with a chained
 // multi-tier limiter that applies 3 independent buckets in sequence:
 //
-//   1. Per-IP     (defends against anonymous flooding)
-//   2. Per-user   (defends against authenticated abuse; bypassed if no JWT)
-//   3. Per-tenant (defends against one tenant exhausting shared resources)
+//  1. Per-IP     (defends against anonymous flooding)
+//  2. Per-user   (defends against authenticated abuse; bypassed if no JWT)
+//  3. Per-tenant (defends against one tenant exhausting shared resources)
 //
 // All 3 buckets are in-memory token-bucket implementations. For
 // multi-instance deployments replace with a Redis-backed store that shares
@@ -18,6 +18,11 @@
 //	RATE_LIMIT_GLOBAL_RPS          - sustained refill rate (default 50)
 //	RATE_LIMIT_TRANSFER_BURST      - extra-tight burst for /v1/transfers (default 30)
 //	RATE_LIMIT_TRANSFER_RPS        - sustained rps for transfers (default 10)
+//
+// Sprint 22B.1: per-tier allowed/rejected counts are exposed at /metrics via
+// the Prometheus counters fmcg_ratelimit_allowed_total and
+// fmcg_ratelimit_rejected_total (see prom.go). Backwards-compatible: callers
+// that pass nil for the MultiTierLimiterMetrics argument continue to work.
 package middleware
 
 import (
@@ -68,7 +73,14 @@ func (m *MultiTierLimiter) Allow(r *http.Request) (allowed bool, rejectedBy stri
 }
 
 // MultiTierMiddleware wraps a MultiTierLimiter into an HTTP middleware.
-// If metrics is non-nil, per-tier allowed/rejected counts are recorded.
+//
+// Observability (Sprint 22B.1): the Prometheus counters in prom.go are
+// incremented alongside the in-memory MultiTierLimiterMetrics struct, so
+// operators can scrape /metrics and dashboards alert on rejection rate per
+// tier (ip / user / tenant). Per-tier counters fire only on the tier that
+// triggered the decision (reject: the rejecting tier; allow: the lowest-tier
+// that was actually evaluated — useful for distinguishing "anonymous user
+// allowed by IP" from "authenticated user allowed by tenant").
 func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +90,7 @@ func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) 
 			}
 			allowed, tierName := m.Allow(r)
 			if !allowed {
+				IncRatelimitRejected(tierName)
 				if metrics != nil {
 					metrics.RecordRejected(tierName)
 				}
@@ -86,6 +99,7 @@ func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) 
 				httpx.Error(w, r, apperrors.ErrTooManyRequests)
 				return
 			}
+			IncRatelimitAllowed(tierName)
 			if metrics != nil {
 				metrics.RecordAllowed(tierName)
 			}
@@ -189,9 +203,11 @@ func NewGlobalLimiterWithConfig(ipBurst, ipRps, tenantBurst, tenantRps float64) 
 	)
 }
 
-// ----- Per-tier metrics -----
+// ----- Per-tier metrics (legacy in-memory; Sprint 22B.1 adds Prometheus) -----
 
 // MultiTierLimiterMetrics provides per-tier counters for observability.
+// Kept for backwards compatibility with the /internal/ratelimit-metrics
+// JSON endpoint. Prometheus is the primary export path now (see prom.go).
 type MultiTierLimiterMetrics struct {
 	mu sync.Mutex
 
