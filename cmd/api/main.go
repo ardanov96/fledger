@@ -224,9 +224,51 @@ func run() error {
 	var globalLimiter *middleware.MultiTierLimiter
 	var transferLimiter *middleware.MultiTierLimiter
 	if os.Getenv("RATE_LIMIT_GLOBAL_ENABLED") == "true" {
-		globalLimiter = middleware.NewGlobalLimiter()
-		transferLimiter = middleware.NewTransferLimiter()
-		log.Info("multi-tier rate limiters enabled (global + transfer)")
+		// Read configurable burst/rps from env (with defaults matching NewGlobalLimiter/NewTransferLimiter presets)
+		gBurst := 100.0
+		gRps := 50.0
+		gTenantBurst := 1000.0
+		gTenantRps := 500.0
+		if v := os.Getenv("RATELIMIT_GLOBAL_BURST"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				gBurst = f
+			}
+		}
+		if v := os.Getenv("RATELIMIT_GLOBAL_RPS"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				gRps = f
+			}
+		}
+		if v := os.Getenv("RATELIMIT_GLOBAL_TENANT_BURST"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				gTenantBurst = f
+			}
+		}
+		if v := os.Getenv("RATELIMIT_GLOBAL_TENANT_RPS"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				gTenantRps = f
+			}
+		}
+		globalLimiter = middleware.NewGlobalLimiterWithConfig(gBurst, gRps, gTenantBurst, gTenantRps)
+		log.Info("global rate limiter enabled", "ip_burst", gBurst, "ip_rps", gRps, "tenant_burst", gTenantBurst, "tenant_rps", gTenantRps)
+
+		// Per-endpoint transfer limiter (tighter than global for writes)
+		tBurst := 30.0
+		tRps := 10.0
+		tTenantBurst := 300.0
+		tTenantRps := 100.0
+		if v := os.Getenv("RATELIMIT_TRANSFER_BURST"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				tBurst = f
+			}
+		}
+		if v := os.Getenv("RATELIMIT_TRANSFER_RPS"); v != "" {
+			if f, err := parseFloat(v); err == nil {
+				tRps = f
+			}
+		}
+		transferLimiter = middleware.NewTransferLimiterWithConfig(tBurst, tRps, tTenantBurst, tTenantRps)
+		log.Info("transfer rate limiter enabled", "user_burst", tBurst, "user_rps", tRps, "tenant_burst", tTenantBurst, "tenant_rps", tTenantRps)
 	}
 
 	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter, globalLimiter, transferLimiter)
@@ -329,9 +371,9 @@ func buildRouter(
 		}
 
 		r.Group(func(r chi.Router) {
-			// Sprint 14 follow-up: multi-tier rate limit (per-IP + per-user + per-tenant)
+		// Sprint 14 follow-up: multi-tier rate limit (per-IP + per-user + per-tenant)
 			// Applied AFTER auth so we have Principal for user/tenant tiers.
-			r.Use(middleware.MultiTierMiddleware(globalLimiter))
+			r.Use(middleware.MultiTierMiddleware(globalLimiter, nil))
 			r.Use(middleware.RequireAuth(verifier))
 			// Sprint 15: extract Principal → typed *tenantctx.Info in request context.
 			// Each use case tx closure will pick this up and call

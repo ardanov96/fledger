@@ -68,7 +68,8 @@ func (m *MultiTierLimiter) Allow(r *http.Request) (allowed bool, rejectedBy stri
 }
 
 // MultiTierMiddleware wraps a MultiTierLimiter into an HTTP middleware.
-func MultiTierMiddleware(m *MultiTierLimiter) func(http.Handler) http.Handler {
+// If metrics is non-nil, per-tier allowed/rejected counts are recorded.
+func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if m == nil {
@@ -77,10 +78,16 @@ func MultiTierMiddleware(m *MultiTierLimiter) func(http.Handler) http.Handler {
 			}
 			allowed, tierName := m.Allow(r)
 			if !allowed {
+				if metrics != nil {
+					metrics.RecordRejected(tierName)
+				}
 				w.Header().Set("Retry-After", "1")
 				w.Header().Set("X-RateLimit-Rejected-By", tierName)
 				httpx.Error(w, r, apperrors.ErrTooManyRequests)
 				return
+			}
+			if metrics != nil {
+				metrics.RecordAllowed(tierName)
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -147,9 +154,14 @@ func KeyByPath(r *http.Request) string {
 //   - Per-user: 30 burst, 10 rps (authenticated tighter cap)
 //   - Per-tenant: 300 burst, 100 rps (shared pool, prevents one tenant dominating)
 func NewTransferLimiter() *MultiTierLimiter {
+	return NewTransferLimiterWithConfig(30, 10, 300, 100)
+}
+
+// NewTransferLimiterWithConfig is NewTransferLimiter with overridable per-tier params.
+func NewTransferLimiterWithConfig(userBurst, userRps, tenantBurst, tenantRps float64) *MultiTierLimiter {
 	ip := NewRateLimiter(30, 10)
-	user := NewRateLimiter(30, 10)
-	tenant := NewRateLimiter(300, 100)
+	user := NewRateLimiter(userBurst, userRps)
+	tenant := NewRateLimiter(tenantBurst, tenantRps)
 	return NewMultiTierLimiter(
 		tier{"ip", ip, KeyByIP},
 		tier{"user", user, KeyByUser},
@@ -162,9 +174,14 @@ func NewTransferLimiter() *MultiTierLimiter {
 //   - Per-user: 100 burst, 50 rps (per-user cap)
 //   - Per-tenant: 1000 burst, 500 rps (shared pool)
 func NewGlobalLimiter() *MultiTierLimiter {
-	ip := NewRateLimiter(100, 50)
-	user := NewRateLimiter(100, 50)
-	tenant := NewRateLimiter(1000, 500)
+	return NewGlobalLimiterWithConfig(100, 50, 1000, 500)
+}
+
+// NewGlobalLimiterWithConfig is NewGlobalLimiter with overridable per-tier params.
+func NewGlobalLimiterWithConfig(ipBurst, ipRps, tenantBurst, tenantRps float64) *MultiTierLimiter {
+	ip := NewRateLimiter(ipBurst, ipRps)
+	user := NewRateLimiter(ipBurst, ipRps)
+	tenant := NewRateLimiter(tenantBurst, tenantRps)
 	return NewMultiTierLimiter(
 		tier{"ip", ip, KeyByIP},
 		tier{"user", user, KeyByUser},
