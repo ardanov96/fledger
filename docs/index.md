@@ -33,8 +33,8 @@ Backend wallet untuk distributor **FMCG/F&B Indonesia** yang menghadapi masalah 
 - **Background workers** untuk aging calculation & reconciliation
 - **JWT + opaque refresh tokens** dengan reuse-detection — defense vs token theft
 - **TOTP MFA** (RFC 6238) + bcrypt + brute-force protection
-- **Postgres Row-Level Security** untuk tenant isolation
-- **Full observability stack** (Prometheus + Loki + Tempo + Grafana)
+- **Postgres Row-Level Security** untuk tenant isolation + dedicated `app_admin` role (ADR-0006/0007)
+- **Full observability stack** (Prometheus + Loki + Tempo + Grafana) dengan W3C `traceparent` propagation
 
 ---
 
@@ -51,11 +51,11 @@ Backend wallet untuk distributor **FMCG/F&B Indonesia** yang menghadapi masalah 
 | Logging | log/slog (stdlib) | Zero-dep, structured |
 | Metrics | Prometheus | Standard industri |
 | Tracing | W3C traceparent + Tempo | Vendor-neutral, lightweight |
-| Deployment | Docker distroless (~20MB) | Small image, fast cold start |
+| Deployment | Docker distroless (~20MB) + Fly.io single-VM | Small image, fast cold start |
 
 ---
 
-## ✨ Highlights (Sprint 1-18)
+## ✨ Highlights (Sprint 1-21)
 
 Production-grade backend yang sudah include:
 
@@ -64,11 +64,17 @@ Production-grade backend yang sudah include:
 - **Sprint 9**: Period close with two-step approval + snapshots
 - **Sprint 10**: Reconciler background job (trial balance + hash chain check)
 - **Sprint 11**: Collection routes (sales rep field workflow)
-- **Sprint 12**: Multi-currency dengan FX rate snapshot
+- **Sprint 12**: Multi-currency dengan FX rate snapshot per transaction
 - **Sprint 13**: Refresh token rotation + TOTP MFA + brute force protection
-- **Sprint 14**: Rate limiting (token bucket)
-- **Sprint 15**: Field-level authz + tenant RLS
-- **Sprint 18**: W3C trace propagation + k6 load test
+- **Sprint 14**: Rate limiting (per-IP token bucket for login)
+- **Sprint 14 follow-up**: Multi-tier rate limit (per-IP + per-user + per-tenant) + Prometheus metrics
+- **Sprint 15**: Field-level authz + tenant RLS (11 tables) + `app_admin` role
+- **Sprint 16**: Property-based tests (15 invariants across ledger/invoice/collection/reconciler)
+- **Sprint 17**: Integration test E2E (real Postgres, 5 scenarios: transfer/concurrent/RLS/period/tamper)
+- **Sprint 18**: W3C trace propagation + k6 load test foundation
+- **Sprint 19**: Fly.io single-VM deployment + demo data seeding
+- **Sprint 20**: Frontend Dashboard MVP (vanilla JS, 9 views, zero npm deps)
+- **Sprint 21**: Interview prep — demo script + 15 anticipated Q&A
 
 Lihat [Sprint Log](SPRINTS.md) untuk timeline lengkap.
 
@@ -123,6 +129,10 @@ make test-cover-check # enforce 80% coverage threshold
 make lint            # golangci-lint (strict)
 make security        # govulncheck + gosec
 make verify          # full check (fmt + vet + lint + test + coverage)
+
+# Integration tests (butuh Postgres + migrations applied)
+TEST_DATABASE_URL=postgres://postgres:test@localhost:5432/postgres?sslmode=disable \
+    go test -tags=integration -count=1 ./internal/usecase/...
 ```
 
 ---
@@ -137,15 +147,15 @@ make verify          # full check (fmt + vet + lint + test + coverage)
 
 -   :material-file-document-multiple: **[ADRs](adr/index.md)**
 
-    5 architectural decision records with trade-offs
+    5 architectural decision records with trade-offs (Go, sqlc, double-entry, locking, multi-currency, tenant RLS, app_admin)
 
 -   :material-api: **[API Reference](api/overview.md)**
 
     All 36+ endpoints with request/response examples
 
--   :material-run-fast: **[Runbooks](runbooks/integration-tests.md)**
+-   :material-run-fast: **[Runbooks](runbooks/observability.md)**
 
-    Production operations: backup, rotation, observability, incident
+    Production operations: backup, rotation, observability, incident, integration tests, load testing
 
 -   :material-school: **[Interview Prep](interview/index.md)**
 
@@ -159,21 +169,23 @@ make verify          # full check (fmt + vet + lint + test + coverage)
 
 ---
 
-## � Project Stats (post-Sprint 18)
+## 📊 Project Stats (post-Sprint 22A/B hardening)
 
 | Metric | Count |
 |---|---|
 | Go files (production) | ~100 |
 | Go files (test) | ~30 |
-| Total lines of code | ~17,000 |
-| Migrations | 14 |
-| ADRs | 5 |
+| Total lines of code | ~18,000 |
+| Migrations | 15 (extensions → app_admin RLS bypass) |
+| ADRs | 7 |
 | REST endpoints | 36+ |
 | Use cases | 9 |
 | Repositories | 11 |
-| Unit tests | 117+ (incl. 6 property-based) |
+| Unit tests | 120+ (incl. 15 property-based) |
+| Integration scenarios | 5 (real Postgres + build tag `integration`) |
 | Build | `go build ./...` PASS |
 | Race detector | `go test -race` PASS |
+| Prometheus custom metrics | 2 (rate-limit allowed/rejected, labelled by tier) |
 
 ---
 
