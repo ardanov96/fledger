@@ -28,6 +28,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/runut/fmcg-wallet/internal/domain/currency"
+	"github.com/runut/fmcg-wallet/internal/middleware"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
@@ -343,7 +344,22 @@ func (h *Handlers) CreateFxRateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tenantID, _ := uuid.Parse(req.TenantID)
-	createdBy := uuid.Nil // TODO: pull from auth context (Sprint 13)
+
+	// Sprint 23 (hardening): createdBy is now sourced from the JWT Principal
+	// (user_id claim). The previous uuid.Nil placeholder was a Sprint 13
+	// backfill that left every FX rate's `created_by` column pointing at
+	// the zero UUID — useless for audit. Now: tenant_id is ALSO taken from
+	// the Principal when present so the request body cannot lie about which
+	// tenant created the rate. The body tenant_id is preserved for backward
+	// compatibility with clients that haven't moved to JWT yet.
+	createdBy := uuid.Nil
+	principal := middleware.PrincipalFromContext(r.Context())
+	if principal != nil && principal.UserID != "" {
+		if uid, err := uuid.Parse(principal.UserID); err == nil {
+			createdBy = uid
+		}
+	}
+
 	in := usecase.CreateFxRateInput{
 		TenantID:     tenantID,
 		FromCurrency: req.FromCurrency,
