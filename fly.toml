@@ -105,8 +105,10 @@ kill_timeout = "30s"
   JWT_AUDIENCE = "fmcg-wallet-api"
   BCRYPT_COST = "10"         # Lower than prod (12) for demo perf
 
-  # CORS
-  WEB_ORIGIN = "*"           # Permissive for demo; restrict in production
+  # CORS — restricted to the demo domain by default. For a multi-tenant
+  # production deployment, set this to each tenant's actual UI origin via
+  # `fly secrets set WEB_ORIGIN=...` (comma-separated for multiple origins).
+  WEB_ORIGIN = "https://fmcg-wallet-demo.fly.dev"
 
   # Observability
   METRICS_ENABLED = "true"

@@ -1,4 +1,4 @@
--- Migration 000017: GUC Bind Audit Trail (Sprint 23 / 22B.5, closes
+-- Migration 000016: GUC Bind Audit Trail (Sprint 23 / 22B.5, closes
 -- ADR-0006 open follow-up #2).
 --
 -- Strategy: every SetTenantContext call now INSERTs a row to

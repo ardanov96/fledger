@@ -1,14 +1,16 @@
-// Package handler — auth.go (Sprint 13).
+// Package handler — auth.go (Sprint 13 + Sprint 23 / 22B.3).
 //
 // REST endpoints for authentication:
-//   POST /v1/auth/login     — username + password (returns MFA challenge OR token pair)
-//   POST /v1/auth/mfa/verify — TOTP code + challenge token (returns token pair)
-//   POST /v1/auth/refresh   — refresh token rotation (returns new token pair)
-//   POST /v1/auth/logout    — revoke refresh token
-//   POST /v1/auth/mfa/setup  — generate TOTP secret + otpauth URL for QR provisioning
+//   POST   /v1/auth/login            — username + password (returns MFA challenge OR token pair)
+//   POST   /v1/auth/mfa/verify       — TOTP code + challenge token (returns token pair)
+//   POST   /v1/auth/refresh          — refresh token rotation (returns new token pair)
+//   POST   /v1/auth/logout           — revoke refresh token
+//   POST   /v1/auth/mfa/setup        — generate TOTP secret + otpauth URL for QR provisioning
+//   GET    /v1/auth/sessions         — list active sessions for the authenticated user
+//   DELETE /v1/auth/sessions/{id}    — revoke a specific session (owner check)
 //
-// All routes are PUBLIC (no auth required) EXCEPT /v1/auth/logout which
-// also accepts refresh token only (no access token needed for revocation).
+// Most auth routes are PUBLIC except sessions endpoints (RequireAuth) and
+// /v1/auth/logout (also accepts refresh token only).
 package handler
 
 import (
@@ -27,6 +29,7 @@ import (
 	platformauth "github.com/runut/fmcg-wallet/internal/platform/auth"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 	"github.com/runut/fmcg-wallet/internal/domain/auth"
+	"github.com/runut/fmcg-wallet/internal/middleware"
 	"github.com/runut/fmcg-wallet/internal/usecase"
 )
 
@@ -34,12 +37,21 @@ import (
 // AuthAPI — interface implemented by adapter
 // =============================================================================
 
+// AuthAPI — interface implemented by adapter (cmd/api/auth_adapters.go).
+//
+// Sprint 23 / 22B.3 session-management methods (ListSessions, RevokeSession)
+// are NOT wired here yet because the corresponding usecase methods
+// (usecase.ListSessionsInput etc.) have not been implemented. Once the
+// use-case surface lands, restore them and re-register the routes below.
 type AuthAPI interface {
 	Login(ctx context.Context, in usecase.LoginInput) (*usecase.LoginResult, error)
 	VerifyMFA(ctx context.Context, in usecase.VerifyMFAInput) (*usecase.RefreshResult, error)
 	Refresh(ctx context.Context, in usecase.RefreshInput) (*usecase.RefreshResult, error)
 	Logout(ctx context.Context, in usecase.LogoutInput) error
 	SetupMFA(ctx context.Context, in usecase.SetupMFAInput) (*usecase.SetupMFAResult, error)
+	// Sprint 23 / 22B.3 — session management (list + revoke).
+	ListSessions(ctx context.Context, in usecase.ListSessionsInput) ([]usecase.SessionInfo, error)
+	RevokeSession(ctx context.Context, in usecase.RevokeSessionInput) error
 }
 
 // =============================================================================
@@ -96,6 +108,17 @@ type SetupMFARequest struct {
 type SetupMFAResponse struct {
 	Secret string `json:"secret"`
 	OTPURL string `json:"otpauth_url"`
+}
+
+// SessionResponseItem — one row of GET /v1/auth/sessions.
+type SessionResponseItem struct {
+	ID         uuid.UUID  `json:"id"`
+	UserAgent  string     `json:"user_agent"`
+	IPAddress  string     `json:"ip_address,omitempty"`
+	IssuedAt   time.Time  `json:"issued_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	Status     string     `json:"status"`
 }
 
 // =============================================================================
@@ -281,6 +304,132 @@ func (h *Handlers) SetupMFA(w http.ResponseWriter, r *http.Request) {
 }
 
 // =============================================================================
+// Sprint 23 / 22B.3 — Sessions list + revoke
+// =============================================================================
+
+// ListSessions handles GET /v1/auth/sessions.
+//
+// Owner check is implicit because we filter by Principal.user_id (from JWT).
+// Users can ONLY ever see their own active refresh-token sessions.
+func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
+	if h.Auth == nil {
+		httpx.Error(w, r, apperrors.ErrNotFound)
+		return
+	}
+	uid, ok := principalUserID(w, r)
+	if !ok {
+		return
+	}
+	tenant, ok := principalTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	sessions, err := h.Auth.ListSessions(r.Context(), usecase.ListSessionsInput{
+		UserID:   uid,
+		TenantID: tenant,
+	})
+	if err != nil {
+		mapAuthErr(w, r, err)
+		return
+	}
+
+	resp := make([]SessionResponseItem, 0, len(sessions))
+	for _, s := range sessions {
+		item := SessionResponseItem{
+			ID:        s.ID,
+			UserAgent: s.UserAgent,
+			IssuedAt:  s.IssuedAt,
+			ExpiresAt: s.ExpiresAt,
+			Status:    string(s.Status),
+		}
+		if s.IPAddress != nil {
+			item.IPAddress = s.IPAddress.String()
+		}
+		if s.LastUsedAt != nil {
+			t := *s.LastUsedAt
+			item.LastUsedAt = &t
+		}
+		resp = append(resp, item)
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// RevokeSession handles DELETE /v1/auth/sessions/{id}.
+//
+// Owner check: the use case layer enforces session.user_id == Principal.user_id
+// and returns ErrSessionNotOwner for cross-user attempts. We map that to 403
+// deliberately to refuse enumeration (vs 404 which would leak existence).
+func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	if h.Auth == nil {
+		httpx.Error(w, r, apperrors.ErrNotFound)
+		return
+	}
+	uid, ok := principalUserID(w, r)
+	if !ok {
+		return
+	}
+	tenant, ok := principalTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	sessionID, err := uuid.Parse(idStr)
+	if err != nil {
+		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
+		return
+	}
+
+	err = h.Auth.RevokeSession(r.Context(), usecase.RevokeSessionInput{
+		SessionID: sessionID,
+		UserID:    uid,
+		TenantID:  tenant,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrSessionNotOwner):
+			httpx.Error(w, r, apperrors.New("SESSION_FORBIDDEN", "session does not belong to caller", http.StatusForbidden))
+		case errors.Is(err, auth.ErrRefreshTokenInvalid):
+			httpx.Error(w, r, apperrors.New("SESSION_NOT_FOUND", "session not found", http.StatusNotFound))
+		default:
+			mapAuthErr(w, r, err)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// principalUserID pulls user_id from the JWT Principal injected by RequireAuth.
+func principalUserID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	p := middleware.PrincipalFromContext(r.Context())
+	if p == nil || p.UserID == "" {
+		httpx.Error(w, r, apperrors.New("UNAUTHENTICATED", "missing principal", http.StatusUnauthorized))
+		return uuid.Nil, false
+	}
+	uid, err := uuid.Parse(p.UserID)
+	if err != nil {
+		httpx.Error(w, r, apperrors.New("INVALID_PRINCIPAL", "principal user_id is not a uuid", http.StatusUnauthorized))
+		return uuid.Nil, false
+	}
+	return uid, true
+}
+
+func principalTenantID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	p := middleware.PrincipalFromContext(r.Context())
+	if p == nil || p.TenantID == "" {
+		httpx.Error(w, r, apperrors.New("UNAUTHENTICATED", "missing principal tenant", http.StatusUnauthorized))
+		return uuid.Nil, false
+	}
+	tid, err := uuid.Parse(p.TenantID)
+	if err != nil {
+		httpx.Error(w, r, apperrors.New("INVALID_PRINCIPAL", "principal tenant_id is not a uuid", http.StatusUnauthorized))
+		return uuid.Nil, false
+	}
+	return tid, true
+}
+
+// =============================================================================
 // Error mapping
 // =============================================================================
 
@@ -309,8 +458,6 @@ func mapAuthErr(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.Error(w, r, apperrors.New("REFRESH_TOKEN_REUSE", "refresh token reuse detected — all sessions revoked", http.StatusUnauthorized))
 	case errors.Is(err, platformauth.ErrPasswordPolicyFail):
 		// Sprint 23 / 22B.4: weak password rejected before bcrypt verify.
-		// Do not echo which check failed (don't leak policy details);
-		// surface as 422 with a generic message + audit row already recorded.
 		httpx.Error(w, r, apperrors.New("PASSWORD_POLICY", "password does not meet security requirements", http.StatusUnprocessableEntity))
 	default:
 		httpx.Error(w, r, err)
@@ -323,9 +470,7 @@ func clientIP(r *http.Request) *netip.Addr {
 	if addr == "" {
 		addr = r.RemoteAddr
 	}
-	// Strip port if present.
 	if idx := strings.LastIndex(addr, ":"); idx > 0 {
-		// IPv4 — but IPv6 may have multiple colons. Use netip.ParseAddrPort.
 		if a, err := netip.ParseAddrPort(addr); err == nil {
 			ip := a.Addr()
 			return &ip
@@ -337,5 +482,4 @@ func clientIP(r *http.Request) *netip.Addr {
 	return nil
 }
 
-// _ = chi/v5 import kept for future chi.Route-level auth guard helper.
 var _ = chi.NewRouter

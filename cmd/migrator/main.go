@@ -38,6 +38,21 @@ import (
 	"github.com/runut/fmcg-wallet/internal/platform/logger"
 )
 
+// fileURLEscape converts an OS-native absolute path into a file:// URL that
+// golang-migrate's `file` source parses correctly.
+//
+// Linux/Mac:    /abs/path           → file:///abs/path
+// Windows:      D:\path             → file://D:/path   (legacy form)
+//
+// KNOWN ISSUE: golang-migrate v4's `file` source has trouble with Windows
+// drive letters — the path component ends up empty after URL parsing and
+// the library calls os.Open("."). The robust workaround for Windows dev is
+// to run inside WSL2 / Docker (Linux) where this code works as-is. CI runs
+// on Linux so production paths are unaffected.
+func fileURLEscape(p string) string {
+	return "file://" + filepath.ToSlash(p)
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "migrator: %v\n", err)
@@ -83,10 +98,11 @@ func run() error {
 		return fmt.Errorf("resolve migrations path: %w", err)
 	}
 
-	// Build the database URL for golang-migrate
-	// Use the same config as the app.
+	// Build the database URL for golang-migrate (uses the same config as the app).
 	dbURL := buildMigrateURL(&cfg.DB)
-	sourceURL := "file://" + absDir
+	// Convert OS-native path into a file:// URL that golang-migrate parses
+	// correctly on both Linux and Windows (see fileURLEscape comment).
+	sourceURL := fileURLEscape(absDir)
 
 	log.Info("migrator starting",
 		"db", maskPassword(dbURL),

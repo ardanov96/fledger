@@ -84,9 +84,28 @@ make ps
 # Run migrations
 make migrate-up
 
+# (Optional) Seed demo data for E2E smoke test
+make seed-local
+
 # Run API
 make run-api
 ```
+
+### Frontend (Web Dashboard)
+
+The lightweight web dashboard lives in `web/` (zero-dependency Node server
+that serves a static SPA from `web/public/` and reverse-proxies `/v1/*` to
+the API).
+
+```bash
+cd web
+npm install
+npm start
+# Dashboard now at http://localhost:3000
+```
+
+If you prefer to skip the web UI entirely, you can interact with the API
+via `curl` against `http://localhost:8080`.
 
 API sekarang hidup di `http://localhost:8080`:
 

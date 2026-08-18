@@ -91,6 +91,15 @@ db-shell: ## Open psql in the dev postgres container
 db-redis-cli: ## Open redis-cli in the dev redis container
 	docker compose exec redis redis-cli
 
+.PHONY: seed-local
+seed-local: ## Seed demo data into local Postgres (idempotent)
+	bash scripts/seed-local-data.sh
+
+.PHONY: bcrypt-hash
+bcrypt-hash: ## Generate a bcrypt hash for a demo password
+	@go run scripts/gen-bcrypt-hash.go $(word 2,$(MAKECMDGOALS)) $(word 3,$(MAKECMDGOALS))
+	@: # no-op so make doesn't complain about extra args
+
 # =============================================================================
 # Code generation
 # =============================================================================

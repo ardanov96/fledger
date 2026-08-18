@@ -1,4 +1,4 @@
-// Package auth defines the auth domain — refresh tokens, user credentials,
+// Package auth defines the auth domain â€” refresh tokens, user credentials,
 // MFA challenges, login attempts. Sprint 13 / Fase 2E lanjutan.
 //
 // Domain is pure (no infra deps). Repository is an interface so use case
@@ -19,46 +19,46 @@ import (
 // =============================================================================
 
 var (
-	// ErrInvalidCredentials — wrong username/password combo.
+	// ErrInvalidCredentials â€” wrong username/password combo.
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 
-	// ErrAccountLocked — too many failed attempts, locked_until > now.
+	// ErrAccountLocked â€” too many failed attempts, locked_until > now.
 	ErrAccountLocked = errors.New("auth: account locked")
 
-	// ErrMFARequired — user has MFA enabled, must complete challenge first.
+	// ErrMFARequired â€” user has MFA enabled, must complete challenge first.
 	ErrMFARequired = errors.New("auth: mfa required")
 
-	// ErrMFAFailed — TOTP code invalid.
+	// ErrMFAFailed â€” TOTP code invalid.
 	ErrMFAFailed = errors.New("auth: mfa failed")
 
-	// ErrMFANotEnabled — trying to verify MFA on user without MFA.
+	// ErrMFANotEnabled â€” trying to verify MFA on user without MFA.
 	ErrMFANotEnabled = errors.New("auth: mfa not enabled")
 
-	// ErrRefreshTokenInvalid — token not found / hash mismatch.
+	// ErrRefreshTokenInvalid â€” token not found / hash mismatch.
 	ErrRefreshTokenInvalid = errors.New("auth: refresh token invalid")
 
-	// ErrRefreshTokenExpired — expires_at <= now.
+	// ErrRefreshTokenExpired â€” expires_at <= now.
 	ErrRefreshTokenExpired = errors.New("auth: refresh token expired")
 
-	// ErrRefreshTokenRevoked — status='revoked' (logged out or admin).
+	// ErrRefreshTokenRevoked â€” status='revoked' (logged out or admin).
 	ErrRefreshTokenRevoked = errors.New("auth: refresh token revoked")
 
-	// ErrRefreshTokenAlreadyRotated — status='rotated' → REUSE DETECTED.
+	// ErrRefreshTokenAlreadyRotated â€” status='rotated' â†’ REUSE DETECTED.
 	ErrRefreshTokenReuse = errors.New("auth: refresh token reuse detected")
 
-	// ErrInvalidInput — empty username/password/challenge token/etc.
+	// ErrInvalidInput â€” empty username/password/challenge token/etc.
 	ErrInvalidInput = errors.New("auth: invalid input")
 
-	// ErrUserNotFound — user lookup returned no rows (not always returned to client).
+	// ErrUserNotFound â€” user lookup returned no rows (not always returned to client).
 	ErrUserNotFound = errors.New("auth: user not found")
 
-	// ErrMFAChallengeInvalid — challenge token wrong/expired/used.
+	// ErrMFAChallengeInvalid â€” challenge token wrong/expired/used.
 	ErrMFAChallengeInvalid = errors.New("auth: mfa challenge invalid")
 
-	// ErrMFAChallengeExpired — expires_at <= now.
+	// ErrMFAChallengeExpired â€” expires_at <= now.
 	ErrMFAChallengeExpired = errors.New("auth: mfa challenge expired")
 
-	// ErrMFAAttemptsExceeded — too many TOTP attempts on single challenge.
+	// ErrMFAAttemptsExceeded â€” too many TOTP attempts on single challenge.
 	ErrMFAAttemptsExceeded = errors.New("auth: mfa attempts exceeded")
 )
 
@@ -75,7 +75,7 @@ const (
 	RefreshTokenRevoked  RefreshTokenStatus = "revoked"
 )
 
-// RefreshTokenRevokeReason — why a token was revoked.
+// RefreshTokenRevokeReason â€” why a token was revoked.
 type RefreshTokenRevokeReason string
 
 const (
@@ -86,12 +86,12 @@ const (
 )
 
 // RefreshToken is the server-side record for a refresh token.
-// The raw (opaque) token is NEVER stored — only its SHA-256 hash.
+// The raw (opaque) token is NEVER stored â€” only its SHA-256 hash.
 type RefreshToken struct {
 	ID            uuid.UUID
 	TenantID      uuid.UUID
 	UserID        uuid.UUID
-	FamilyID      uuid.UUID                  // rotation chain — reuse-detection boundary
+	FamilyID      uuid.UUID                  // rotation chain â€” reuse-detection boundary
 	TokenHash     string                     // SHA-256 hex of raw token
 	Status        RefreshTokenStatus
 	RotatedTo     *uuid.UUID                 // next token in chain
@@ -142,7 +142,7 @@ type MFAChallenge struct {
 	ID             uuid.UUID
 	TenantID       uuid.UUID
 	UserID         uuid.UUID
-	ChallengeToken string     // opaque (NOT a JWT) — returned to client
+	ChallengeToken string     // opaque (NOT a JWT) â€” returned to client
 	Verified       bool
 	Attempts       int
 	IssuedAt       time.Time
@@ -159,7 +159,7 @@ func (c MFAChallenge) IsUsable(now time.Time) bool {
 // LoginAttempt entity
 // =============================================================================
 
-// LoginAttemptFailureReason — why a login failed.
+// LoginAttemptFailureReason â€” why a login failed.
 type LoginAttemptFailureReason string
 
 // Constants are declared as vars (not consts) so callers can take their address
@@ -247,3 +247,9 @@ type Rows interface {
 	Err() error
 	Close()
 }
+
+// ErrSessionNotOwner — Sprint 23 / 22B.3: caller tried to act on a session
+// that belongs to a different user. Handler maps this to 403 (not 404)
+// deliberately to refuse enumeration: the SAME response (404) is returned
+// whether the session exists for another user or doesn't exist at all.
+var ErrSessionNotOwner = errors.New("auth: session does not belong to caller")

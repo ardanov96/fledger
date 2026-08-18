@@ -45,6 +45,16 @@ func (a *authAPIAdapter) SetupMFA(ctx context.Context, in usecase.SetupMFAInput)
 	return a.svc.SetupMFA(ctx, in)
 }
 
+// ListSessions delegates to AuthService.ListSessions.
+func (a *authAPIAdapter) ListSessions(ctx context.Context, in usecase.ListSessionsInput) ([]usecase.SessionInfo, error) {
+	return a.svc.ListSessions(ctx, in)
+}
+
+// RevokeSession delegates to AuthService.RevokeSession.
+func (a *authAPIAdapter) RevokeSession(ctx context.Context, in usecase.RevokeSessionInput) error {
+	return a.svc.RevokeSession(ctx, in)
+}
+
 var _ handler.AuthAPI = (*authAPIAdapter)(nil)
 
 // =============================================================================

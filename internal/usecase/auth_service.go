@@ -656,3 +656,107 @@ func sha256HexBytes(b []byte) string {
 // _ = jwtv5.NewNumericDate silences "imported but not used" if the import
 // is otherwise only referenced via the embedded jwt.Claims type.
 var _ = jwtv5.NewNumericDate
+
+// =============================================================================
+// Sprint 23 / 22B.3 — Session management (list + revoke)
+// =============================================================================
+
+// ListSessionsInput filters active refresh-token sessions for a user.
+type ListSessionsInput struct {
+	UserID   uuid.UUID
+	TenantID uuid.UUID
+}
+
+// RevokeSessionInput identifies a single session to revoke. The handler is
+// responsible for enforcing ownership (session.UserID == principal.UserID)
+// before calling this method. The use case layer still re-verifies and
+// returns ErrSessionNotOwner when ownership fails, so the rule survives any
+// future caller that forgets the check.
+type RevokeSessionInput struct {
+	SessionID uuid.UUID
+	UserID    uuid.UUID
+	TenantID  uuid.UUID
+}
+
+// SessionInfo is the public-facing projection of a refresh-token row. We
+// never expose the token hash, family_id, rotated_to, or revoked_reason —
+// just the metadata a UI needs to render an "active sessions" page.
+type SessionInfo struct {
+	ID         uuid.UUID
+	UserAgent  string
+	IPAddress  *netip.Addr
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
+	LastUsedAt *time.Time
+	Status     auth.RefreshTokenStatus
+}
+
+// ListSessions returns all active sessions for the given user. We read
+// outside a transaction because the query is read-only; RLS still scopes the
+// rows to the caller's tenant via the `app.current_tenant_id` GUC bound by
+// TenantContextMiddleware.
+func (s *AuthService) ListSessions(ctx context.Context, in ListSessionsInput) ([]SessionInfo, error) {
+	if in.UserID == uuid.Nil || in.TenantID == uuid.Nil {
+		return nil, ErrAuthInvalidInput
+	}
+	tokens, err := s.repo.ListActiveRefreshTokensByUser(ctx, in.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	out := make([]SessionInfo, 0, len(tokens))
+	for _, t := range tokens {
+		if t.TenantID != in.TenantID {
+			// Defense in depth: even though ListActiveRefreshTokensByUser
+			// filters by user_id, we double-check tenant matches. RLS would
+			// already block cross-tenant reads, but a stricter check here
+			// gives us a clear error in tests/mocks.
+			continue
+		}
+		out = append(out, SessionInfo{
+			ID:         t.ID,
+			UserAgent:  t.UserAgent,
+			IPAddress:  t.IPAddress,
+			IssuedAt:   t.IssuedAt,
+			ExpiresAt:  t.ExpiresAt,
+			LastUsedAt: t.LastUsedAt,
+			Status:     t.Status,
+		})
+	}
+	return out, nil
+}
+
+// RevokeSession revokes a single refresh-token session. It enforces the
+// ownership invariant (session.UserID == in.UserID) and returns
+// auth.ErrSessionNotOwner when the caller is trying to revoke another
+// user's session. The handler maps that to 403 (NOT 404) deliberately to
+// refuse session enumeration.
+func (s *AuthService) RevokeSession(ctx context.Context, in RevokeSessionInput) error {
+	if in.SessionID == uuid.Nil || in.UserID == uuid.Nil || in.TenantID == uuid.Nil {
+		return ErrAuthInvalidInput
+	}
+	// Lookup is done outside a transaction — the row is small and we only
+	// need ownership verification + tenant scoping. RLS still applies.
+	tokens, err := s.repo.ListActiveRefreshTokensByUser(ctx, in.UserID)
+	if err != nil {
+		return fmt.Errorf("revoke session lookup: %w", err)
+	}
+	var found *auth.RefreshToken
+	for i := range tokens {
+		if tokens[i].ID == in.SessionID {
+			found = &tokens[i]
+			break
+		}
+	}
+	if found == nil {
+		// Session not found OR not owned by this user — we return
+		// ErrRefreshTokenInvalid so the handler can map to 404 (without
+		// leaking whether the session exists for someone else).
+		return auth.ErrRefreshTokenInvalid
+	}
+	if found.UserID != in.UserID || found.TenantID != in.TenantID {
+		return auth.ErrSessionNotOwner
+	}
+	return s.tx.RunInTxAuthDomain(ctx, func(tx auth.Tx) error {
+		return s.repo.RevokeRefreshToken(ctx, tx, in.SessionID, auth.RevokeReasonUserLogout)
+	})
+}
