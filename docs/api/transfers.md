@@ -145,6 +145,6 @@ Tested by `TestConcurrent_TransfersFromSameSource` (50 concurrent → 0 lost upd
 - `internal/domain/ledger/service.go` — `TransferInput` interface
 - `internal/handler/handlers.go:274` — `CreateTransfer` handler
 - [ADR-0004: Locking strategy](../adr/0004-locking-strategy.md)
-- [Sprint 12: Multi-Currency rate snapshot](../SPRINTS.md#sprint-12--multi-currency-fase-1d--2026-08-14)
+- [Sprint 12: Multi-Currency rate snapshot](../SPRINTS.md#sprint-12-multi-currency-fase-1d-2026-08-14)
 
 See [API Overview](overview.md) for error envelope, status codes, and idempotency semantics.

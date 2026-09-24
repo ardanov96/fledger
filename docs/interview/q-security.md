@@ -294,8 +294,8 @@ if isAdminRequest(ctx) {
 - [Architecture: Sequences — Login with MFA](../architecture/sequences.md#2-login-with-mfa)
 - [Architecture: Sequences — Refresh Token Rotation](../architecture/sequences.md#3-refresh-token-rotation-with-reuse-detection)
 - [ADR-0006: Tenant RLS + Field-Level Authz Strategy](../adr/0006-tenant-rls-strategy.md) — RLS design
-- [Sprint 13: Refresh Token Rotation + MFA](../SPRINTS.md#sprint-13--refresh-token-rotation--mfa-fase-2e-lanjutan--2026-08-14)
-- [Sprint 14 follow-up: Multi-Tier Rate Limiting](../SPRINTS.md#sprint-14-followup--multi-tier-rate-limiting-fase-2d-lanjutan--2026-08-15)
+- [Sprint 13: Refresh Token Rotation + MFA](../SPRINTS.md#sprint-13-refresh-token-rotation-mfa-fase-2e-lanjutan-2026-08-14)
+- [Sprint 14 follow-up: Multi-Tier Rate Limiting](../SPRINTS.md#sprint-14-followup-multi-tier-rate-limiting-fase-2d-lanjutan-2026-08-15)
 - [Secret Rotation Runbook](../runbooks/secret-rotation.md)
 - [Demo Script](demo-script.md)
 - [Fintech Q&A](q-fintech.md)

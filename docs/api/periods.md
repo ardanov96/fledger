@@ -192,4 +192,4 @@ Returns all snapshots (per-account frozen balances) for the period, sorted by `a
 - `migrations/000008_period_close.up.sql` — DB triggers `no_post_to_closed_period` + `no_entry_in_closed_period`
 - `migrations/000009_period_approval.up.sql` — schema for `period_close_requests` + `period_snapshots`
 - `internal/handler/periods.go` — 6 HTTP handlers
-- [Sprint 9: Period Close with Approval](../SPRINTS.md#sprint-9--period-close-with-approval-workflow-fase-1a--2026-08-11)
+- [Sprint 9: Period Close with Approval](../SPRINTS.md#sprint-9-period-close-with-approval-workflow-fase-1a-2026-08-11)

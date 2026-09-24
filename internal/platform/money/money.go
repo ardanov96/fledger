@@ -16,7 +16,7 @@
 //
 // Why not just float64?
 //   - 0.1 + 0.2 != 0.3 in IEEE 754. In financial systems, this is unacceptable.
-//     See ADR-0010-money-representation.md
+//     See docs/adr/index.md (future ADR candidate: int64 minor units money rationale)
 package money
 
 import (

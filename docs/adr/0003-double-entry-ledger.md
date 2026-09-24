@@ -141,10 +141,10 @@ CREATE TRIGGER no_entry_delete BEFORE DELETE ON entries
 
 ## Follow-ups
 
-- ADR-0004: Why SELECT FOR UPDATE for balance updates
-- ADR-0010: Why int64 minor units for money
-- ADR-0011: Why hash chain for tamper detection (Fase 1C)
-- ADR-0012: Why period close / accounting cycle (Fase 1A)
+- ADR-0004: Why SELECT FOR UPDATE for balance updates — see [ADR-0004](0004-locking-strategy.md)
+- *Future ADR candidate* — Why int64 minor units for money (rationale in `internal/platform/money/money.go` design comments; see [ADR index future candidates](index.md#future-adr-candidates))
+- *Future ADR candidate* — Why hash chain for tamper detection (Fase 1C); partially covered above
+- *Future ADR candidate* — Why period close / accounting cycle (Fase 1A); see Sprint 9 in [Sprint Log](../SPRINTS.md#sprint-9-period-close-with-approval-workflow-fase-1a-2026-08-11)
 
 ## References
 

@@ -440,7 +440,7 @@ Tapi untuk demo interview, single-app Fly.io sudah cukup impressive — intervie
 ## Related Documentation
 
 - [Fly.io Documentation](https://fly.io/docs/)
-- [Sprint 19 — Fly.io Deployment (SPRINTS.md)](../../SPRINTS.md#sprint-19--deployment-flyio-fase-3b--2026-08-15)
+- [Sprint 19 — Fly.io Deployment (SPRINTS.md)](../SPRINTS.md#sprint-19-deployment-flyio-fase-3b-2026-08-15)
 - [ADR-0006: Tenant RLS + Field-Level Authz Strategy](../adr/0006-tenant-rls-strategy.md)
 - [Integration Tests Runbook](integration-tests.md)
 - [Load Testing Runbook](load-test.md)

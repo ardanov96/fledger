@@ -61,7 +61,7 @@ The project is a financial backend (ledger, receivables, reconciliation) for the
 - ADR-0002: Why sqlc over GORM
 - ADR-0003: Why double-entry ledger
 - ADR-0004: Why SELECT FOR UPDATE for balance updates
-- ADR-0010: Why int64 minor units for money
+- *Future ADR candidate* — Why int64 minor units for money (rationale in `internal/platform/money/money.go`; see [ADR index future candidates](index.md#future-adr-candidates))
 
 ## References
 

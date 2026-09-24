@@ -236,5 +236,5 @@ fly ssh console --app fmcg-wallet-demo -C "su - postgres -c \"psql -d fmcg_walle
 
 - [Deployment (Fly.io)](deployment-fly.md) — `fly secrets set` usage
 - [Architecture: Auth (JWT + RBAC)](../architecture/sequences.md#1-login-no-mfa)
-- [Sprint 13: Refresh Token Rotation + MFA](../../SPRINTS.md#sprint-13--refresh-token-rotation--mfa-fase-2e-lanjutan--2026-08-14)
+- [Sprint 13: Refresh Token Rotation + MFA](../SPRINTS.md#sprint-13-refresh-token-rotation-mfa-fase-2e-lanjutan-2026-08-14)
 - [Audit API](../api/audit.md) — post-rotation forensic queries

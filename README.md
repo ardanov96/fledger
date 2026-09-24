@@ -172,7 +172,7 @@ fmcg-wallet/
 
 ## 📚 Dokumentasi
 
-- **[Sprint Summary](docs/SPRINTS.md)** — Sprint-by-sprint delivery log (Sprint 1-10 done)
+- **[Sprint Summary](docs/SPRINTS.md)** — Sprint-by-sprint delivery log (Sprint 1-22B done, Sprint 23 in progress)
 - **[Roadmap Production-Grade](../roadmap-production-grade.md)** — 30-week execution plan (Fase 0-9 + 10)
 - **[Tech Stack Detail](../tech-stack-fmcg-wallet-portfolio.md)** — Sprint-by-sprint technical detail
 - **[Modules & Features](../modules-features-fmcg-wallet-portfolio.md)** — Domain modules & entities
@@ -198,7 +198,7 @@ fmcg-wallet/
 | 9 — Ops Excellence | 27-29 | ⏳ Pending |
 | 10 — Differentiator | 30+ | � Ongoing |
 
-**Progress: ~10/30 sprints complete (~33%)** setelah Sprint 10 (Reconciler & Trial Balance).
+**Progress: 22/30 sprints complete (~73%)** setelah Sprint 22B (Hardening). Sprint 23 (Tech Debt Foundation) in progress.
 
 Lihat `docs/SPRINTS.md` untuk detail per-sprint, atau `roadmap-production-grade.md` di parent directory untuk fase-level breakdown.
 
@@ -306,5 +306,5 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 **Maintainer:** [@runut](https://github.com/runut)
-**Status:** Active development — Sprint 10 (Fase 1B Reconciler done)
-**Last updated:** 2026-08-13
+**Status:** Active development — Sprint 22B (Hardening) done · Sprint 23 (Tech Debt Foundation) in progress
+**Last updated:** 2026-09-20

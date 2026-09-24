@@ -124,4 +124,4 @@ All modules share:
 | Reuse detected | HTTP 401 `REFRESH_TOKEN_REUSE` (whole family revoked) |
 | Rate limited | HTTP 429 `RATE_LIMITED` with `Retry-After: 1` |
 
-See [Runbook: Incident Response](runbooks/incident-response.md) for the full incident flow.
+See [Runbook: Incident Response](../runbooks/incident-response.md) for the full incident flow.

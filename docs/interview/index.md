@@ -56,10 +56,10 @@
 - [Architecture Overview](../architecture/overview.md) — system context
 - [C4 Diagrams](../architecture/c4-diagrams.md) — static architecture views
 - [Sequence Flows](../architecture/sequences.md) — critical user journeys
-- [ADRs](../adr/index.md) — 6 architectural decision records
+- [ADRs](../adr/index.md) — 8 architectural decision records
 - [API Reference](../api/overview.md) — 36 endpoints
 - [Runbooks](../runbooks/backup-restore.md) — operational SOPs
-- [Sprint Log](../SPRINTS.md) — 19 sprint selesai
+- [Sprint Log](../SPRINTS.md) — 22 sprints selesai (1-22B)
 
 ---
 
@@ -83,7 +83,7 @@
 
 If you only have 30 seconds:
 
-- **"Double-entry ledger + hash chain tamper detection + multi-tenant RLS + JWT + MFA + rate limit = production-grade fintech backend in 19 sprints."**
+- **"Double-entry ledger + hash chain tamper detection + multi-tenant RLS + JWT + MFA + rate limit = production-grade fintech backend in 22 sprints."**
 - **"Tier 1 defense-in-depth: every concern (audit, RLS, idempotency, rate limit) has minimum 2 layers."**
 - **"Single Fly.io app multi-process via supervisord = $0/bulan operational cost, production-grade deployment pattern."**
 - **"15 property tests cover 10,000+ random scenarios per CI run = robust invariants (FIFO, conservation, hash chain).**

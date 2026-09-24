@@ -189,7 +189,7 @@ We picked 24h + UUID for simplicity. Production fintech at scale may pick determ
 - [Reconciler API](../api/reconciler.md) — Manual + automated reconciliation
 - [Currencies API](../api/currencies.md) — FX rate snapshot semantics
 - [Architecture: Sequences — Cross-currency transfer](../architecture/sequences.md#5-cross-currency-transfer-with-fx-snapshot)
-- [Sprint 2: Schema + Repositories + Transfer Use Case](../SPRINTS.md#sprint-2--schema--repositories--transfer-use-case--2026-08-10)
-- [Sprint 12: Multi-Currency (Fase 1D)](../SPRINTS.md#sprint-12--multi-currency-fase-1d--2026-08-14)
+- [Sprint 2: Schema + Repositories + Transfer Use Case](../SPRINTS.md#sprint-2-schema-repositories-transfer-use-case-2026-08-10)
+- [Sprint 12: Multi-Currency (Fase 1D)](../SPRINTS.md#sprint-12-multi-currency-fase-1d-2026-08-14)
 - [ADR-0003: Double-entry ledger](../adr/0003-double-entry-ledger.md)
 - [ADR-0005: Multi-currency strategy](../adr/0005-multi-currency-strategy.md)

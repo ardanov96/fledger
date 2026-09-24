@@ -16,8 +16,6 @@ edit_uri: edit/main/docs/
 
 # Don't fail the build on broken internal links (use strict later).
 strict: false
-# Warn on missing docs (good for catching typos).
-warn_on_missing_docs: true
 
 theme:
   name: material
@@ -81,14 +79,15 @@ markdown_extensions:
 # Plugins.
 plugins:
   - search                  # full-text search (built-in)
-  - awesome-pages           # optional: pretty section index pages
-  - git-committers:         # optional: enrich git history metadata
-      enabled: !ENV [CI]
-  - git-revision-date-localized:  # show "last updated" timestamps
-      enabled: !ENV [CI]
-      type: date
-      fallback_to_build_date: true
-      strict: false
+  # git-committers and git-revision-date-localized are optional — install separately:
+  #   pip install mkdocs-git-committers-plugin mkdocs-git-revision-date-localized-plugin
+  # - git-committers:         # enrich git history metadata
+  #     enabled: !ENV [CI]
+  # - git-revision-date-localized:  # show "last updated" timestamps
+  #     enabled: !ENV [CI]
+  #     type: date
+  #     fallback_to_build_date: true
+  #     strict: false
 
 # Navigation structure.
 nav:
@@ -100,14 +99,14 @@ nav:
       - Domain Glossary: domain/glossary.md
   - Architecture Decision Records:
       - Overview: adr/index.md
-      - ADR-0001: Go as backend: adr/0001-go-as-backend-language.md
-      - ADR-0002: sqlc over ORM: adr/0002-sqlc-over-orm.md
-      - ADR-0003: Double-entry ledger: adr/0003-double-entry-ledger.md
-      - ADR-0004: Locking strategy: adr/0004-locking-strategy.md
-      - ADR-0005: Multi-currency strategy: adr/0005-multi-currency-strategy.md
-      - ADR-0006: Tenant RLS strategy: adr/0006-tenant-rls-strategy.md
-      - ADR-0007: app_admin role for RLS bypass: adr/0007-app-admin-rls-bypass.md
-      - ADR-0008: Sprint 22B hardening roadmap: adr/0008-sprint-22b-hardening-roadmap.md
+      - "ADR-0001: Go as backend": adr/0001-go-as-backend-language.md
+      - "ADR-0002: sqlc over ORM": adr/0002-sqlc-over-orm.md
+      - "ADR-0003: Double-entry ledger": adr/0003-double-entry-ledger.md
+      - "ADR-0004: Locking strategy": adr/0004-locking-strategy.md
+      - "ADR-0005: Multi-currency strategy": adr/0005-multi-currency-strategy.md
+      - "ADR-0006: Tenant RLS strategy": adr/0006-tenant-rls-strategy.md
+      - "ADR-0007: app_admin role for RLS bypass": adr/0007-app-admin-rls-bypass.md
+      - "ADR-0008: Sprint 22B hardening roadmap": adr/0008-sprint-22b-hardening-roadmap.md
   - API Reference:
       - Overview: api/overview.md
       - Authentication: api/auth.md
@@ -136,8 +135,10 @@ nav:
       - Distributed Systems: interview/q-distributed-systems.md
       - Security: interview/q-security.md
       - Demo Script: interview/demo-script.md
-  - Load Testing:
-      - Transfer Endpoint: load-test/transfer.md
+  # Load Testing is k6 (.js), not markdown — not included in nav.
+  # See load-test/transfer.js in project root for the script.
+  # - Load Testing:
+  #     - Transfer Script: load-test/transfer.md
 
 # Build settings.
 docs_dir: docs

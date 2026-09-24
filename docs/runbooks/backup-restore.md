@@ -237,4 +237,4 @@ weekly_drill.sh:
 - [Deployment (Fly.io)](deployment-fly.md) — demo deployment
 - [Architecture Overview](../architecture/overview.md) — Postgres role + RLS
 - [ADR-0003: Double-entry ledger](../adr/0003-double-entry-ledger.md) — immutability principles
-- [Sprint 19: Fly.io Deployment](../../SPRINTS.md#sprint-19--deployment-flyio-fase-3b--2026-08-15)
+- [Sprint 19: Fly.io Deployment](../SPRINTS.md#sprint-19-deployment-flyio-fase-3b-2026-08-15)

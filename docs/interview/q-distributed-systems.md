@@ -256,7 +256,7 @@ We pick **vertical → horizontal → sharding** in that order, because each pha
 - [Architecture: Sequences](../architecture/sequences.md) — Critical user journeys
 - [ADR-0004: Locking strategy](../adr/0004-locking-strategy.md) — UUID-sorted lock order rationale
 - [ADR-0006: Tenant RLS + Field-Level Authz Strategy](../adr/0006-tenant-rls-strategy.md) — RLS design
-- [Sprint 15: Tenant RLS Integration](../SPRINTS.md#sprint-15--tenant-rls-integration-fase-2b--5a--2026-08-14)
+- [Sprint 15: Tenant RLS Integration](../SPRINTS.md#sprint-15-tenant-rls-integration-fase-2b-5a-2026-08-14)
 - [Demo Script](demo-script.md)
 - [Fintech Q&A](q-fintech.md)
 - [Security Q&A](q-security.md)

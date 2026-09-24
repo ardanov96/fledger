@@ -184,4 +184,4 @@ The aging bucket assignment respects monotonicity: `bucket(N+1 days) >= bucket(N
 - `internal/repository/postgres/tx_adapter_invoice.go` — tx adapter with RLS
 - `internal/domain/invoice/invoice.go` — entities + repository interface
 - `migrations/000006_create_invoices.up.sql` — schema + view `v_invoice_aging`
-- [Sprint 8: Invoice & Credit + Hash Chain + JWT/RBAC](../SPRINTS.md#sprint-8--invoice--credit--hash-chain--jwtrbac--2026-08-11)
+- [Sprint 8: Invoice & Credit + Hash Chain + JWT/RBAC](../SPRINTS.md#sprint-8-invoice-credit-hash-chain-jwtrbac-2026-08-11)

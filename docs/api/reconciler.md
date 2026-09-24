@@ -140,4 +140,4 @@ A ticker-based worker runs every **1 hour** by default (`reconcilerWorker.Interv
 - `internal/worker/reconciler_worker.go` — background ticker
 - `internal/usecase/hashchain_verifier.go` — `Verifier.Verify(entries)` for tamper detection
 - `migrations/000010_reconciler.up.sql` — schema
-- [Sprint 10: Reconciler & Trial Balance](../SPRINTS.md#sprint-10--reconciler--trial-balance-fase-1b--2026-08-13)
+- [Sprint 10: Reconciler & Trial Balance](../SPRINTS.md#sprint-10-reconciler-trial-balance-fase-1b-2026-08-13)

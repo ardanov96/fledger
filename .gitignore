@@ -62,5 +62,4 @@ logs/
 docs/api/openapi.json
 docs/api/swagger/
 
-# --- Local sprint tracker (not pushed to public repo) ---
-docs/SPRINTS.md
+# --- Sprint tracker is committed (see docs/SPRINTS.md) ---

@@ -277,6 +277,6 @@ docker compose up prometheus loki promtail tempo grafana
 
 - [Architecture Overview](../architecture/overview.md) — observability stack in diagram
 - [Architecture: Sequences](../architecture/sequences.md) — request lifecycle
-- [Sprint 18: Observability finishing touches + Load test](../../SPRINTS.md#sprint-18--observability-finishing-touches--load-test-foundation-fase-3b--2026-08-15)
+- [Sprint 18: Observability finishing touches + Load test](../SPRINTS.md#sprint-18-observability-finishing-touches-load-test-foundation-fase-3b-2026-08-15)
 - [Load Testing Runbook](load-test.md) — capacity planning
 - [Incident Response Runbook](incident-response.md) — what to do when alerts fire

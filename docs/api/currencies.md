@@ -220,4 +220,4 @@ See [ADR-0005: Multi-currency strategy](../adr/0005-multi-currency-strategy.md) 
 - `internal/repository/postgres/currency_repo.go` — currencies + fx_rates persistence
 - `internal/platform/money/money.go` — `money.Convert(amount, fromDP, toDP, rate)`
 - `migrations/000012_multi_currency.up.sql` — schema + DB trigger `enforce_fx_rate_snapshot`
-- [Sprint 12: Multi-Currency](../SPRINTS.md#sprint-12--multi-currency-fase-1d--2026-08-14)
+- [Sprint 12: Multi-Currency](../SPRINTS.md#sprint-12-multi-currency-fase-1d-2026-08-14)

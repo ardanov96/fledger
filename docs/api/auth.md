@@ -436,4 +436,4 @@ NEW_TOKENS=$(curl -sX POST https://fmcg-wallet-demo.fly.dev/v1/auth/refresh \
 
 - [API Overview](overview.md) — auth headers, error envelope, status codes
 - [Architecture: Sequence Flows — Login with MFA](../architecture/sequences.md#login-with-mfa)
-- [Sprint 13: Refresh Token Rotation + MFA](../../SPRINTS.md#sprint-13--refresh-token-rotation--mfa-fase-2e-lanjutan--2026-08-14)
+- [Sprint 13: Refresh Token Rotation + MFA](../SPRINTS.md#sprint-13-refresh-token-rotation-mfa-fase-2e-lanjutan-2026-08-14)

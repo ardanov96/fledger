@@ -190,4 +190,4 @@ Supervisor approves or rejects a pending settlement.
 - `internal/repository/postgres/tx_adapter_collection.go` — tx adapter with RLS + sales_rep scope
 - `migrations/000011_collection.up.sql` — schema + 2 DB triggers (auto-update totals)
 - `internal/handler/collection.go` — 11 HTTP handlers
-- [Sprint 11: Collection & Route Module](../SPRINTS.md#sprint-11--collection--route-module-portfolio-sprint-4--fase-8-partial--2026-08-13)
+- [Sprint 11: Collection & Route Module](../SPRINTS.md#sprint-11-collection-route-module-portfolio-sprint-4-fase-8-partial-2026-08-13)

@@ -55,7 +55,7 @@ Backend wallet untuk distributor **FMCG/F&B Indonesia** yang menghadapi masalah 
 
 ---
 
-## ✨ Highlights (Sprint 1-21)
+## ✨ Highlights (Sprint 1-22B)
 
 Production-grade backend yang sudah include:
 
@@ -147,7 +147,7 @@ TEST_DATABASE_URL=postgres://postgres:test@localhost:5432/postgres?sslmode=disab
 
 -   :material-file-document-multiple: **[ADRs](adr/index.md)**
 
-    5 architectural decision records with trade-offs (Go, sqlc, double-entry, locking, multi-currency, tenant RLS, app_admin)
+    8 architectural decision records with trade-offs (Go, sqlc, double-entry, locking, multi-currency, tenant RLS, app_admin, Sprint 22B hardening)
 
 -   :material-api: **[API Reference](api/overview.md)**
 
@@ -176,8 +176,8 @@ TEST_DATABASE_URL=postgres://postgres:test@localhost:5432/postgres?sslmode=disab
 | Go files (production) | ~100 |
 | Go files (test) | ~30 |
 | Total lines of code | ~18,000 |
-| Migrations | 15 (extensions → app_admin RLS bypass) |
-| ADRs | 7 |
+| Migrations | 16 (extensions → guc_bind_audit) |
+| ADRs | 8 |
 | REST endpoints | 36+ |
 | Use cases | 9 |
 | Repositories | 11 |

@@ -110,4 +110,4 @@ REVOKE UPDATE, DELETE ON audit_logs FROM fmcg;
 ## Related Documentation
 
 - [API Overview](overview.md) — RBAC, error envelope
-- [Sprint 5: ADR-0004 + Audit Log + Middleware](../SPRINTS.md#sprint-5--adr-0004--audit-log--middleware--2026-08-10)
+- [Sprint 5: ADR-0004 + Audit Log + Middleware](../SPRINTS.md#sprint-5-adr-0004-audit-log-middleware-2026-08-10)
