@@ -411,6 +411,64 @@ func (s *PeriodService) Reopen(ctx context.Context, in ReopenInput) (period.Peri
 // Query helpers
 // =============================================================================
 
+// GetOrCreateOpenPeriod returns the open period that covers `now` for a tenant.
+// If no open period exists, it creates a monthly period covering the current
+// calendar month (period_start = first day of month, period_end = last day).
+//
+// Concurrency: two simultaneous callers for the same tenant may both observe
+// ErrNotFound and attempt to insert. The (tenant_id, period_start, period_end)
+// UNIQUE constraint catches exact duplicates; callers should retry on
+// ErrAlreadyExists. The btree_gist EXCLUDE constraint catches non-overlapping
+// ranges — caller may need to manually close overlapping periods first.
+//
+// This is used by TransferService.ensureOpenPeriod (Sprint 23.2). Pre-resolved
+// before the ledger tx so the TransferService doesn't need a period.Tx
+// dependency. Race between resolve and use (period close could happen in
+// between) is acceptable for MVP — the DB trigger from migration 000008
+// blocks inserts pointing to a closed period.
+func (s *PeriodService) GetOrCreateOpenPeriod(ctx context.Context, tenantID string, now time.Time) (period.Period, error) {
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return period.Period{}, fmt.Errorf("%w: invalid tenant_id", apperrors.ErrInvalidInput)
+	}
+
+	p, err := s.repo.GetCurrentOpenPeriod(ctx, tenantID, now)
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		return period.Period{}, fmt.Errorf("lookup current open period: %w", err)
+	}
+
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	monthEnd := monthStart.AddDate(0, 1, -1)
+
+	newP := period.Period{
+		ID:          uuid.NewString(),
+		TenantID:    tenantID,
+		PeriodStart: monthStart,
+		PeriodEnd:   monthEnd,
+		Status:      period.PeriodStatusOpen,
+	}
+	if err := s.repo.InsertPeriod(ctx, newP); err != nil {
+		if errors.Is(err, apperrors.ErrAlreadyExists) {
+			p, lerr := s.repo.GetCurrentOpenPeriod(ctx, tenantID, now)
+			if lerr == nil {
+				return p, nil
+			}
+			return period.Period{}, fmt.Errorf("retry lookup after conflict: %w", lerr)
+		}
+		return period.Period{}, fmt.Errorf("insert period: %w", err)
+	}
+
+	s.log.Info("period auto-created",
+		"period_id", newP.ID,
+		"tenant_id", tenantID,
+		"period_start", monthStart,
+		"period_end", monthEnd,
+	)
+	return newP, nil
+}
+
 // GetRequest returns one close request by id (read-only).
 func (s *PeriodService) GetRequest(ctx context.Context, id string) (period.CloseRequest, error) {
 	return s.repo.GetCloseRequest(ctx, id)

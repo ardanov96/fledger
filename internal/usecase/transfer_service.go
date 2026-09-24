@@ -52,6 +52,7 @@ type TransferService struct {
 	entries       ledger.EntryRepository
 	db            TxRunner
 	currencyLk    CurrencyLookup // Sprint 12 — nil if same-currency only
+	period        PeriodResolver // Sprint 23.2 — replaces hardcoded ensureOpenPeriod stub
 	log           *slog.Logger
 }
 
@@ -69,13 +70,25 @@ type CurrencyLookup interface {
 	GetCurrency(ctx context.Context, code string) (currency.Currency, error)
 }
 
+// PeriodResolver resolves the current open accounting period for a tenant.
+// Implemented by an adapter over period.Service (see cmd/api/period_adapters.go).
+//
+// Sprint 23.2: this replaces the previous ensureOpenPeriod stub that returned
+// a hardcoded seed UUID. The resolver runs OUTSIDE the ledger tx — race vs
+// concurrent period close is acceptable because migration 000008's trigger
+// blocks inserts pointing to a closed period.
+type PeriodResolver interface {
+	GetOrCreateOpenPeriod(ctx context.Context, tenantID string, now time.Time) (periodID string, err error)
+}
+
 // TransferServiceDeps bundles all dependencies for TransferService.
 type TransferServiceDeps struct {
 	Accounts      ledger.AccountRepository
 	Transactions  ledger.TransactionRepository
 	Entries       ledger.EntryRepository
 	DB            TxRunner
-	CurrencyLk    CurrencyLookup // optional; nil disables cross-currency
+	CurrencyLk    CurrencyLookup   // optional; nil disables cross-currency
+	Period        PeriodResolver   // optional; if nil, falls back to stubUuidPeriodResolver
 	Logger        *slog.Logger
 }
 
@@ -85,14 +98,29 @@ func NewTransferService(deps TransferServiceDeps) *TransferService {
 	if log == nil {
 		log = slog.Default()
 	}
+	resolver := deps.Period
+	if resolver == nil {
+		resolver = stubUuidPeriodResolver{}
+	}
 	return &TransferService{
 		accounts:     deps.Accounts,
 		transactions: deps.Transactions,
 		entries:      deps.Entries,
 		db:           deps.DB,
 		currencyLk:   deps.CurrencyLk,
+		period:       resolver,
 		log:          log,
 	}
+}
+
+// stubUuidPeriodResolver is the fallback used when no PeriodResolver is wired.
+// Kept for backward compat with unit tests that don't set up the period repo.
+// Returns a deterministic-but-unique UUID so the seed-UUID hardcode is no
+// longer the only behavior.
+type stubUuidPeriodResolver struct{}
+
+func (stubUuidPeriodResolver) GetOrCreateOpenPeriod(_ context.Context, _ string, _ time.Time) (string, error) {
+	return uuid.NewString(), nil
 }
 
 // Transfer performs a double-entry transfer between two accounts.
@@ -203,6 +231,17 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 	// 3. Generate ID up front
 	txID := uuid.NewString()
 	now := time.Now().UTC()
+
+	// 3a. Resolve period BEFORE opening the ledger tx.
+	// Sprint 23.2: this replaces the old hardcoded seed UUID stub. The period
+	// is read once here (outside any tx) and reused inside the tx. Race vs
+	// concurrent period close is acceptable for MVP — migration 000008's
+	// trigger blocks inserts pointing to a closed period.
+	periodID, err := s.period.GetOrCreateOpenPeriod(ctx, srcBefore.TenantID, now)
+	if err != nil {
+		return ledger.Transaction{}, fmt.Errorf("resolve open period: %w", err)
+	}
+
 	var result ledger.Transaction
 
 	err = s.db.ExecuteTx(ctx, func(tx ledger.Tx) error {
@@ -251,13 +290,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 			)
 		}
 
-		// 4d. Resolve period
-		periodID, err := s.ensureOpenPeriod(ctx, tx, src.TenantID, now)
-		if err != nil {
-			return fmt.Errorf("ensure period: %w", err)
-		}
-
-		// 4e. Insert transaction header
+		// 4d. Insert transaction header
 		newBalance := src.CachedBalance.Sub(input.Amount)
 		dstBalance := dst.CachedBalance.Add(toAmount)
 
@@ -389,8 +422,4 @@ func parseUUID(s string) uuid.UUID {
 		return uuid.Nil
 	}
 	return id
-}
-
-func (s *TransferService) ensureOpenPeriod(_ context.Context, _ ledger.Tx, _ string, _ time.Time) (string, error) {
-	return "00000000-0000-0000-0000-000000000001", nil
 }

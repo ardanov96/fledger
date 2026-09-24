@@ -166,7 +166,9 @@ func (e *IntegrationTestEnv) insertOpenPeriod(t *testing.T, ctx context.Context,
 }
 
 // seedAccountPeriod inserts a stub open period via direct SQL for fast setup.
-// (Used when the use case's ensureOpenPeriod stub returns a hardcoded ID.)
+// The TransferService now resolves periods via PeriodResolver.GetOrCreateOpenPeriod
+// (Sprint 23.2), but tests that pre-seed a known period can pass it through a
+// stubPeriodResolver to keep the test deterministic.
 func (e *IntegrationTestEnv) setTenantCtx(ctx context.Context, tenantID, userID uuid.UUID) context.Context {
 	info := &tenantctx.Info{
 		TenantID:   tenantID,
@@ -191,7 +193,7 @@ func TestIntegration_TransferEndToEnd(t *testing.T) {
 
 	// Set tenant context for setup operations (RLS expects it).
 	setupCtx := env.setTenantCtx(ctx, tenantA, userA)
-	env.insertOpenPeriod(t, setupCtx, tenantA)
+	periodA := env.insertOpenPeriod(t, setupCtx, tenantA)
 
 	src := env.createAccount(t, setupCtx, tenantA, "ACC-SRC", "Source", 100_000)
 	dst := env.createAccount(t, setupCtx, tenantA, "ACC-DST", "Dest", 0)
@@ -203,6 +205,9 @@ func TestIntegration_TransferEndToEnd(t *testing.T) {
 		Transactions: postgres.NewTransactionRepository(env.DB),
 		Entries:      postgres.NewEntryRepository(env.DB),
 		DB:           &dbTxAdapter{db: env.DB},
+		Period:       fixedPeriodResolver{periodID: period},
+		Period:       fixedPeriodResolver{periodID: period},
+		Period:       fixedPeriodResolver{periodID: periodA},
 		Logger:       testLogger(),
 	})
 
@@ -269,7 +274,7 @@ func TestIntegration_ConcurrentTransfers(t *testing.T) {
 	user := uuid.New()
 
 	setupCtx := env.setTenantCtx(ctx, tenant, user)
-	env.insertOpenPeriod(t, setupCtx, tenant)
+	period := period := env.insertOpenPeriod(t, setupCtx, tenant)
 
 	src := env.createAccount(t, setupCtx, tenant, "ACC-SRC", "Source", 100_000)
 	dst := env.createAccount(t, setupCtx, tenant, "ACC-DST", "Dest", 0)
@@ -407,6 +412,7 @@ func TestIntegration_PeriodCloseAndReconciler(t *testing.T) {
 		Transactions: postgres.NewTransactionRepository(env.DB),
 		Entries:      postgres.NewEntryRepository(env.DB),
 		DB:           &dbTxAdapter{db: env.DB},
+		Period:       fixedPeriodResolver{periodID: periodID},
 		Logger:       testLogger(),
 	})
 	txCtx := env.setTenantCtx(ctx, tenant, user)
@@ -518,6 +524,17 @@ type dbTxAdapter struct {
 
 func (a *dbTxAdapter) ExecuteTx(ctx context.Context, fn func(ledger.Tx) error) error {
 	return a.db.RunInTxDomain(ctx, fn)
+}
+
+// fixedPeriodResolver is a stub PeriodResolver used in integration tests to
+// pin the period_id to a pre-seeded open period (created via insertOpenPeriod).
+// Sprint 23.2.
+type fixedPeriodResolver struct {
+	periodID string
+}
+
+func (f fixedPeriodResolver) GetOrCreateOpenPeriod(_ context.Context, _ string, _ time.Time) (string, error) {
+	return f.periodID, nil
 }
 
 // testLogger returns a discard slog logger so tests don't pollute stdout.

@@ -148,6 +148,16 @@ type Repository interface {
 	// ComputeAccountBalanceAtPeriod computes signed balance for an account up to (and including)
 	// the period. Caller's tx.
 	ComputeAccountBalanceAtPeriod(ctx context.Context, tx Tx, accountID, periodID string) (balanceMinor int64, entryCount int, err error)
+
+	// GetCurrentOpenPeriod returns the open period covering `now` for a tenant.
+	// Read-only; no tx required. Returns ErrNotFound if no open period exists
+	// at the given time (caller should call InsertPeriod to create one).
+	GetCurrentOpenPeriod(ctx context.Context, tenantID string, now time.Time) (Period, error)
+
+	// InsertPeriod writes a new period row. Read-only caller (no tx required) —
+	// the caller is responsible for retrying on unique-violation if a concurrent
+	// insert lands first. Returns ErrAlreadyExists on (tenant, range) collision.
+	InsertPeriod(ctx context.Context, p Period) error
 }
 
 // AccountRef is a minimal reference to an account (used when generating snapshots).

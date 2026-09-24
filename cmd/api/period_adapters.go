@@ -1,14 +1,17 @@
 // period_adapters.go — adapters to wire PeriodService → handler.PeriodAPI.
 //
-// Two pieces:
+// Three pieces:
 //
 //  1. periodTxAdapter — adapts DB.RunInTxPeriodDomain → usecase.PeriodTxRunner
 //  2. periodAPIAdapter — adapts usecase.PeriodService → handler.PeriodAPI
 //     (translates input types from handler package to usecase package)
+//  3. periodResolverAdapter — adapts usecase.PeriodService → usecase.PeriodResolver
+//     (Sprint 23.2: used by TransferService to replace the ensureOpenPeriod stub)
 package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/runut/fmcg-wallet/internal/domain/period"
 	"github.com/runut/fmcg-wallet/internal/handler"
@@ -81,3 +84,35 @@ func (a *periodAPIAdapter) ListSnapshotsByPeriod(ctx context.Context, periodID s
 
 // Compile-time guard: ensure periodAPIAdapter satisfies handler.PeriodAPI.
 var _ handler.PeriodAPI = (*periodAPIAdapter)(nil)
+
+// =============================================================================
+// periodResolverAdapter — adapts *usecase.PeriodService to usecase.PeriodResolver
+// =============================================================================
+//
+// Sprint 23.2: TransferService used to return a hardcoded seed UUID from
+// ensureOpenPeriod. Now it accepts a usecase.PeriodResolver and we wire this
+// adapter that delegates to *usecase.PeriodService.GetOrCreateOpenPeriod.
+//
+// Note: this is a query-style adapter (no tx parameter) because period
+// resolution happens OUTSIDE the ledger tx. The race vs concurrent period
+// close is acceptable for MVP — migration 000008's trigger blocks inserts
+// pointing to a closed period anyway.
+
+type periodResolverAdapter struct {
+	svc *usecase.PeriodService
+}
+
+func (a *periodResolverAdapter) GetOrCreateOpenPeriod(ctx context.Context, tenantID string, now contextTime) (string, error) {
+	p, err := a.svc.GetOrCreateOpenPeriod(ctx, tenantID, now)
+	if err != nil {
+		return "", err
+	}
+	return p.ID, nil
+}
+
+// Compile-time guard: ensure periodResolverAdapter satisfies usecase.PeriodResolver.
+var _ usecase.PeriodResolver = (*periodResolverAdapter)(nil)
+
+// contextTime is just an alias for time.Time so the adapter signature reads
+// naturally; defined here to keep the adapter file self-contained.
+type contextTime = time.Time

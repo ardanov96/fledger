@@ -122,12 +122,20 @@ func run() error {
 		log,
 	)
 
+	periodService := usecase.NewPeriodService(usecase.PeriodServiceDeps{
+		Repo:   periodRepo,
+		DB:     periodTx,
+		Logger: log,
+	})
+
+	transferPeriodResolver := &periodResolverAdapter{svc: periodService}
 	transferService := usecase.NewTransferService(usecase.TransferServiceDeps{
 		Accounts:     accountRepo,
 		Transactions: transactionRepo,
 		Entries:      entryRepo,
 		DB:           txAdapter,
 		CurrencyLk:   fxRateLk,
+		Period:       transferPeriodResolver,
 		Logger:       log,
 	})
 	accountService := usecase.NewAccountService(accountRepo, entryRepo)
@@ -136,11 +144,6 @@ func run() error {
 		CreditLimits: creditLimitRepo,
 		DB:           invoiceTx,
 		Logger:       log,
-	})
-	periodService := usecase.NewPeriodService(usecase.PeriodServiceDeps{
-		Repo:   periodRepo,
-		DB:     periodTx,
-		Logger: log,
 	})
 	periodAPI := &periodAPIAdapter{svc: periodService}
 

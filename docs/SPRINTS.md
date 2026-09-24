@@ -14,7 +14,7 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
-| 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | 🔄 In progress |
+| 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | 🔄 In progress (23.1+23.2 done) |
 | 22B | [Hardening](#sprint-22b-hardening-2026-08-15) | Fase 2 follow-up | 2026-08-15 | ✅ Done |
 | 22A | [Documentation & DX Hardening](#sprint-22a-documentation-dx-hardening-2026-08-15) | — | 2026-08-15 | ✅ Done |
 | 21 | [Interview Prep](#sprint-21-interview-prep-2026-08-16) | Fase 7 | 2026-08-16 | ✅ Done |
@@ -52,23 +52,27 @@
 Hilangkan **7 critical tech debt items** yang terakumulasi sejak Sprint 22B. Result: sprint tracking hidup, transfer service akurat multi-period, main.go manageable, observability vendor-agnostic.
 
 #### Scope (planned)
-- **23.1** — Sprint tracking foundation (file ini) + ADR catalog + harmonisasi sprint counter
-- **23.2** — Fix `TransferService.ensureOpenPeriod` stub (saat ini hardcoded seed UUID)
-- **23.3** — Decompose `cmd/api/main.go` (583 LOC) menjadi wiring files
-- **23.4** — Adopt OpenTelemetry SDK (replace custom W3C traceparent)
+- **23.1** — Sprint tracking foundation (file ini) + ADR catalog + harmonisasi sprint counter ✅ Done
+- **23.2** — Fix `TransferService.ensureOpenPeriod` stub (saat ini hardcoded seed UUID) ✅ Done
+- **23.3** — Decompose `cmd/api/main.go` (583 LOC) menjadi wiring files (deferred)
+- **23.4** — Adopt OpenTelemetry SDK (replace custom W3C traceparent) (deferred)
 
 #### Key Artifacts (in progress)
-- `docs/SPRINTS.md` — file ini (single source of truth sprint history)
-- `docs/adr/index.md` — ADR catalog dengan 8 ADRs + status
+- `docs/SPRINTS.md` — file ini (single source of truth sprint history) ✅
+- `docs/adr/index.md` — ADR catalog dengan 8 ADRs + status ✅
+- `internal/usecase/transfer_service.go` — `PeriodResolver` interface + pre-tx period resolution ✅
 
 #### Learnings (preliminary)
 - Doc drift terdeteksi di banyak tempat (broken links ke `SPRINTS.md`, inconsistent sprint counter)
-- ADR-0003 reference ADR-0010/0011/0012 yang tidak ada → perlu cleanup atau create ADRs
+- ADR-0003 reference ADR-0010/0011/0012 yang tidak ada → cleanup dengan Future ADR Candidate notes
+- Pre-resolve period (outside tx) simpler than adding `period.Tx` dependency to TransferService — race vs concurrent period close acceptable karena migration 000008 trigger blocks insert ke closed period
 
 #### Follow-ups
-- Sprint 23.2 (period resolution)
+- Sprint 23.3 (cmd/api/main.go decomposition) — opsional, less critical
+- Sprint 23.4 (OTel SDK migration) — opsional, less critical
 - Sprint 24 — likely outbox pattern + NATS consumer
 - ADR-0009 (planned): int64 minor units money rationale
+- `InvoiceService.EnsurePeriod` masih punya fallback hardcoded UUID — could follow same pattern (lower priority)
 
 ---
 

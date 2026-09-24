@@ -402,6 +402,62 @@ WHERE account_id = $1 AND period_id = $2
 	return bal, cnt, nil
 }
 
+// ----- Period discovery (Sprint 23.2: used by TransferService) -----
+
+// GetCurrentOpenPeriod returns the open period that covers `now` for a tenant.
+// Matches status='open' AND period_start <= now::date <= period_end.
+// Returns ErrNotFound when no open period covers the given timestamp —
+// the caller should call InsertPeriod to create one.
+func (r *PeriodRepository) GetCurrentOpenPeriod(ctx context.Context, tenantID string, now time.Time) (period.Period, error) {
+	const q = `
+SELECT id, tenant_id, period_start, period_end, status
+FROM accounting_periods
+WHERE tenant_id = $1
+  AND status = 'open'
+  AND period_start <= $2::date
+  AND period_end   >= $2::date
+ORDER BY period_start DESC
+LIMIT 1
+`
+	var dto PeriodDTO
+	err := r.db.Pool.QueryRow(ctx, q, tenantID, now).Scan(
+		&dto.ID, &dto.TenantID, &dto.PeriodStart, &dto.PeriodEnd, &dto.Status,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return period.Period{}, apperrors.ErrNotFound
+		}
+		return period.Period{}, fmt.Errorf("get current open period: %w", err)
+	}
+	return dtoToPeriod(dto), nil
+}
+
+// InsertPeriod writes a new accounting_periods row.
+//
+// Caller's responsibility:
+//   - Caller retries on ErrAlreadyExists if a concurrent insert lands first
+//     (the (tenant_id, period_start, period_end) UNIQUE constraint catches
+//     exact duplicates; the btree_gist EXCLUDE constraint catches overlap).
+func (r *PeriodRepository) InsertPeriod(ctx context.Context, p period.Period) error {
+	const q = `
+INSERT INTO accounting_periods (
+    id, tenant_id, period_start, period_end, status
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+`
+	_, err := r.db.Pool.Exec(ctx, q,
+		p.ID, p.TenantID, p.PeriodStart, p.PeriodEnd, string(p.Status),
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.ErrAlreadyExists
+		}
+		return fmt.Errorf("insert period: %w", err)
+	}
+	return nil
+}
+
 // =============================================================================
 // DTO helpers
 // =============================================================================
