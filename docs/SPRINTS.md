@@ -14,7 +14,8 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
-| 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | 🔄 In progress (23.1+23.2 done) |
+| 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | ✅ Done |
+| 24 | [Transactional Outbox + NATS Subscriber](#sprint-24--transactional-outbox--nats-subscriber-2026-09-21) | 4A | 2026-09-21 | ✅ Done |
 | 22B | [Hardening](#sprint-22b-hardening-2026-08-15) | Fase 2 follow-up | 2026-08-15 | ✅ Done |
 | 22A | [Documentation & DX Hardening](#sprint-22a-documentation-dx-hardening-2026-08-15) | — | 2026-08-15 | ✅ Done |
 | 21 | [Interview Prep](#sprint-21-interview-prep-2026-08-16) | Fase 7 | 2026-08-16 | ✅ Done |
@@ -73,6 +74,54 @@ Hilangkan **7 critical tech debt items** yang terakumulasi sejak Sprint 22B. Res
 - Sprint 24 — likely outbox pattern + NATS consumer
 - ADR-0009 (planned): int64 minor units money rationale
 - `InvoiceService.EnsurePeriod` masih punya fallback hardcoded UUID — could follow same pattern (lower priority)
+
+---
+
+## Sprint 24 — Transactional Outbox + NATS Subscriber (2026-09-21)
+
+**Status:** ✅ Done · **Fase:** 4A (Event-driven foundations)
+
+#### Goal
+Implement the **transactional outbox pattern** so business writes reliably publish events to NATS without 2PC. Subscribe to `fmcg.transfer.posted` in the API process as the smoke test that the publisher → broker → subscriber loop works end-to-end.
+
+#### Scope
+- **24.1** — Migration `000017_outbox.up.sql` — `outbox_events` table dengan RLS + `app_admin` bypass
+- **24.2** — `internal/domain/outbox/` — Event entity + Repository interface (Tx abstraction)
+- **24.3** — `internal/repository/postgres/outbox_repo.go` + `tx_adapter_outbox.go` — pgx impl + cross-domain tx bridge
+- **24.4** — `internal/infra/nats.go` — NATS client wrapper (Connect/Publish/Subscribe/Ping/Close)
+- **24.5** — `internal/usecase/outbox_publisher.go` — `OutboxPublisher.RunOnce()` (fetch → publish → mark)
+- **24.6** — `internal/worker/outbox_worker.go` + `cmd/worker/main.go` — ticker-based publisher loop
+- **24.7** — `OutboxWriter` interface di `transfer_service.go` — write `transfer.posted` event in SAME tx as ledger writes
+- **24.8** — `cmd/api/nats_subscriber.go` — log-only subscriber for `transfer.posted`; `/readyz` reports NATS state
+- **24.9** — Unit tests for `OutboxPublisher` (empty / success / broker failure / fetch error)
+
+#### Key Artifacts
+- `migrations/000017_outbox.{up,down}.sql` — outbox_events table
+- `internal/domain/outbox/outbox.go` — domain entity + interface (zero infra deps)
+- `internal/repository/postgres/outbox_repo.go` — Postgres impl with `outbox_eventDTO` mapping
+- `internal/repository/postgres/tx_adapter_outbox.go` — `WrapOutboxTx` + `UnwrapPgxTxFromLedger` bridges
+- `internal/infra/nats.go` — `NATSClient` (Connect, Publish, Subscribe, Ping, Close, IsConnected)
+- `internal/usecase/outbox_publisher.go` — `EventBroker` interface + `OutboxPublisher.RunOnce`
+- `internal/usecase/outbox_publisher_test.go` — 6 unit tests with fake repo + broker
+- `internal/worker/outbox_worker.go` — `OutboxPublisherWorker` (mirrors `ReconcilerWorker` pattern)
+- `cmd/api/outbox_adapter.go` — `outboxWriterAdapter` bridges `usecase.OutboxWriter` ↔ `postgres.OutboxRepository`
+- `cmd/api/nats_subscriber.go` — log handler proves end-to-end loop works
+
+#### Learnings
+- Outbox pattern = atomicity guarantee via "same tx as business write". No 2PC, no distributed transactions.
+- Per-event publish failure ≠ cycle failure: `IncrementAttempts` records retry state without failing the cycle.
+- `MarkPublished` AFTER batch: single UPDATE per cycle is more efficient than per-event.
+- Cross-domain write pattern: `UnwrapPgxTxFromLedger(tx ledger.Tx) → wrapOutboxTx(pgxTx)` lets outbox repo write inside ledger tx without depending on the outbox domain's Tx type.
+- Default fallback (`noopOutboxWriter`) preserves test compatibility — existing transfer tests don't break.
+- `flushTimeout(2s)` after publish ensures broker ack before MarkPublished (vs fire-and-forget).
+
+#### Follow-ups
+- Sprint 25 — Aging Recalculator worker (cmd/worker/main.go TODO still pending)
+- Sprint 26 — FX Rate Auto-Refresh
+- Add `FOR UPDATE SKIP LOCKED` to `FetchUnpublished` for multi-publisher-safety
+- More event types: `invoice.created`, `period.closed`, `payment.recorded`
+- Replace log subscriber with real handlers (notification dispatcher, fraud scanner, projection writer)
+- Move from core NATS to JetStream for durable subscription (currently fire-and-forget)
 
 ---
 
@@ -675,17 +724,19 @@ Production-grade foundation reset — strict conventions from day 1.
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 24 | Outbox Pattern + NATS Consumer | Fase 4A | ADR-0008 follow-up | 1 week |
 | 25 | Aging Recalculator Worker | Fase 4 | cmd/worker/main.go:70 TODO | 3 days |
 | 26 | FX Rate Auto-Refresh | Fase 1D follow-up | ADR-0005 follow-up | 1 week |
-| 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO | 1 week |
-| 28 | Fraud Flag Scanner | Fase 8 | cmd/worker/main.go:72 TODO | 1 week |
+| 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO + Sprint 24 subscriber | 1 week |
+| 28 | Fraud Flag Scanner | Fase 8 | cmd/worker/main.go:72 TODO + Sprint 24 subscriber | 1 week |
 | 29 | Login Attempt Partitioning | Fase 2B | Migration 000013 follow-up | 2 days |
 | 30 | Secret Rotation Enforcement | Fase 2E | runbooks/secret-rotation.md TODO | 2 days |
 | 31 | OTel SDK Migration | Fase 3B | Sprint 18 follow-up | 3 days |
 | 32 | RLS for `user_credentials` | Fase 5A | ADR-0006:78 TODO | 2 days |
 | 33 | Mutation Testing + Chaos | Fase 7 | Roadmap | 1 week |
 | TBD | Frontend Next.js Migration | Fase 6 | `web/README.md` limitations | 2 weeks |
+| TBD | FOR UPDATE SKIP LOCKED di outbox FetchUnpublished | 4A follow-up | Sprint 24 follow-up | 1 day |
+| TBD | More event types (invoice.created, period.closed, payment.recorded) | 4A | Sprint 24 follow-up | 1 week |
+| TBD | JetStream migration untuk durable subscription | 4A | Sprint 24 follow-up | 1 week |
 
 ---
 

@@ -93,6 +93,7 @@ func run() error {
 	collectionRepo := postgres.NewCollectionRepository(db)
 	currencyRepo := postgres.NewCurrencyRepository(db) // Sprint 12 / Fase 1D
 	authRepo := postgres.NewAuthRepository(db)         // Sprint 13
+	outboxRepo := postgres.NewOutboxRepository(db)     // Sprint 24 / Fase 4A
 
 	txAdapter := &dbTxAdapter{db: db}
 	invoiceTx := &invoiceTxAdapter{db: db}
@@ -129,6 +130,7 @@ func run() error {
 	})
 
 	transferPeriodResolver := &periodResolverAdapter{svc: periodService}
+	outboxWriter := newOutboxWriterAdapter(outboxRepo)
 	transferService := usecase.NewTransferService(usecase.TransferServiceDeps{
 		Accounts:     accountRepo,
 		Transactions: transactionRepo,
@@ -136,6 +138,7 @@ func run() error {
 		DB:           txAdapter,
 		CurrencyLk:   fxRateLk,
 		Period:       transferPeriodResolver,
+		Outbox:       outboxWriter,
 		Logger:       log,
 	})
 	accountService := usecase.NewAccountService(accountRepo, entryRepo)
@@ -277,7 +280,19 @@ func run() error {
 		log.Info("transfer rate limiter enabled", "user_burst", tBurst, "user_rps", tRps, "tenant_burst", tTenantBurst, "tenant_rps", tTenantRps)
 	}
 
-	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter, globalLimiter, transferLimiter)
+	// Sprint 24 / Fase 4A: connect to NATS and subscribe to outbox events.
+	// Logging-only handler — proves publisher → broker → subscriber loop works.
+	// Production subscribers (notification, fraud, projections) would add
+	// their own handlers. Wired BEFORE buildRouter so /readyz can report state.
+	natsClient, natsErr := startEventSubscriber(ctx, cfg.NATS, log)
+	if natsErr != nil {
+		log.Warn("event subscriber failed to start; API will run without NATS consumer", "error", natsErr)
+		natsClient = nil
+	} else {
+		defer natsClient.Close()
+	}
+
+	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter, globalLimiter, transferLimiter, natsClient)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
@@ -338,6 +353,7 @@ func buildRouter(
 	authLimiter *middleware.RateLimiter,
 	globalLimiter *middleware.MultiTierLimiter,
 	transferLimiter *middleware.MultiTierLimiter,
+	natsClient *infra.NATSClient,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -351,7 +367,7 @@ func buildRouter(
 	r.Use(corsMiddleware(cfg.Web.Origin))
 
 	r.Get("/healthz", livenessHandler)
-	r.Get("/readyz", readinessHandler(pool))
+	r.Get("/readyz", readinessHandler(pool, natsClient))
 	r.Get("/version", versionHandler())
 
 	if cfg.Telemetry.MetricsEnabled {
@@ -527,7 +543,7 @@ func livenessHandler(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func readinessHandler(pool *pgxpool.Pool) http.HandlerFunc {
+func readinessHandler(pool *pgxpool.Pool, nats *infra.NATSClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
@@ -544,7 +560,14 @@ func readinessHandler(pool *pgxpool.Pool) http.HandlerFunc {
 			checks["postgres"] = "up"
 		}
 		checks["redis"] = "skipped (not yet wired)"
-		checks["nats"] = "skipped (not yet wired)"
+		if nats == nil {
+			checks["nats"] = "skipped (not wired)"
+		} else if err := nats.Ping(); err != nil {
+			status = "degraded"
+			checks["nats"] = "DOWN: " + err.Error()
+		} else {
+			checks["nats"] = "up"
+		}
 
 		httpx.JSON(w, httpStatus, map[string]any{
 			"status": status,

@@ -7,6 +7,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/runut/fmcg-wallet/internal/domain/currency"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
+	"github.com/runut/fmcg-wallet/internal/domain/outbox"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 )
@@ -53,6 +55,7 @@ type TransferService struct {
 	db            TxRunner
 	currencyLk    CurrencyLookup // Sprint 12 — nil if same-currency only
 	period        PeriodResolver // Sprint 23.2 — replaces hardcoded ensureOpenPeriod stub
+	outbox        OutboxWriter   // Sprint 24 / Fase 4A — transactional outbox hook
 	log           *slog.Logger
 }
 
@@ -81,6 +84,18 @@ type PeriodResolver interface {
 	GetOrCreateOpenPeriod(ctx context.Context, tenantID string, now time.Time) (periodID string, err error)
 }
 
+// OutboxWriter abstracts the outbox insert so the use case layer stays
+// decoupled from the postgres package. Implemented in cmd/api by an adapter
+// that extracts the pgx.Tx from the ledger.Tx and wraps it as outbox.Tx.
+//
+// Sprint 24 / Fase 4A: used to write the `transfer.posted` event in the
+// SAME tx as the ledger writes. If the transfer tx commits, the event is
+// durable and will be published by the OutboxPublisherWorker. If it rolls
+// back, the event row is never written — no orphan events.
+type OutboxWriter interface {
+	AppendTransferPosted(ctx context.Context, tx ledger.Tx, e outbox.Event) error
+}
+
 // TransferServiceDeps bundles all dependencies for TransferService.
 type TransferServiceDeps struct {
 	Accounts      ledger.AccountRepository
@@ -89,6 +104,7 @@ type TransferServiceDeps struct {
 	DB            TxRunner
 	CurrencyLk    CurrencyLookup   // optional; nil disables cross-currency
 	Period        PeriodResolver   // optional; if nil, falls back to stubUuidPeriodResolver
+	Outbox        OutboxWriter     // optional; if nil, falls back to noopOutboxWriter
 	Logger        *slog.Logger
 }
 
@@ -102,6 +118,10 @@ func NewTransferService(deps TransferServiceDeps) *TransferService {
 	if resolver == nil {
 		resolver = stubUuidPeriodResolver{}
 	}
+	outboxW := deps.Outbox
+	if outboxW == nil {
+		outboxW = noopOutboxWriter{}
+	}
 	return &TransferService{
 		accounts:     deps.Accounts,
 		transactions: deps.Transactions,
@@ -109,6 +129,7 @@ func NewTransferService(deps TransferServiceDeps) *TransferService {
 		db:           deps.DB,
 		currencyLk:   deps.CurrencyLk,
 		period:       resolver,
+		outbox:       outboxW,
 		log:          log,
 	}
 }
@@ -121,6 +142,15 @@ type stubUuidPeriodResolver struct{}
 
 func (stubUuidPeriodResolver) GetOrCreateOpenPeriod(_ context.Context, _ string, _ time.Time) (string, error) {
 	return uuid.NewString(), nil
+}
+
+// noopOutboxWriter is the fallback used when no OutboxWriter is wired.
+// Used by unit tests that don't care about the outbox side-effect. Returns
+// nil so the transfer succeeds normally.
+type noopOutboxWriter struct{}
+
+func (noopOutboxWriter) AppendTransferPosted(_ context.Context, _ ledger.Tx, _ outbox.Event) error {
+	return nil
 }
 
 // Transfer performs a double-entry transfer between two accounts.
@@ -368,6 +398,14 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 			return fmt.Errorf("mark posted: %w", err)
 		}
 
+		// 4i. Outbox event (Sprint 24 / Fase 4A).
+		// Atomic with the transfer write — if any of the above fails, this
+		// never executes and no orphan event is published.
+		event := s.buildTransferPostedEvent(txn, entries, src, dst, input.Amount, now)
+		if err := s.outbox.AppendTransferPosted(ctx, tx, event); err != nil {
+			return fmt.Errorf("append transfer.posted outbox event: %w", err)
+		}
+
 		postedAt := now
 		result = txn
 		result.Status = ledger.TransactionStatusPosted
@@ -422,4 +460,62 @@ func parseUUID(s string) uuid.UUID {
 		return uuid.Nil
 	}
 	return id
+}
+
+// buildTransferPostedEvent constructs the outbox event for a posted transfer.
+// Payload is intentionally flat + self-describing so subscribers can parse
+// without needing the domain types. subject/event_type follow the standard
+// format (see outbox.SubjectTransferPosted / outbox.EventTransferPosted).
+func (s *TransferService) buildTransferPostedEvent(
+	txn ledger.Transaction,
+	entries []ledger.Entry,
+	src, dst ledger.Account,
+	amount money.Money,
+	now time.Time,
+) outbox.Event {
+	tenantID, _ := uuid.Parse(src.TenantID)
+
+	entryPayloads := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		entryPayloads = append(entryPayloads, map[string]any{
+			"entry_id":     e.ID,
+			"account_id":   e.AccountID,
+			"amount_minor": e.Amount.Minor(),
+			"currency":     e.Currency,
+			"type":         string(e.Type),
+			"period_id":    e.PeriodID,
+		})
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"transaction_id":  txn.ID,
+		"tenant_id":       txn.TenantID,
+		"period_id":       txn.PeriodID,
+		"idempotency_key": txn.IdempotencyKey,
+		"description":     txn.Description,
+		"ref_type":        txn.RefType,
+		"ref_id":          txn.RefID,
+		"initiator_id":    txn.InitiatorID,
+		"from_account_id": src.ID,
+		"to_account_id":   dst.ID,
+		"amount_minor":    amount.Minor(),
+		"currency":        src.Currency,
+		"is_cross_cur":    src.Currency != dst.Currency,
+		"posted_at":       now.Format(time.RFC3339Nano),
+		"entries":         entryPayloads,
+	})
+
+	var payloadMap map[string]any
+	_ = json.Unmarshal(payload, &payloadMap)
+
+	return outbox.Event{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		AggregateType: outbox.AggregateTransfer,
+		AggregateID:   uuid.MustParse(txn.ID),
+		EventType:     outbox.EventTransferPosted,
+		Subject:       outbox.SubjectTransferPosted,
+		Payload:       payloadMap,
+		CreatedAt:     now,
+	}
 }

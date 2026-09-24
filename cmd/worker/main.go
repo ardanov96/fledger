@@ -50,7 +50,7 @@ func run() error {
 	log.Info("starting fmcg-wallet worker", "env", cfg.App.Env)
 
 	// -------------------------------------------------------------------------
-	// Active workers (Sprint 10)
+	// Active workers (Sprint 10 + Sprint 24)
 	// -------------------------------------------------------------------------
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -63,11 +63,16 @@ func run() error {
 		return fmt.Errorf("wire reconciler worker: %w", err)
 	}
 
+	// Wire OutboxPublisherWorker (Sprint 24 — Fase 4A).
+	// Polls outbox_events, publishes to NATS, marks rows as published.
+	if err := wireOutboxWorker(ctx, cfg, log); err != nil {
+		return fmt.Errorf("wire outbox worker: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Future workers (placeholders)
 	// -------------------------------------------------------------------------
 	// TODO Fase 4: aging_recalculator (scheduled nightly)
-	// TODO Fase 4: outbox_publisher (continuous)
 	// TODO Fase 8: notification_dispatcher
 	// TODO Fase 8: fraud_flag_scanner
 
@@ -232,3 +237,54 @@ var (
 )
 
 var startedAt = time.Now()
+
+// wireOutboxWorker connects to DB + NATS and starts the OutboxPublisherWorker.
+// Sprint 24 / Fase 4A.
+func wireOutboxWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	pool, err := infra.NewPGXPool(ctx, &cfg.DB)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+
+	db := postgres.NewDB(pool)
+	outboxRepo := postgres.NewOutboxRepository(db)
+
+	// Interval configurable via env, default 1 second.
+	interval := 1 * time.Second
+	if d := os.Getenv("OUTBOX_PUBLISHER_INTERVAL"); d != "" {
+		if parsed, err := time.ParseDuration(d); err == nil && parsed > 0 {
+			interval = parsed
+		}
+	}
+
+	// Batch size configurable via env, default 50.
+	batchSize := 50
+	if s := os.Getenv("OUTBOX_PUBLISHER_BATCH"); s != "" {
+		fmt.Sscanf(s, "%d", &batchSize)
+	}
+
+	natsClient, err := infra.NewNATSClient(ctx, cfg.NATS, log)
+	if err != nil {
+		return fmt.Errorf("connect nats: %w", err)
+	}
+
+	publisher := usecase.NewOutboxPublisher(usecase.OutboxPublisherDeps{
+		Repo:      outboxRepo,
+		Broker:    natsClient,
+		Logger:    log,
+		BatchSize: batchSize,
+	})
+
+	outboxWorker := worker.NewOutboxPublisherWorker(worker.OutboxPublisherWorkerDeps{
+		Publisher: publisher,
+		Logger:    log,
+		Interval:  interval,
+	})
+	outboxWorker.Start(ctx)
+	log.Info("outbox publisher worker started",
+		"interval", interval,
+		"batch_size", batchSize,
+		"nats_url", cfg.NATS.URL,
+	)
+	return nil
+}
