@@ -19,9 +19,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shopspring/decimal"
+
+	"github.com/runut/fmcg-wallet/internal/domain/currency"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/domain/reconciler"
 	"github.com/runut/fmcg-wallet/internal/infra"
+	"github.com/runut/fmcg-wallet/internal/infra/fxprovider"
 	"github.com/runut/fmcg-wallet/internal/platform/config"
 	"github.com/runut/fmcg-wallet/internal/platform/logger"
 	"github.com/runut/fmcg-wallet/internal/repository/postgres"
@@ -73,6 +77,12 @@ func run() error {
 	// Nightly recalculation of aging_snapshots table from live v_invoice_aging.
 	if err := wireAgingWorker(ctx, cfg, log); err != nil {
 		return fmt.Errorf("wire aging worker: %w", err)
+	}
+
+	// Wire FxRateWorker (Sprint 26 — Fase 1D follow-up).
+	// Periodically refreshes FX rates from configured provider.
+	if err := wireFxRateWorker(ctx, cfg, log); err != nil {
+		return fmt.Errorf("wire fx rate worker: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -325,5 +335,69 @@ func wireAgingWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) 
 	})
 	agingWorker.Start(ctx)
 	log.Info("aging worker started", "interval", interval)
+	return nil
+}
+
+// wireFxRateWorker starts the FxRateWorker (Sprint 26 / Fase 1D follow-up).
+//
+// Provider selection:
+//   - If cfg.FX.ProviderURL is non-empty → HTTPProvider
+//   - Otherwise → StubProvider with hardcoded USD/IDR=15800, EUR/IDR=17000, SGD/IDR=11800
+//     (deterministic; useful for dev/demo without network access)
+func wireFxRateWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	pool, err := infra.NewPGXPool(ctx, &cfg.DB)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	currencyRepo := postgres.NewCurrencyRepository(postgres.NewDB(pool))
+
+	var provider currency.FxRateProvider
+	if cfg.FX.ProviderURL != "" {
+		log.Info("fx rate worker: using HTTPProvider", "url", cfg.FX.ProviderURL)
+		provider = fxprovider.NewHTTPProvider(fxprovider.HTTPProviderConfig{
+			URL:     cfg.FX.ProviderURL,
+			APIKey:  cfg.FX.ProviderAPIKey,
+			Timeout: cfg.FX.ProviderTimeout,
+		})
+	} else {
+		log.Info("fx rate worker: using StubProvider (no FX_PROVIDER_URL configured)")
+		provider = fxprovider.NewStubProvider(map[string]decimal.Decimal{
+			"USD/IDR": decimal.NewFromInt(15800),
+			"EUR/IDR": decimal.NewFromInt(17000),
+			"SGD/IDR": decimal.NewFromInt(11800),
+		})
+	}
+
+	// Parse pairs from config
+	pairs := make([]currency.CurrencyPair, 0, len(cfg.FX.Pairs))
+	for _, s := range cfg.FX.Pairs {
+		p, err := currency.ParsePair(s)
+		if err != nil {
+			log.Warn("fx rate worker: invalid pair, skipping", "pair", s, "error", err)
+			continue
+		}
+		pairs = append(pairs, p)
+	}
+	if len(pairs) == 0 {
+		log.Warn("fx rate worker: no valid pairs configured — worker will skip cycles")
+	}
+
+	refresher := usecase.NewFxRateRefresher(usecase.FxRateRefresherDeps{
+		Provider: provider,
+		Repo:     currencyRepo,
+		Logger:   log,
+	})
+
+	fxWorker := worker.NewFxRateWorker(worker.FxRateWorkerDeps{
+		Refresher: refresher,
+		Pairs:     pairs,
+		Logger:    log,
+		Interval:  cfg.FX.RefreshInterval,
+	})
+	fxWorker.Start(ctx)
+	log.Info("fx rate worker started",
+		"interval", cfg.FX.RefreshInterval,
+		"pairs", len(pairs),
+	)
 	return nil
 }

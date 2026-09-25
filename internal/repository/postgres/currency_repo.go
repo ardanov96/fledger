@@ -174,12 +174,59 @@ func (r *CurrencyRepository) CreateFxRate(ctx context.Context, tx currency.Tx, f
 		fr.EffectiveAt, fr.ExpiresAt, fr.Source, fr.CreatedBy,
 	)
 	if err != nil {
+		return fmt.Errorf("insert fx rate: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("insert fx rate: 0 rows affected")
+	}
+	return nil
+}
+
+// CreateFxRateNoTx is the same as CreateFxRate but uses the connection pool
+// directly. Used by the FxRateRefresher worker (Sprint 26) where the refresh
+// cycle is NOT inside a business tx — each insert is its own atomic write.
+func (r *CurrencyRepository) CreateFxRateNoTx(ctx context.Context, fr currency.FxRate) error {
+	tag, err := r.db.Pool.Exec(ctx,
+		`INSERT INTO fx_rates
+            (id, tenant_id, from_currency, to_currency, rate, effective_at, expires_at, source, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		fr.ID, fr.TenantID, fr.FromCurrency, fr.ToCurrency, fr.Rate,
+		fr.EffectiveAt, fr.ExpiresAt, fr.Source, fr.CreatedBy,
+	)
+	if err != nil {
 		return fmt.Errorf("create fx rate: %w", err)
 	}
 	if tag.RowsAffected() != 1 {
 		return fmt.Errorf("create fx rate: expected 1 row, got %d", tag.RowsAffected())
 	}
 	return nil
+}
+
+// ListTenants returns distinct tenant IDs that have at least one FX rate
+// (or at least one currency registered). Sprint 26 / FxRateRefresher iterates
+// this list to refresh rates per-tenant.
+func (r *CurrencyRepository) ListTenants(ctx context.Context) ([]uuid.UUID, error) {
+	const q = `
+SELECT DISTINCT tenant_id FROM currencies
+UNION
+SELECT DISTINCT tenant_id FROM fx_rates
+ORDER BY 1
+`
+	rows, err := r.db.Pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list fx tenants: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]uuid.UUID, 0, 4)
+	for rows.Next() {
+		var t uuid.UUID
+		if err := rows.Scan(&t); err != nil {
+			return nil, fmt.Errorf("scan tenant: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // GetFxRate reads a rate by id.

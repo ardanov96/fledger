@@ -27,6 +27,7 @@ type Config struct {
 	DB         DBConfig
 	Redis      RedisConfig
 	NATS       NATSConfig
+	FX         FXConfig
 	JWT        JWTConfig
 	BcryptCost int
 	RateLimit  RateLimitConfig
@@ -85,6 +86,18 @@ type NATSConfig struct {
 	StreamSubjects  string
 	AckWait         time.Duration
 	MaxDeliver      int
+}
+
+// FXConfig holds FX rate auto-refresh settings (Sprint 26).
+// Worker reads ProviderURL at startup: if empty, falls back to StubProvider
+// (deterministic rates from FX_STUB_RATES env, JSON object). Otherwise
+// HTTPProvider is used.
+type FXConfig struct {
+	RefreshInterval time.Duration
+	ProviderURL     string
+	ProviderAPIKey  string
+	ProviderTimeout time.Duration
+	Pairs           []string // parsed from comma-separated FX_PAIRS env
 }
 
 // JWTConfig holds JWT signing/validation settings.
@@ -159,6 +172,14 @@ func Load() (*Config, error) {
 	v.SetDefault("NATS_STREAM_SUBJECTS", "fmcg.>")
 	v.SetDefault("NATS_ACK_WAIT", "30s")
 	v.SetDefault("NATS_MAX_DELIVER", 5)
+
+	// FX rate auto-refresh (Sprint 26). Worker uses FX_PROVIDER_URL if set;
+	// falls back to StubProvider when empty (demo / offline mode).
+	v.SetDefault("FX_REFRESH_INTERVAL", "1h")
+	v.SetDefault("FX_PROVIDER_URL", "")                  // empty = use StubProvider
+	v.SetDefault("FX_PROVIDER_API_KEY", "")
+	v.SetDefault("FX_PAIRS", "USD/IDR,EUR/IDR,SGD/IDR")  // comma-separated
+	v.SetDefault("FX_PROVIDER_TIMEOUT", "10s")
 
 	v.SetDefault("JWT_ACCESS_TTL", "15m")
 	v.SetDefault("JWT_REFRESH_TTL", "168h")
@@ -237,6 +258,13 @@ func Load() (*Config, error) {
 			StreamSubjects: v.GetString("NATS_STREAM_SUBJECTS"),
 			AckWait:        v.GetDuration("NATS_ACK_WAIT"),
 			MaxDeliver:     v.GetInt("NATS_MAX_DELIVER"),
+		},
+		FX: FXConfig{
+			RefreshInterval: v.GetDuration("FX_REFRESH_INTERVAL"),
+			ProviderURL:     v.GetString("FX_PROVIDER_URL"),
+			ProviderAPIKey:  v.GetString("FX_PROVIDER_API_KEY"),
+			ProviderTimeout: v.GetDuration("FX_PROVIDER_TIMEOUT"),
+			Pairs:           splitPairs(v.GetString("FX_PAIRS")),
 		},
 		JWT: JWTConfig{
 			Secret:     v.GetString("JWT_SECRET"),
@@ -343,4 +371,22 @@ func GetEnvInt(key string, defaultVal int) int {
 		return defaultVal
 	}
 	return parsed
+}
+
+// splitPairs splits "USD/IDR,EUR/IDR,SGD/IDR" into ["USD/IDR","EUR/IDR","SGD/IDR"].
+// Empty segments are dropped.
+func splitPairs(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }

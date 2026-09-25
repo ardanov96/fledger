@@ -17,6 +17,7 @@
 | 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | ✅ Done |
 | 24 | [Transactional Outbox + NATS Subscriber](#sprint-24--transactional-outbox--nats-subscriber-2026-09-21) | 4A | 2026-09-21 | ✅ Done |
 | 25 | [Aging Recalculator Worker](#sprint-25--aging-recalculator-worker-2026-09-22) | 4D | 2026-09-22 | ✅ Done |
+| 26 | [FX Rate Auto-Refresh](#sprint-26--fx-rate-auto-refresh-2026-09-23) | 1D follow-up | 2026-09-23 | ✅ Done |
 | 22B | [Hardening](#sprint-22b-hardening-2026-08-15) | Fase 2 follow-up | 2026-08-15 | ✅ Done |
 | 22A | [Documentation & DX Hardening](#sprint-22a-documentation-dx-hardening-2026-08-15) | — | 2026-08-15 | ✅ Done |
 | 21 | [Interview Prep](#sprint-21-interview-prep-2026-08-16) | Fase 7 | 2026-08-16 | ✅ Done |
@@ -766,11 +767,54 @@ Materialize the per-customer aging summary into a cached table so `GET /v1/custo
 
 ---
 
+## Sprint 26 — FX Rate Auto-Refresh (2026-09-23)
+
+**Status:** ✅ Done · **Fase:** 1D follow-up (multi-currency)
+
+#### Goal
+Replace manual-only FX rate entry with a periodic worker that fetches rates from a configurable provider and inserts them as `source='api'` rows. Closes the "Operator must set rates via `POST /v1/fx-rates`" gap noted in ADR-0005.
+
+#### Scope
+- **26.1** — `FxRateProvider` interface in `domain/currency` (`FetchRate`) + `FxRateBatchProvider` optional + `ParsePair` helper + error sentinels
+- **26.2** — `infra/fxprovider` package: `HTTPProvider` (net/http, JSON unmarshal, `{BASE}` URL placeholder) + `StubProvider` (deterministic, used when no URL configured)
+- **26.3** — Config block `FXConfig` in `platform/config` with env vars `FX_REFRESH_INTERVAL`, `FX_PROVIDER_URL`, `FX_PROVIDER_API_KEY`, `FX_PAIRS`, `FX_PROVIDER_TIMEOUT`
+- **26.4** — `FxRateRefresher` use case — fetch → store via `CurrencyRepository.CreateFxRateNoTx` (uses pool directly, not business tx). Per-pair failure is skipped, doesn't fail the cycle.
+- **26.5** — `FxRateWorker` ticker (mirror OutboxPublisherWorker / AgingWorker pattern)
+- **26.6** — Wire in `cmd/worker/main.go` — picks `HTTPProvider` or `StubProvider` based on `FX_PROVIDER_URL` (empty → stub)
+- **26.7** — 7 unit tests (6 refresher + 1 ParsePair), all PASS
+
+#### Key Artifacts
+- `internal/domain/currency/fx_provider.go` — interface + sentinels + `ParsePair`
+- `internal/infra/fxprovider/fxprovider.go` — `HTTPProvider` + `StubProvider`
+- `internal/usecase/fx_refresher.go` — `FxRateRefresher` + `FxRefreshResult` + `CurrencyRepo` interface
+- `internal/usecase/fx_refresher_test.go` — 7 tests
+- `internal/worker/fx_worker.go` — `FxRateWorker` ticker
+- `internal/repository/postgres/currency_repo.go` — added `CreateFxRateNoTx` + `ListTenants`
+- `internal/platform/config/config.go` — `FXConfig` struct + `splitPairs` helper
+- `cmd/worker/main.go` — `wireFxRateWorker`
+
+#### Learnings
+- Sprint 12 enum already had `api` source + comment "Sprint 13+ can add an api source" — Sprint 26 closes that loop.
+- Per-pair failure isolation: skipping an unavailable pair doesn't fail the cycle. Critical for resilience — provider flake for EUR/IDR shouldn't break USD/IDR refresh.
+- StubProvider as zero-config fallback: dev/demo without network still works (deterministic rates).
+- `CreateFxRateNoTx` (pool) vs `CreateFxRate` (tx-bound): refresh is fire-and-forget, no business tx wraps it. Adding `NoTx` variant avoids forcing the refresher to manage its own tx runner.
+- `FxRateBatchProvider` interface allows 1 HTTP roundtrip per base instead of N (for providers that return all rates per base).
+
+#### Follow-ups
+- Publish `fx_rate.refreshed` events via outbox (Sprint 24) — currently silent
+- Provider-specific adapters (exchangerate-api.com has different response shape than open.er-api.com)
+- Per-pair retry/backoff (currently skipped-on-failure; could add jitter)
+- Use `FxRateBatchProvider` to fetch all rates for a base in one call when HTTPProvider is used
+- Add `/v1/fx-rates/refresh` admin endpoint for manual trigger
+- Rate validity window config per-pair (currently fixed at 24h)
+
+---
+
 ## Sprint Backlog (Planned)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 26 | FX Rate Auto-Refresh | Fase 1D follow-up | ADR-0005 follow-up | 1 week |
+| 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO + Sprint 24 subscriber | 1 week |
 | 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO + Sprint 24 subscriber | 1 week |
 | 28 | Fraud Flag Scanner | Fase 8 | cmd/worker/main.go:72 TODO + Sprint 24 subscriber | 1 week |
 | 29 | Login Attempt Partitioning | Fase 2B | Migration 000013 follow-up | 2 days |
