@@ -15,73 +15,124 @@
     <nav id="nav"></nav>
     <div class="user-menu">
       <span id="user-info"></span>
-      <button id="logout-btn" class="btn-secondary">Logout</button>
+      <button id="logout-btn" class="btn-secondary" title="Logout">Logout</button>
     </div>
   </header>
 
   <main id="app">
-    <!-- Login view -->
+
+    <!-- ==================== LOGIN ==================== -->
     <section id="view-login" class="view">
       <div class="login-card">
-        <h2>🔐 Login</h2>
+        <h2>🔐 Sign in</h2>
         <p class="muted">FMCG Wallet Dashboard</p>
-        <form id="login-form">
-          <label>Username <input type="text" name="username" required value="admin@demo.fmcg-wallet"></label>
-          <label>Password <input type="password" name="password" required value="demo123"></label>
-          <button type="submit" class="btn-primary">Sign in</button>
+        <form id="login-form" autocomplete="off">
+          <label>Tenant ID
+            <input type="text" name="tenant_id" required
+                   placeholder="00000000-0000-0000-0000-000000000001"
+                   pattern="[0-9a-fA-F-]{36}">
+          </label>
+          <label>Username (user_id)
+            <input type="text" name="username" required
+                   placeholder="33333333-3333-3333-3333-333333333333"
+                   pattern="[0-9a-fA-F-]{36}">
+          </label>
+          <label>Password
+            <div class="password-wrap">
+              <input type="password" name="password" id="password" required>
+              <button type="button" class="btn-eye" id="toggle-pw" tabindex="-1">👁</button>
+            </div>
+          </label>
+          <button type="submit" class="btn-primary" id="login-submit">Sign in</button>
           <p id="login-error" class="error" hidden></p>
         </form>
         <details class="hint">
-          <summary>Demo credentials</summary>
+          <summary>Demo credentials (password: <code>DemoTest1234!</code>)</summary>
           <ul>
-            <li><code>admin@demo.fmcg-wallet</code> / <code>demo123</code> (hq_admin)</li>
-            <li><code>sales@demo.fmcg-wallet</code> / <code>demo123</code> (sales_rep)</li>
+            <li><strong>Admin</strong> (hq_admin): <code>33333333-3333-3333-3333-333333333333</code></li>
+            <li><strong>Sales</strong> (sales_rep): <code>44444444-4444-4444-4444-444444444444</code></li>
+            <li><strong>Tenant</strong>: <code>00000000-0000-0000-0000-000000000001</code></li>
           </ul>
+          <p>Run <code>scripts/seed-local-dev-data.ps1</code> to populate demo data.</p>
         </details>
       </div>
     </section>
 
-    <!-- Dashboard view -->
+    <!-- ==================== DASHBOARD ==================== -->
     <section id="view-dashboard" class="view" hidden>
       <h2>📊 Dashboard</h2>
       <div id="dashboard-cards" class="card-grid"></div>
       <div class="grid-2col">
         <div class="card">
-          <h3>Recent Transfers</h3>
-          <div id="recent-transfers"></div>
-        </div>
-        <div class="card">
           <h3>Open Invoices</h3>
           <div id="open-invoices"></div>
+        </div>
+        <div class="card">
+          <h3>Aging Overview</h3>
+          <div id="aging-overview"></div>
+          <a href="#" data-view="aging" class="see-all">See full aging →</a>
         </div>
       </div>
     </section>
 
-    <!-- Accounts view -->
+    <!-- ==================== ACCOUNTS ==================== -->
     <section id="view-accounts" class="view" hidden>
-      <h2>🏦 Accounts</h2>
-      <button class="btn-primary" id="new-account-btn">+ New Account</button>
+      <div class="view-header">
+        <h2>🏦 Accounts</h2>
+        <button class="btn-primary" id="new-account-btn">+ New Account</button>
+      </div>
+      <div class="filter-bar">
+        <label>Type
+          <select id="filter-account-type">
+            <option value="">All</option>
+            <option value="cash">Cash</option>
+            <option value="receivable">Receivable</option>
+            <option value="payable">Payable</option>
+            <option value="revenue">Revenue</option>
+            <option value="customer">Customer</option>
+            <option value="hq">HQ</option>
+          </select>
+        </label>
+        <input type="search" id="filter-account-search" placeholder="Search by code or name...">
+      </div>
       <table id="accounts-table" class="data-table">
-        <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Currency</th><th class="num">Balance</th><th>Status</th></tr></thead>
+        <thead><tr>
+          <th>Code</th><th>Name</th><th>Type</th><th>Currency</th>
+          <th class="num">Balance</th><th>Status</th><th>Created</th>
+        </tr></thead>
         <tbody></tbody>
       </table>
     </section>
 
-    <!-- Transfers view -->
+    <!-- ==================== TRANSFERS ==================== -->
     <section id="view-transfers" class="view" hidden>
       <h2>💸 Transfers</h2>
       <form id="transfer-form" class="form-card">
         <h3>New Transfer</h3>
         <div class="form-row">
-          <label>From account <select name="from_account_id" required></select></label>
-          <label>To account <select name="to_account_id" required></select></label>
+          <label>From account
+            <select name="from_account_id" required></select>
+          </label>
+          <label>To account
+            <select name="to_account_id" required></select>
+          </label>
         </div>
         <div class="form-row">
-          <label>Amount (minor) <input type="number" name="amount_minor" min="1" required></label>
-          <label>Currency <input type="text" name="currency" required placeholder="IDR"></label>
+          <label>Amount (Rp)
+            <input type="number" name="amount_rupiah" min="1" step="1" required
+                   placeholder="100000">
+          </label>
+          <label>Currency
+            <input type="text" name="currency" value="IDR" required readonly>
+          </label>
         </div>
-        <label>Description <input type="text" name="description"></label>
-        <button type="submit" class="btn-primary">Create Transfer</button>
+        <label>Description
+          <input type="text" name="description" placeholder="Optional">
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Create Transfer</button>
+          <span class="form-hint">Amount in rupiah (will be converted to minor units × 100)</span>
+        </div>
         <p id="transfer-error" class="error" hidden></p>
         <p id="transfer-success" class="success" hidden></p>
       </form>
@@ -92,74 +143,149 @@
       </table>
     </section>
 
-    <!-- Invoices view -->
+    <!-- ==================== INVOICES ==================== -->
     <section id="view-invoices" class="view" hidden>
-      <h2>📄 Invoices</h2>
+      <div class="view-header">
+        <h2>📄 Invoices</h2>
+        <button class="btn-primary" id="new-invoice-btn">+ New Invoice</button>
+      </div>
+      <div class="filter-bar">
+        <label>Status
+          <select id="filter-invoice-status">
+            <option value="">All</option>
+            <option value="open">Open</option>
+            <option value="partial">Partial</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </label>
+      </div>
       <table id="invoices-table" class="data-table">
-        <thead><tr><th>Code</th><th>Customer</th><th class="num">Amount</th><th class="num">Paid</th><th>Status</th><th>Due</th></tr></thead>
+        <thead><tr>
+          <th>Code</th><th>Customer</th>
+          <th class="num">Amount</th><th class="num">Paid</th>
+          <th class="num">Outstanding</th>
+          <th>Status</th><th>Due</th>
+        </tr></thead>
         <tbody></tbody>
       </table>
     </section>
 
-    <!-- Aging view -->
+    <!-- ==================== AGING ==================== -->
     <section id="view-aging" class="view" hidden>
       <h2>📅 Aging Summary</h2>
+      <div class="filter-bar">
+        <label>Customer
+          <select id="aging-customer-select"><option value="">Loading...</option></select>
+        </label>
+        <button class="btn-secondary" id="aging-refresh-btn">🔄 Refresh</button>
+      </div>
+      <div id="aging-summary-cards" class="card-grid"></div>
       <table id="aging-table" class="data-table">
-        <thead><tr><th>Bucket</th><th class="num">Count</th><th class="num">Outstanding (minor)</th></tr></thead>
+        <thead><tr>
+          <th>Bucket</th>
+          <th>Description</th>
+          <th class="num">Invoice Count</th>
+          <th class="num">Outstanding (Rp)</th>
+        </tr></thead>
         <tbody></tbody>
       </table>
     </section>
 
-    <!-- Periods view -->
+    <!-- ==================== PERIODS ==================== -->
     <section id="view-periods" class="view" hidden>
       <h2>🔄 Periods</h2>
-      <div id="periods-list"></div>
+      <table id="periods-table" class="data-table">
+        <thead><tr>
+          <th>ID</th><th>Period Start</th><th>Period End</th>
+          <th>Status</th><th>Created</th><th>Actions</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
     </section>
 
-    <!-- Reconciler view -->
+    <!-- ==================== RECONCILER ==================== -->
     <section id="view-reconciler" class="view" hidden>
       <h2>🔍 Reconciler</h2>
       <form id="reconciler-form" class="form-card">
         <h3>Trigger Reconciliation</h3>
-        <label>Period ID <input type="text" name="period_id" required></label>
-        <label><input type="checkbox" name="run_hash_check"> Include hash chain check (slower)</label>
-        <button type="submit" class="btn-primary">Run</button>
+        <div class="form-row">
+          <label>Period
+            <select name="period_id" id="reconciler-period-select" required></select>
+          </label>
+          <label><input type="checkbox" name="run_hash_check"> Include hash chain check (slower)</label>
+        </div>
+        <button type="submit" class="btn-primary">Run Reconciliation</button>
+        <p id="reconciler-error" class="error" hidden></p>
       </form>
       <h3>Recent Runs</h3>
       <table id="runs-table" class="data-table">
-        <thead><tr><th>ID</th><th>Period</th><th>Status</th><th class="num">Debit</th><th class="num">Credit</th><th>Imbalance</th><th>Started</th></tr></thead>
+        <thead><tr>
+          <th>Run ID</th><th>Period</th><th>Status</th>
+          <th class="num">Debit</th><th class="num">Credit</th><th class="num">Imbalance</th>
+          <th>Started</th><th>Duration</th>
+        </tr></thead>
         <tbody></tbody>
       </table>
     </section>
 
-    <!-- Currencies view -->
+    <!-- ==================== CURRENCIES ==================== -->
     <section id="view-currencies" class="view" hidden>
-      <h2>💱 Currencies & FX Rates</h2>
-      <h3>Currencies</h3>
-      <table id="currencies-table" class="data-table">
-        <thead><tr><th>Code</th><th>Name</th><th class="num">Decimal Places</th><th>Active</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <h3>FX Converter</h3>
-      <form id="convert-form" class="form-card">
-        <div class="form-row">
-          <label>From <input type="text" name="from_currency" required value="USD"></label>
-          <label>To <input type="text" name="to_currency" required value="IDR"></label>
+      <h2>💱 Currencies & FX</h2>
+      <div class="grid-2col">
+        <div class="card">
+          <h3>Registered Currencies</h3>
+          <table id="currencies-table" class="data-table">
+            <thead><tr><th>Code</th><th>Name</th><th class="num">Decimal</th><th>Active</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
-        <label>Amount (minor) <input type="number" name="amount_minor" required value="10000"></label>
-        <button type="submit" class="btn-primary">Convert</button>
-        <pre id="convert-result" class="result"></pre>
-      </form>
+        <div class="card">
+          <h3>FX Converter</h3>
+          <form id="convert-form">
+            <div class="form-row">
+              <label>From
+                <select name="from_currency" id="convert-from" required></select>
+              </label>
+              <label>To
+                <select name="to_currency" id="convert-to" required></select>
+              </label>
+            </div>
+            <label>Amount
+              <input type="number" name="amount_minor" min="1" required value="10000">
+            </label>
+            <button type="submit" class="btn-primary">Convert</button>
+            <div id="convert-result" class="result-card"></div>
+          </form>
+        </div>
+      </div>
     </section>
 
-    <!-- Audit view -->
+    <!-- ==================== AUDIT ==================== -->
     <section id="view-audit" class="view" hidden>
       <h2>📋 Audit Log</h2>
+      <div class="filter-bar">
+        <label>Resource type
+          <select id="filter-audit-resource">
+            <option value="">All</option>
+            <option value="account">account</option>
+            <option value="transaction">transaction</option>
+            <option value="invoice">invoice</option>
+            <option value="period">period</option>
+            <option value="auth">auth</option>
+          </select>
+        </label>
+        <input type="search" id="filter-audit-search" placeholder="Search by action or actor...">
+      </div>
       <table id="audit-table" class="data-table">
-        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>Status</th><th>IP</th></tr></thead>
+        <thead><tr>
+          <th>Time</th><th>Actor</th><th>Action</th>
+          <th>Resource</th><th>Status</th><th>IP</th>
+        </tr></thead>
         <tbody></tbody>
       </table>
     </section>
+
   </main>
 
   <footer id="status-bar">
@@ -167,10 +293,21 @@
     <span id="user-status"></span>
   </footer>
 
-  <!-- API client + view renderers -->
-  <script src="/js/api.js"></script>
-  <script src="/js/auth.js"></script>
-  <script src="/js/views.js"></script>
+  <!-- ==================== TOASTS ==================== -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- ==================== MODAL ==================== -->
+  <div id="modal-backdrop" hidden>
+    <div id="modal-card">
+      <div id="modal-header">
+        <h3 id="modal-title">Modal</h3>
+        <button class="btn-icon" id="modal-close" aria-label="Close">×</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- All-in-one JS (api + auth + views + app) -->
   <script src="/js/app.js"></script>
 </body>
 </html>
