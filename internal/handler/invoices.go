@@ -174,6 +174,10 @@ func (h *Handlers) RecordPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetCustomerAging handles GET /v1/customers/:id/aging.
+//
+// Sprint 25 / Fase 4D: if h.Aging is set, reads from aging_snapshots first
+// (O(indexed lookup)). Falls back to live v_invoice_aging when snapshot is
+// empty or unavailable (worker hasn't run yet, or snapshot table missing).
 func (h *Handlers) GetCustomerAging(w http.ResponseWriter, r *http.Request) {
 	customerID := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(customerID); err != nil {
@@ -186,7 +190,15 @@ func (h *Handlers) GetCustomerAging(w http.ResponseWriter, r *http.Request) {
 		tenantID = "00000000-0000-0000-0000-000000000001"
 	}
 
-	summaries, err := h.Invoices.GetAging(r.Context(), tenantID, customerID)
+	var (
+		summaries []invoice.AgingSummary
+		err       error
+	)
+	if h.Aging != nil {
+		summaries, _, err = h.Aging.GetAgingSnapshot(r.Context(), tenantID, customerID)
+	} else {
+		summaries, err = h.Invoices.GetAging(r.Context(), tenantID, customerID)
+	}
 	if err != nil {
 		httpx.Error(w, r, err)
 		return

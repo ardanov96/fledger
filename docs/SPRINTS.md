@@ -16,6 +16,7 @@
 |---|---|---|---|---|
 | 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | ✅ Done |
 | 24 | [Transactional Outbox + NATS Subscriber](#sprint-24--transactional-outbox--nats-subscriber-2026-09-21) | 4A | 2026-09-21 | ✅ Done |
+| 25 | [Aging Recalculator Worker](#sprint-25--aging-recalculator-worker-2026-09-22) | 4D | 2026-09-22 | ✅ Done |
 | 22B | [Hardening](#sprint-22b-hardening-2026-08-15) | Fase 2 follow-up | 2026-08-15 | ✅ Done |
 | 22A | [Documentation & DX Hardening](#sprint-22a-documentation-dx-hardening-2026-08-15) | — | 2026-08-15 | ✅ Done |
 | 21 | [Interview Prep](#sprint-21-interview-prep-2026-08-16) | Fase 7 | 2026-08-16 | ✅ Done |
@@ -720,11 +721,55 @@ Production-grade foundation reset — strict conventions from day 1.
 
 ---
 
+## Sprint 25 — Aging Recalculator Worker (2026-09-22)
+
+**Status:** ✅ Done · **Fase:** 4D (Materialized aging)
+
+#### Goal
+Materialize the per-customer aging summary into a cached table so `GET /v1/customers/{id}/aging` reads from an indexed snapshot instead of recomputing the live `v_invoice_aging` view on every request. Bounded-fresh by worker interval (default 24h, configurable via `AGING_RECALC_INTERVAL`).
+
+#### Scope
+- **25.1** — Migration `000018_aging_snapshot.up.sql` — `aging_snapshots` + `aging_snapshot_runs` tables with RLS + `app_admin` bypass
+- **25.2** — Domain `AgingSnapshotRepository` interface (Upsert / GetAgingSnapshot / ListCustomersWithOutstanding / StartRun / FinishRun / LatestRun)
+- **25.3** — Postgres impl in `aging_snapshot_repo.go` — bulk INSERT with batched placeholders, idempotent DELETE+INSERT per run
+- **25.4** — `AgingRecalculator.RunForAllTenants()` use case — list customers → live view per customer → bulk upsert under run ID
+- **25.5** — `TenantSnapshotService` — read-through cache for the API (snapshot first, fallback to live view)
+- **25.6** — `AgingWorker` ticker loop — mirrors `ReconcilerWorker` / `OutboxPublisherWorker` pattern
+- **25.7** — Wire in `cmd/worker/main.go` (nightly by default)
+- **25.8** — API integration — `handler.AgingAPI` interface + `agingSnapshotAPIAdapter`; `GetCustomerAging` reads snapshot first, falls back to `InvoiceAPI.GetAging` if `Aging` not wired
+- **25.9** — 9 unit tests (5 recalc + 4 snapshot service), all PASS
+
+#### Key Artifacts
+- `migrations/000018_aging_snapshot.{up,down}.sql`
+- `internal/domain/invoice/invoice.go` — `AgingSnapshotRepository` + `AgingSnapshot` + `CustomerRef` + `SnapshotRun` + `RunStatus`
+- `internal/repository/postgres/aging_snapshot_repo.go` — full impl
+- `internal/usecase/aging_recalculator.go` — `AgingRecalculator` + `TenantSnapshotService`
+- `internal/usecase/aging_recalculator_test.go` — 9 unit tests
+- `internal/worker/aging_worker.go` — nightly ticker
+- `cmd/worker/main.go` — `wireAgingWorker()` + updated `cmd/api/main.go` — `agingAPI`
+- `cmd/api/aging_snapshot_adapter.go` — adapter implementing `handler.AgingAPI`
+- `internal/handler/handlers.go` — added optional `Aging AgingAPI` field
+
+#### Learnings
+- Snapshot pattern = trade bounded-freshness for read performance. Aging is a snapshot use case (decision-makers look at it, not real-time bots).
+- Read-through service (`TenantSnapshotService`) = API code is unchanged, snapshot wiring is optional in `Handlers`. Tests work without snapshot setup.
+- Run-id ties all rows from one recalc — enables point-in-time debugging + diff between runs.
+- Bulk INSERT with batched placeholders (1000 rows/tx) is much faster than per-row INSERT — matters at scale.
+- `aging_snapshot_runs` table is operator-only (no RLS) — worker writes, admin reads.
+
+#### Follow-ups
+- Incremental updates (not full truncate+insert) for large tenants
+- Per-tenant parallel processing in `RunForAllTenants`
+- `/readyz` endpoint reports last successful run + age (e.g. "stale > 25h")
+- Subscribe to `transfer.posted` (Sprint 24) to invalidate cache incrementally on payment
+- Add admin endpoint to force-recompute a single tenant
+
+---
+
 ## Sprint Backlog (Planned)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 25 | Aging Recalculator Worker | Fase 4 | cmd/worker/main.go:70 TODO | 3 days |
 | 26 | FX Rate Auto-Refresh | Fase 1D follow-up | ADR-0005 follow-up | 1 week |
 | 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO + Sprint 24 subscriber | 1 week |
 | 28 | Fraud Flag Scanner | Fase 8 | cmd/worker/main.go:72 TODO + Sprint 24 subscriber | 1 week |

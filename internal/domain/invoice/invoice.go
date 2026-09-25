@@ -185,6 +185,81 @@ type InvoiceRepository interface {
 	GetAging(ctx context.Context, tenantID, customerID string) ([]AgingSummary, error)
 }
 
+// AgingSnapshotRepository manages the denormalized aging snapshot table
+// populated by the AgingRecalculator worker (Sprint 25 / Fase 4D).
+//
+// Pattern: worker truncates + reinserts in one transaction. API reads from
+// the snapshot for O(indexed lookup) instead of the live GROUP BY view.
+//
+// All methods are read/write only (no Tx parameter) because:
+//   - Truncate + insert is one atomic batch operation
+//   - Snapshot reads use the pool directly (no RLS context needed — same
+//     RLS policy as the underlying table)
+type AgingSnapshotRepository interface {
+	// UpsertAgingSnapshots replaces ALL snapshot rows for the given run.
+	// Caller passes a fresh slice (typically one entry per (customer, bucket)).
+	// Implementation wraps in one tx for atomicity.
+	UpsertAgingSnapshots(ctx context.Context, runID string, snapshots []AgingSnapshot) error
+
+	// GetAgingSnapshot reads from aging_snapshots. Empty slice + nil error
+	// when no snapshot exists yet (caller should fall back to live view).
+	GetAgingSnapshot(ctx context.Context, tenantID, customerID string) ([]AgingSummary, error)
+
+	// ListCustomersWithOutstanding returns distinct (tenant_id, customer_id)
+	// pairs that have open invoices — used by the worker to iterate.
+	ListCustomersWithOutstanding(ctx context.Context) ([]CustomerRef, error)
+
+	// StartRun creates a row in aging_snapshot_runs with status='running'
+	// and returns the new run ID.
+	StartRun(ctx context.Context) (string, error)
+
+	// FinishRun updates a run with status='ok'/'failed' + duration + counts.
+	FinishRun(ctx context.Context, runID string, status RunStatus, tenants, customers, rows int, durationMs int64, errMsg string) error
+
+	// LatestRun returns the most recent run (for diagnostics / /readyz).
+	LatestRun(ctx context.Context) (*SnapshotRun, error)
+}
+
+// AgingSnapshot is one row in aging_snapshots (denormalized cache).
+type AgingSnapshot struct {
+	TenantID         string
+	CustomerID       string
+	Bucket           AgingBucket
+	Count            int
+	OutstandingMinor int64
+	SnapshotAt       time.Time
+	SnapshotRunID    string
+}
+
+// CustomerRef is a minimal (tenant_id, customer_id) reference for the
+// worker's iteration loop.
+type CustomerRef struct {
+	TenantID   string
+	CustomerID string
+}
+
+// RunStatus mirrors the CHECK constraint on aging_snapshot_runs.status.
+type RunStatus string
+
+const (
+	RunStatusRunning RunStatus = "running"
+	RunStatusOK      RunStatus = "ok"
+	RunStatusFailed  RunStatus = "failed"
+)
+
+// SnapshotRun is one row in aging_snapshot_runs — audit trail for ops.
+type SnapshotRun struct {
+	ID                 string
+	StartedAt          time.Time
+	FinishedAt         *time.Time
+	TenantsProcessed   int
+	CustomersProcessed int
+	RowsWritten        int
+	DurationMs         int64
+	Status             RunStatus
+	Error              string
+}
+
 // CreditLimitRepository defines persistence operations for credit limits.
 type CreditLimitRepository interface {
 	Get(ctx context.Context, tx Tx, customerID string) (CreditLimit, error)

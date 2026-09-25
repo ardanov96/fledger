@@ -198,7 +198,14 @@ func run() error {
 
 	currencyAPI := &currencyAPIAdapter{svc: currencyService}
 	authAPI := &authAPIAdapter{svc: authService}
-	h := handler.New(transferService, accountService, invoiceService, periodAPI, reconcilerAPI, collectionAPI, currencyAPI, authAPI)
+
+	// Sprint 25 / Fase 4D: aging snapshot service (read-through cache).
+	// If the snapshot table is empty (worker hasn't run yet) the adapter
+	// falls back to the live v_invoice_aging view transparently.
+	agingSnapRepo := postgres.NewAgingSnapshotRepository(db)
+	agingAPI := newAgingSnapshotAPIAdapter(agingSnapRepo, invoiceRepo)
+
+	h := handler.New(transferService, accountService, invoiceService, agingAPI, periodAPI, reconcilerAPI, collectionAPI, currencyAPI, authAPI)
 
 	// Sprint 14 - rate limiter for login (brute-force defense).
 	// Per-IP token bucket: 5 burst, 0.5 rps sustained.

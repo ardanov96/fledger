@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
+	"github.com/runut/fmcg-wallet/internal/domain/invoice"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 )
@@ -39,6 +40,12 @@ type AccountAPI interface {
 	ListEntries(ctx context.Context, accountID string, limit int) ([]ledger.Entry, error)
 }
 
+// AgingAPI is the snapshot-aware read-through for customer aging.
+// Sprint 25 / Fase 4D. If nil, the handler falls back to InvoiceAPI.GetAging.
+type AgingAPI interface {
+	GetAgingSnapshot(ctx context.Context, tenantID, customerID string) ([]invoice.AgingSummary, bool, error)
+}
+
 // =============================================================================
 // Handlers struct
 // =============================================================================
@@ -47,6 +54,7 @@ type Handlers struct {
 	Transfers    TransferAPI
 	Accounts     AccountAPI
 	Invoices     InvoiceAPI
+	Aging        AgingAPI   // Sprint 25 — optional, falls back to Invoices.GetAging if nil
 	Periods      PeriodAPI
 	Reconcilers  ReconcilerAPI
 	Collections  CollectionAPI
@@ -61,6 +69,7 @@ func New(
 	transfers TransferAPI,
 	accounts AccountAPI,
 	invoices InvoiceAPI,
+	aging AgingAPI, // Sprint 25 — pass nil to disable snapshot reads (live view fallback)
 	periods PeriodAPI,
 	reconcilers ReconcilerAPI,
 	collections CollectionAPI,
@@ -71,6 +80,7 @@ func New(
 		Transfers:   transfers,
 		Accounts:    accounts,
 		Invoices:    invoices,
+		Aging:       aging,
 		Periods:     periods,
 		Reconcilers: reconcilers,
 		Collections: collections,

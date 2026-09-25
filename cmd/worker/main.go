@@ -69,12 +69,17 @@ func run() error {
 		return fmt.Errorf("wire outbox worker: %w", err)
 	}
 
+	// Wire AgingWorker (Sprint 25 — Fase 4D).
+	// Nightly recalculation of aging_snapshots table from live v_invoice_aging.
+	if err := wireAgingWorker(ctx, cfg, log); err != nil {
+		return fmt.Errorf("wire aging worker: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Future workers (placeholders)
 	// -------------------------------------------------------------------------
-	// TODO Fase 4: aging_recalculator (scheduled nightly)
-	// TODO Fase 8: notification_dispatcher
-	// TODO Fase 8: fraud_flag_scanner
+	// TODO Fase 8: notification_dispatcher (subscribe to NATS outbox events)
+	// TODO Fase 8: fraud_flag_scanner (subscribe to NATS outbox events)
 
 	// Heartbeat so the process doesn't exit (for debugging idle state).
 	go heartbeat(ctx, log)
@@ -286,5 +291,39 @@ func wireOutboxWorker(ctx context.Context, cfg *config.Config, log *slog.Logger)
 		"batch_size", batchSize,
 		"nats_url", cfg.NATS.URL,
 	)
+	return nil
+}
+
+// wireAgingWorker starts the nightly AgingWorker (Sprint 25 / Fase 4D).
+func wireAgingWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	pool, err := infra.NewPGXPool(ctx, &cfg.DB)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	db := postgres.NewDB(pool)
+	invoiceRepo := postgres.NewInvoiceRepository(db)
+	agingSnapRepo := postgres.NewAgingSnapshotRepository(db)
+
+	// Interval configurable via env, default 24h.
+	interval := 24 * time.Hour
+	if d := os.Getenv("AGING_RECALC_INTERVAL"); d != "" {
+		if parsed, err := time.ParseDuration(d); err == nil && parsed > 0 {
+			interval = parsed
+		}
+	}
+
+	recalc := usecase.NewAgingRecalculator(usecase.AgingRecalculatorDeps{
+		CustomersRepo: agingSnapRepo,
+		LiveAging:     invoiceRepo,
+		Logger:        log,
+	})
+
+	agingWorker := worker.NewAgingWorker(worker.AgingWorkerDeps{
+		Service:  recalc,
+		Logger:   log,
+		Interval: interval,
+	})
+	agingWorker.Start(ctx)
+	log.Info("aging worker started", "interval", interval)
 	return nil
 }
