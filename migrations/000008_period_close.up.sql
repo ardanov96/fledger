@@ -55,9 +55,3 @@ CREATE INDEX IF NOT EXISTS accounting_periods_tenant_status_idx
     ON accounting_periods(tenant_id, status);
 
 COMMIT;
-<task_progress>- [x] Migration 000008 written (triggers + index)
-- [ ] Add Period domain types
-- [ ] Add PeriodCloser use case
-- [ ] Add period_repo
-- [ ] Add period handlers + wire
-- [ ] Verify build

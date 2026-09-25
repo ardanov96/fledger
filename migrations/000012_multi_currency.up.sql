@@ -53,10 +53,12 @@ CREATE INDEX IF NOT EXISTS fx_rates_lookup_idx
 CREATE INDEX IF NOT EXISTS fx_rates_tenant_idx
     ON fx_rates (tenant_id, effective_at DESC);
 
--- Active rates (used by transfer-time lookup)
+-- Active rates (used by transfer-time lookup).
+-- NOTE: original had `WHERE expires_at > NOW()` partial index predicate,
+-- but NOW() is VOLATILE and Postgres requires IMMUTABLE functions in
+-- index predicates. Removed predicate — full index is fine for MVP.
 CREATE INDEX IF NOT EXISTS fx_rates_active_idx
-    ON fx_rates (from_currency, to_currency, effective_at DESC, expires_at)
-    WHERE expires_at > NOW();
+    ON fx_rates (from_currency, to_currency, effective_at DESC, expires_at);
 
 -- ============================================================================
 -- Columns on transactions: fx_rate snapshot for cross-currency transfers

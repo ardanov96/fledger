@@ -140,10 +140,14 @@ CREATE POLICY tenant_isolation_modify ON ledger_entries
     );
 
 -- invoices / invoice_payments / credit_limits (same pattern)
+-- NOTE: reconciler_account_results is intentionally EXCLUDED — it has no
+-- tenant_id column (denormalized via run_id → reconciler_runs.tenant_id and
+-- account_id → accounts.tenant_id). RLS for that table needs a JOIN-based
+-- policy which Sprint 15 documented as follow-up.
 DO $$
 DECLARE t TEXT;
 BEGIN
-  FOR t IN SELECT unnest(ARRAY['invoices', 'invoice_payments', 'credit_limits', 'accounting_periods', 'period_close_requests', 'period_snapshots', 'reconciler_runs', 'reconciler_account_results', 'refresh_tokens'])
+  FOR t IN SELECT unnest(ARRAY['invoices', 'invoice_payments', 'credit_limits', 'accounting_periods', 'period_close_requests', 'period_snapshots', 'reconciler_runs', 'refresh_tokens'])
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_select ON %I', t);
     EXECUTE format('CREATE POLICY tenant_isolation_select ON %I FOR SELECT USING (tenant_id = current_setting(''app.current_tenant_id'', true)::uuid)', t);

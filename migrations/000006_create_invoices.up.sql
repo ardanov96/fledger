@@ -165,7 +165,7 @@ SELECT
         ELSE 'd_90_plus'
     END AS bucket,
     COUNT(*)                              AS invoice_count,
-    (amount - paid_amount)                AS outstanding_minor
+    SUM(amount - paid_amount)              AS outstanding_minor
 FROM invoices
 WHERE status IN ('open', 'partial', 'overdue')
 GROUP BY tenant_id, customer_id, bucket;
