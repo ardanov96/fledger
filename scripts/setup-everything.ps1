@@ -280,9 +280,13 @@ if (-not ($SkipPhase -contains $phase)) {
     if (-not $env:PGPASSWORD) { $env:PGPASSWORD = "Desmone8327" }
 
     Out-Line "Dropping + recreating fmcg_wallet (clean slate)..."
-    & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "DROP DATABASE IF EXISTS fmcg_wallet;" 2>&1 | Out-Null
-    & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "CREATE DATABASE fmcg_wallet OWNER fmcg;" 2>&1 | Out-Null
-    & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "GRANT ALL ON SCHEMA public TO fmcg; ALTER SCHEMA public OWNER TO fmcg;" 2>&1 | Out-Null
+    # Drop database (transfers ownership to postgres)
+    $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "DROP DATABASE IF EXISTS fmcg_wallet;" 2>&1
+    # Drop app_admin role too - migration 000015 creates it WITHOUT IF NOT EXISTS
+    # so it must be removed to allow fresh re-create. Also drop any owned objects.
+    $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "REASSIGN OWNED BY app_admin TO postgres; DROP OWNED BY app_admin; DROP ROLE IF EXISTS app_admin;" 2>&1
+    $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "CREATE DATABASE fmcg_wallet OWNER fmcg;" 2>&1
+    $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "GRANT ALL ON SCHEMA public TO fmcg; ALTER SCHEMA public OWNER TO fmcg;" 2>&1
 
     # Run migrations as postgres (needs CREATE EXTENSION privilege)
     Out-Line "Running migrations as postgres..."
