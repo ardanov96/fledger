@@ -810,7 +810,78 @@ Replace manual-only FX rate entry with a periodic worker that fetches rates from
 
 ---
 
-## Sprint Backlog (Planned)
+## Sprint 27 — Production Setup Fixes (2026-09-26)
+
+**Status:** ✅ Done · **Fase:** DevOps hardening (post-Sprint 25-26 local setup work)
+
+#### Goal
+Eliminate manual workarounds in setup scripts (RLS disable + role drop) by
+moving them into proper forward-fix migrations. Make the project deployable
+to a clean Postgres without operator intervention.
+
+#### Background
+After Sprint 23-26 we had a fully functional project but two manual
+workarounds were needed for local dev:
+1. `ALTER TABLE refresh_tokens DISABLE ROW LEVEL SECURITY` — needed
+   because migration 000014's strict tenant-isolation policy blocked
+   INSERT during the login flow (which has no GUC context yet).
+2. `DROP ROLE IF EXISTS app_admin` — needed before re-running migrations
+   because migration 000015's `CREATE ROLE app_admin` has no `IF NOT EXISTS`.
+
+Both are documented as known limitations in `scripts/README.md`. Sprint 27
+fixes them properly via forward-fix migrations.
+
+#### Scope
+- **27.1** — `migrations/000019_refresh_tokens_rls_fix.up.sql`: replace
+  strict `tenant_isolation_*` policies on refresh_tokens with:
+  - `refresh_tokens_select_auth` — requires GUC match OR app_admin
+  - `refresh_tokens_modify_auth` — allows INSERT when GUC is NULL (login
+    flow), requires GUC match for normal flow, bypass for app_admin
+- **27.2** — `migrations/000020_app_admin_role_idempotent.up.sql`: DO
+  block wrapping CREATE ROLE app_admin in IF NOT EXISTS check.
+  Forward-fix for 000015 even though 000015 also got the same wrap.
+- **27.3** — `migrations/000021_create_fmcg_user.up.sql`: creates fmcg
+  user + fmcg_wallet db idempotently. Forward-fix for the setup script's
+  manual user creation.
+- **27.4** — Fix `migrations/000015_app_admin_role.up.sql`: wrap CREATE ROLE
+  in IF NOT EXISTS check (so it's idempotent directly, not just via 020).
+- **27.5** — Update `scripts/start-fresh.ps1` and `scripts/setup-everything.ps1`
+  to remove manual `DROP ROLE app_admin` + `ALTER TABLE refresh_tokens
+  DISABLE ROW LEVEL SECURITY` steps. Migrations handle everything.
+- **27.6** — Update `scripts/README.md` to reflect Sprint 27 fixes.
+
+#### Key Artifacts
+- `migrations/000019_refresh_tokens_rls_fix.{up,down}.sql`
+- `migrations/000020_app_admin_role_idempotent.{up,down}.sql`
+- `migrations/000021_create_fmcg_user.{up,down}.sql`
+- `migrations/000015_app_admin_role.up.sql` (edited for idempotency)
+- `scripts/start-fresh.ps1` (simplified: removed workarounds)
+- `scripts/setup-everything.ps1` (Phase 5 is now a no-op)
+- `scripts/README.md` (Resolved in Sprint 27 section)
+
+#### Learnings
+- Forward-fix migrations (000019+) are safe to add without invalidating
+  existing migration history because golang-migrate tracks by version
+  checksum per file, not per schema state.
+- RLS policies can be made conditional on GUC state with `current_setting(..., true)`
+  IS NULL checks. Cleaner than disabling RLS entirely.
+- DO blocks with EXCEPTION WHEN OTHERS + NULL is a pragmatic pattern for
+  idempotent role/grants creation in migrations.
+- Setup scripts should defer to migrations for state setup. Scripts only
+  orchestrate (run migrations, seed data, start processes).
+
+#### Verification (all PASS)
+- Fresh DB setup → all 21 migrations apply cleanly (no dirty state)
+- Login flow works WITHOUT manually disabling RLS
+- Login persists refresh_token row in DB (verified via psql)
+- `verify-setup.ps1` reports 24/24 PASS
+- `start-fresh.ps1 -Force` completes in <30s
+
+#### Follow-ups
+- Migration 000015 still has CREATE GRANT statements that may fail on re-run.
+  Should be wrapped similarly in future sprint.
+- Consider `001_grants.sql` to centralize all role/grants.
+
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|

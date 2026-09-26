@@ -5,9 +5,13 @@
 # Wipes fmcg_wallet database and rebuilds from scratch:
 #   1. Drop fmcg_wallet db
 #   2. Recreate as postgres superuser
-#   3. Run all 18 migrations
-#   4. Disable RLS on refresh_tokens (dev workaround)
-#   5. Re-seed demo data
+#   3. Run all 21 migrations (Sprint 27 added 019/020/021 forward-fixes)
+#   4. Re-seed demo data
+#
+# NOTE (Sprint 27): No more need to:
+#   - Drop app_admin role manually (migration 000020 is idempotent)
+#   - Disable RLS on refresh_tokens (migration 000019 fixed the policy)
+#   - Create fmcg user manually (migration 000021 creates it)
 #
 # USE WITH CARE - all data is destroyed. Use -Force to skip confirmation.
 #
@@ -65,7 +69,7 @@ if (-not $Force) {
     Write-Host "This will:"
     Write-Host "  - DROP DATABASE fmcg_wallet (all tables, data, custom migrations)"
     Write-Host "  - Recreate empty database"
-    Write-Host "  - Re-run all 18 migrations"
+    Write-Host "  - Re-run all 21 migrations (incl. Sprint 27 forward-fixes)"
     Write-Host "  - Re-seed demo data (2 users, 8 accounts, 3 invoices, etc.)"
     Write-Host ""
     Write-Host "Outbox events, aging snapshots, FX rates, transactions,"
@@ -80,23 +84,19 @@ if (-not $Force) {
     Write-Host ""
 }
 
-Out-Line "Step 1/5: Drop fmcg_wallet database + app_admin role" "info"
+Out-Line "Step 1/4: Drop fmcg_wallet database" "info"
 $env:PGPASSWORD = $PostgresPassword
-# Drop database (transfers ownership to postgres)
+# Sprint 27: no longer need to drop app_admin role - migration 000020 is idempotent.
+# Just drop the database (transfers ownership to postgres automatically).
 $null = & "$psqlPath" -U postgres -h 127.0.0.1 -w -c "DROP DATABASE IF EXISTS fmcg_wallet;" 2>&1
-# Drop app_admin role too - migration 000015 creates it WITHOUT IF NOT EXISTS
-# so it must be removed to allow fresh re-create. Also drop any owned objects.
-$null = & "$psqlPath" -U postgres -h 127.0.0.1 -w -c "REASSIGN OWNED BY app_admin TO postgres; DROP OWNED BY app_admin; DROP ROLE IF EXISTS app_admin;" 2>&1
-# Note: fmcg user is NOT dropped here - it's created by setup-local-postgres.ps1
-# (not migration), so we preserve it with password 'fmcg_dev_password' across fresh-starts.
-Out-Line "  Database + app_admin role dropped" "ok"
+Out-Line "  Database dropped" "ok"
 
-Out-Line "Step 2/5: Recreate fmcg_wallet + grants" "info"
+Out-Line "Step 2/4: Recreate fmcg_wallet" "info"
 $null = & "$psqlPath" -U postgres -h 127.0.0.1 -w -c "CREATE DATABASE fmcg_wallet OWNER fmcg;" 2>&1
 $null = & "$psqlPath" -U postgres -h 127.0.0.1 -w -c "GRANT ALL ON SCHEMA public TO fmcg; ALTER SCHEMA public OWNER TO fmcg;" 2>&1
 Out-Line "  Database recreated + grants set" "ok"
 
-Out-Line "Step 3/5: Run all 18 migrations (as postgres)" "info"
+Out-Line "Step 3/4: Run all 21 migrations (as postgres)" "info"
 $env:DB_USER = "postgres"
 $env:DB_PASSWORD = $PostgresPassword
 $migOut = & go run "$RepoRoot\cmd\migrator" up 2>&1
@@ -105,18 +105,9 @@ if ($LASTEXITCODE -ne 0) {
     $migOut | ForEach-Object { Out-Line "  $_" "err" }
     exit 2
 }
-Out-Line "  Migrations applied (version=18)" "ok"
+Out-Line "  Migrations applied (version=21)" "ok"
 
-Out-Line "Step 4/5: Disable RLS on refresh_tokens (dev workaround)" "info"
-# Need to connect as postgres for ALTER TABLE; use -v with explicit password
-$null = & "$psqlPath" -U postgres -h 127.0.0.1 -w -d fmcg_wallet -c "ALTER TABLE refresh_tokens DISABLE ROW LEVEL SECURITY;" 2>&1
-if ($LASTEXITCODE -eq 0) {
-    Out-Line "  RLS disabled" "ok"
-} else {
-    Out-Line "  Failed (non-fatal)" "warn"
-}
-
-Out-Line "Step 5/5: Re-seed demo data" "info"
+Out-Line "Step 4/4: Re-seed demo data" "info"
 # Set fmcg password for seed script (it expects PGPASSWORD=fmcg_dev_password)
 $env:PGPASSWORD = "fmcg_dev_password"
 $seedScript = Join-Path $RepoRoot "scripts\seed-local-dev-data.ps1"
@@ -133,11 +124,12 @@ Out-Line "  Demo data seeded" "ok"
 
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Green
-Write-Host "Fresh start complete" -ForegroundColor Green
+Write-Host "Fresh start complete (Sprint 27 forward-fixes applied)" -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
+Write-Host "Login now works without manual RLS disable:" -ForegroundColor Cyan
+Write-Host "  curl -X POST http://localhost:8080/v1/auth/login -H 'Content-Type: application/json' -d '{\"tenant_id\":\"...\",\"username\":\"...\",\"password\":\"DemoTest1234!\"}'" -ForegroundColor Gray
+Write-Host ""
 Write-Host "Run:  .\scripts\run-stack.ps1" -ForegroundColor Cyan
-Write-Host "Or:   go run ./cmd/api (terminal 1)" -ForegroundColor Cyan
-Write-Host "      node web/server.js (terminal 2)" -ForegroundColor Cyan
 
 exit 0

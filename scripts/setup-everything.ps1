@@ -17,8 +17,8 @@
 #   1. Preflight       — verify Go, Node, Postgres, git, write perms
 #   2. Postgres setup  — modify pg_hba.conf, restart, create user/db (NEEDS ADMIN)
 #   3. Env setup       — copy .env.example → .env, generate JWT secret
-#   4. Migrations      — apply all 18 schema migrations
-#   5. RLS workaround  — disable RLS on refresh_tokens (dev-only)
+#   4. Migrations      — apply all 21 schema migrations (incl. Sprint 27 forward-fixes)
+#   5. RLS workaround  — no-op (migration 000019 fixed refresh_tokens RLS)
 #   6. Seed data       — populate demo accounts/invoices/etc.
 #   7. Self-test       — start API + web, hit endpoints, verify responses
 #
@@ -280,11 +280,9 @@ if (-not ($SkipPhase -contains $phase)) {
     if (-not $env:PGPASSWORD) { $env:PGPASSWORD = "Desmone8327" }
 
     Out-Line "Dropping + recreating fmcg_wallet (clean slate)..."
-    # Drop database (transfers ownership to postgres)
+    # Sprint 27: no longer need to drop app_admin role - migration 000020 is idempotent.
+    # Just drop the database (transfers ownership to postgres automatically).
     $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "DROP DATABASE IF EXISTS fmcg_wallet;" 2>&1
-    # Drop app_admin role too - migration 000015 creates it WITHOUT IF NOT EXISTS
-    # so it must be removed to allow fresh re-create. Also drop any owned objects.
-    $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "REASSIGN OWNED BY app_admin TO postgres; DROP OWNED BY app_admin; DROP ROLE IF EXISTS app_admin;" 2>&1
     $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "CREATE DATABASE fmcg_wallet OWNER fmcg;" 2>&1
     $null = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -c "GRANT ALL ON SCHEMA public TO fmcg; ALTER SCHEMA public OWNER TO fmcg;" 2>&1
 
@@ -312,24 +310,17 @@ if (-not ($SkipPhase -contains $phase)) {
 }
 
 # =============================================================================
-# Phase 5: RLS workaround (disable RLS on refresh_tokens for dev)
+# Phase 5: SKIPPED (Sprint 27 fixed this via migration 000019)
 # =============================================================================
+# Previously this phase disabled RLS on refresh_tokens because the strict
+# tenant-isolation policy blocked INSERT during login (no GUC context yet).
+# Migration 000019 refreshed the policy to allow INSERT when GUC is NULL,
+# so this workaround is no longer needed.
 $phase = 5
 if (-not ($SkipPhase -contains $phase)) {
-    Phase-Start $phase "RLS workaround"
-
-    $env:PGPASSWORD = $PostgresPassword
-    if (-not $env:PGPASSWORD) { $env:PGPASSWORD = "Desmone8327" }
-
-    Out-Line "Disabling RLS on refresh_tokens (dev-only workaround)"
-    $rlsOut = & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -w -d fmcg_wallet -c "ALTER TABLE refresh_tokens DISABLE ROW LEVEL SECURITY;" 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Out-Line "RLS disabled" "ok"
-        Phase-End $phase "PASS"
-    } else {
-        Out-Line "Failed to disable RLS" "warn"
-        Phase-End $phase "WARN"
-    }
+    Phase-Start $phase "RLS workaround (no-op)"
+    Out-Line "Phase 5 is now a no-op (migration 000019 fixed refresh_tokens RLS)" "ok"
+    Phase-End $phase "PASS"
 } else {
     Out-Line "Phase 5 (RLS workaround) skipped" "skip"
 }

@@ -149,12 +149,20 @@ powershell -NoProfile -File scripts/start-fresh.ps1 -Force
 powershell -NoProfile -File scripts/stop-stack.ps1
 ```
 
-## Known Limitations (dev-only, follow-ups needed for production)
+## Known Limitations (dev-only)
 
-| Limitation | Workaround in script | Production fix (Sprint 27+) |
-|---|---|---|
-| RLS on `refresh_tokens` blocks login | `setup-everything` + `start-fresh` disable RLS | Migration 000019: bind tenant GUC in auth.Service.Login before RunInTxAuthDomain |
-| `fmcg` user recreated by setup script only | `setup-everything` phase 2 creates `fmcg` user | Add migration to create role + database |
-| Migration 000015 has `CREATE ROLE` without `IF NOT EXISTS` | `setup-everything` + `start-fresh` drop `app_admin` role first | Add `IF NOT EXISTS` to migration |
-| Postgres password hardcoded to `Desmone8327` | Pass via `-PostgresPassword X` | Use secret store / env var |
-| `curl` may not be installed | Falls back to `Invoke-WebRequest` | Install curl for cleaner output |
+| Limitation | Status |
+|---|---|
+| Postgres password hardcoded to `Desmone8327` | Pass via `-PostgresPassword X` (use secret store in prod) |
+| `curl` may not be installed | Falls back to `Invoke-WebRequest` |
+
+## Resolved in Sprint 27
+
+| Was | Now |
+|---|---|
+| RLS on `refresh_tokens` blocked login (had to disable) | Migration `000019_refresh_tokens_rls_fix` recreates the policy to allow login flow when GUC is NULL |
+| `app_admin` role creation failed on re-runs (no IF NOT EXISTS) | Migration `000020_app_admin_role_idempotent` wraps in DO block + EXCEPTION handling |
+| `fmcg` user had to be created manually by setup script | Migration `000021_create_fmcg_user` creates user + db idempotently |
+| Setup scripts manually disabled RLS + dropped app_admin | All workarounds removed — migrations handle it |
+
+Production deploy no longer needs the manual RLS disable workaround.

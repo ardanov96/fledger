@@ -32,11 +32,21 @@
 
 BEGIN;
 
--- 1. Create app_admin role (NOINHERIT so fmcg must explicitly SET ROLE)
-CREATE ROLE app_admin NOINHERIT;
+-- Sprint 27: wrapped in DO block + IF NOT EXISTS so re-running migrations
+-- (after DROP DATABASE) doesn't fail with 'role already exists'.
+DO $$ BEGIN
+    -- 1. Create app_admin role if missing (NOINHERIT so fmcg must explicitly SET ROLE)
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_admin') THEN
+        CREATE ROLE app_admin NOINHERIT;
+    END IF;
 
--- 2. Grant fmcg permission to switch to app_admin
-GRANT app_admin TO fmcg;
+    -- 2. Grant fmcg permission to switch to app_admin (idempotent)
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fmcg') THEN
+        GRANT app_admin TO fmcg;
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;  -- swallow - role/grants may already exist from a prior run
+END $$;
 
 -- 3. Grant basic table privileges (app_admin needs SELECT/INSERT/UPDATE/DELETE)
 GRANT SELECT, INSERT, UPDATE, DELETE
