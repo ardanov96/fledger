@@ -1,18 +1,19 @@
-// Handlers — REST endpoints for the ledger.
+﻿// Handlers â€” REST endpoints for the ledger.
 //
 // Routes (mounted under /v1):
-//   POST   /accounts                  — create account
-//   GET    /accounts/:id              — fetch one account
-//   GET    /accounts                  — list (with filters)
-//   GET    /accounts/:id/entries      — list ledger entries for an account
-//   POST   /transfers                 — create transfer (idempotent)
+//   POST   /accounts                  â€” create account
+//   GET    /accounts/:id              â€” fetch one account
+//   GET    /accounts                  â€” list (with filters)
+//   GET    /accounts/:id/entries      â€” list ledger entries for an account
+//   POST   /transfers                 â€” create transfer (idempotent)
 package handler
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
+		"net/http"
+	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -51,33 +52,35 @@ type AgingAPI interface {
 // =============================================================================
 
 type Handlers struct {
-	Transfers    TransferAPI
-	Accounts     AccountAPI
-	Invoices     InvoiceAPI
-	Aging        AgingAPI   // Sprint 25 — optional, falls back to Invoices.GetAging if nil
-	Periods      PeriodAPI
-	Reconcilers  ReconcilerAPI
-	Collections  CollectionAPI
-	Currencies   CurrencyAPI // Sprint 12 — multi-currency
-	Auth         AuthAPI    // Sprint 13 — login/refresh/MFA
-	Validator    *validator.Validate
+	Transfers     TransferAPI
+	Accounts      AccountAPI
+	Invoices      InvoiceAPI
+	Aging         AgingAPI    // Sprint 25 â€” optional, falls back to Invoices.GetAging if nil
+	Periods       PeriodAPI
+	Reconcilers   ReconcilerAPI
+	Collections   CollectionAPI
+	Currencies    CurrencyAPI // Sprint 12 â€” multi-currency
+	Auth          AuthAPI     // Sprint 13 â€” login/refresh/MFA
+	Notifications NotificationAPI // Sprint 28 â€” in-app notification feed
+	Validator     *validator.Validate
 }
 
-// New constructs the handlers. All API deps may be nil — those routes simply
+// New constructs the handlers. All API deps may be nil â€” those routes simply
 // won't be mounted in that case (useful for unit-test scaffolding).
 func New(
 	transfers TransferAPI,
 	accounts AccountAPI,
 	invoices InvoiceAPI,
-	aging AgingAPI, // Sprint 25 — pass nil to disable snapshot reads (live view fallback)
+	aging AgingAPI, // Sprint 25 â€” pass nil to disable snapshot reads (live view fallback)
 	periods PeriodAPI,
 	reconcilers ReconcilerAPI,
 	collections CollectionAPI,
 	currencies CurrencyAPI,
 	auth AuthAPI,
+	notifications NotificationAPI, // Sprint 28 â€” pass nil to disable notification endpoints
 ) *Handlers {
 	return &Handlers{
-		Transfers:   transfers,
+		Transfers:      transfers,
 		Accounts:    accounts,
 		Invoices:    invoices,
 		Aging:       aging,
@@ -86,6 +89,7 @@ func New(
 		Collections: collections,
 		Currencies:  currencies,
 		Auth:        auth,
+		Notifications: notifications,
 		Validator:   validator.New(),
 	}
 }
@@ -139,8 +143,6 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	}
 
 	if h.Currencies != nil {
-		// Currencies
-		r.Get("/currencies", h.ListCurrencies)
 		r.Get("/currencies/{code}", h.GetCurrency)
 		r.Post("/currencies", h.CreateCurrencyHandler)
 		r.Patch("/currencies/{code}", h.UpdateCurrencyHandler)
@@ -154,13 +156,20 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	}
 
 	if h.Auth != nil {
-		// Sprint 13 — auth (PUBLIC routes, no auth middleware required).
-		// /mfa/setup and /mfa/verify require access token — caller passes via Bearer.
+		// Sprint 13 â€” auth (PUBLIC routes, no auth middleware required).
+		// /mfa/setup and /mfa/verify require access token â€” caller passes via Bearer.
 		r.Post("/auth/login", h.Login)
 		r.Post("/auth/refresh", h.Refresh)
 		r.Post("/auth/logout", h.Logout)
 		r.Post("/auth/mfa/setup", h.SetupMFA)
 		r.Post("/auth/mfa/verify", h.VerifyMFA)
+	}
+
+	if h.Notifications != nil {
+		// Sprint 28 - in-app notification feed.
+		r.Get("/notifications", h.ListNotifications)
+		r.Get("/notifications/unread-count", h.UnreadCount)
+		r.Patch("/notifications/{id}/read", h.MarkNotificationRead)
 	}
 }
 

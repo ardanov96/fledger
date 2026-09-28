@@ -85,6 +85,13 @@ func run() error {
 		return fmt.Errorf("wire fx rate worker: %w", err)
 	}
 
+	// Wire NotificationWorker (Sprint 28 — Fase 8).
+	// Subscribes to NATS fmcg.> events from the outbox publisher,
+	// creates in-app notification rows for end users.
+	if err := wireNotificationWorker(ctx, cfg, log); err != nil {
+		return fmt.Errorf("wire fx rate worker: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Future workers (placeholders)
 	// -------------------------------------------------------------------------
@@ -398,6 +405,47 @@ func wireFxRateWorker(ctx context.Context, cfg *config.Config, log *slog.Logger)
 	log.Info("fx rate worker started",
 		"interval", cfg.FX.RefreshInterval,
 		"pairs", len(pairs),
+	)
+	return nil
+}
+
+// wireNotificationWorker starts the NotificationDispatcher (Sprint 28 / Fase 8).
+//
+// Subscribes to NATS fmcg.> events produced by the OutboxPublisherWorker
+// (Sprint 24). For each event, the NotificationService creates an in-app
+// notification row keyed by recipient user ID. End users see these via
+// GET /v1/notifications.
+//
+// Production extensions:
+//   - Email/SMS/push: separate worker that reads from notifications table.
+//   - User preferences: filter by type before insert.
+//   - Per-tenant retry/queue: for delivery guarantees beyond the DB row.
+func wireNotificationWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	pool, err := infra.NewPGXPool(ctx, &cfg.DB)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	db := postgres.NewDB(pool)
+	notifRepo := postgres.NewNotificationRepository(db)
+
+	natsClient, err := infra.NewNATSClient(ctx, cfg.NATS, log)
+	if err != nil {
+		return fmt.Errorf("connect nats: %w", err)
+	}
+
+	svc := usecase.NewNotificationService(usecase.NotificationDeps{
+		Repo:     notifRepo,
+		Broker:   natsClient,
+		Subjects: []string{"fmcg.>"},
+		Logger:   log,
+	})
+	if err := svc.Subscribe(ctx); err != nil {
+		return fmt.Errorf("notification subscribe: %w", err)
+	}
+
+	log.Info("notification worker started",
+		"subjects", "fmcg.>",
+		"nats_url", cfg.NATS.URL,
 	)
 	return nil
 }

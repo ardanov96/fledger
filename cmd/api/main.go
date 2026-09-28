@@ -205,7 +205,11 @@ func run() error {
 	agingSnapRepo := postgres.NewAgingSnapshotRepository(db)
 	agingAPI := newAgingSnapshotAPIAdapter(agingSnapRepo, invoiceRepo)
 
-	h := handler.New(transferService, accountService, invoiceService, agingAPI, periodAPI, reconcilerAPI, collectionAPI, currencyAPI, authAPI)
+	// Sprint 28: notification service (in-app feed).
+	notifRepo := postgres.NewNotificationRepository(db)
+	notifAPI := newNotificationAPIAdapter(notifRepo)
+
+	h := handler.New(transferService, accountService, invoiceService, agingAPI, periodAPI, reconcilerAPI, collectionAPI, currencyAPI, authAPI, notifAPI)
 
 	// Sprint 14 - rate limiter for login (brute-force defense).
 	// Per-IP token bucket: 5 burst, 0.5 rps sustained.
