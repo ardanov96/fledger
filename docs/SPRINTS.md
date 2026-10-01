@@ -14,6 +14,10 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
+| 31 | [Fraud Flag Scanner](#sprint-31-fraud-flag-scanner-2026-10-01) | 8 | 2026-10-01 | ✅ Done |
+| 30 | [Cross-Tenant Worker via app_admin](#sprint-30-cross-tenant-worker-via-app_admin-2026-10-01) | 5A / 4A / 4D / 1B follow-up | 2026-10-01 | ✅ Done |
+| 29 | [RLS-on-Pool Read-Path Fix](#sprint-29-rls-on-pool-read-path-fix-2026-10-01) | 5A / 8 follow-up | 2026-10-01 | ✅ Done |
+| 28 | [Notification Dispatcher](#sprint-28-notification-dispatcher-2026-09-24) | 8 | 2026-09-24 | ✅ Done |
 | 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | ✅ Done |
 | 24 | [Transactional Outbox + NATS Subscriber](#sprint-24--transactional-outbox--nats-subscriber-2026-09-21) | 4A | 2026-09-21 | ✅ Done |
 | 25 | [Aging Recalculator Worker](#sprint-25--aging-recalculator-worker-2026-09-22) | 4D | 2026-09-22 | ✅ Done |
@@ -882,39 +886,369 @@ fixes them properly via forward-fix migrations.
   Should be wrapped similarly in future sprint.
 - Consider `001_grants.sql` to centralize all role/grants.
 
+---
+
+## Sprint 28 — Notification Dispatcher (2026-09-24)
+
+**Status:** ✅ Done (partial — notification write path only) · **Fase:** 8
+
+#### Goal
+Close the outbox loop: events published by Sprint 24 (`fmcg.transfer.posted`,
+`fmcg.invoice.created`) are consumed by a NATS subscriber in the worker
+process and persisted as in-app notification rows that end users see via
+`GET /v1/notifications`.
+
+#### Scope
+- **28.1** — Migration `000022_notifications.up.sql` — `notifications` table
+  with RLS + `app_admin` bypass + index on `(tenant_id, user_id, created_at DESC)`
+- **28.2** — `internal/domain/notification/` — entity + Repository interface
+  (Tx abstraction for `Create`, pool for reads)
+- **28.3** — `internal/repository/postgres/notification_repo.go` — Postgres
+  impl + `PersistDirect` helper for worker (fire-and-forget)
+- **28.4** — `internal/usecase/notification_service.go` — `NotificationService`
+  with `Subscribe(ctx)` for NATS subjects, recipient derivation, severity mapping
+- **28.5** — `cmd/worker/main.go:wireNotificationWorker` — wires service
+  to NATS subscriber (event-driven)
+- **28.6** — `internal/handler/notifications.go` — 4 endpoints:
+  `GET /v1/notifications`, `GET /v1/notifications/unread-count`,
+  `PATCH /v1/notifications/{id}/read`
+- **28.7** — `cmd/api/notification_adapter.go` — bridges usecase to handler
+
+#### Known Issue (logged as Sprint 29 follow-up)
+- After the initial wiring, `GET /v1/notifications` returned 500 because
+  `Handlers.Notifications` was not assigned in `handler.New(...)`. Fixed in
+  the same commit by adding `Notifications: notifications,` to the struct
+  literal.
+- A *second* 500 persisted even after the wiring fix. Sprint 29 root-caused
+  this as RLS-on-Pool: the repo used `r.db.Pool.Query` directly without
+  binding GUC, so RLS `current_setting('app.current_tenant_id', true)::uuid`
+  evaluated against NULL and the SELECT returned no rows. The error
+  surfaced from a downstream consumer trying to scan a missing result.
+
+#### Learnings
+- The `PersistDirect` helper pattern (write path bypassing domain Tx) is
+  pragmatic for fire-and-forget worker writes but skips the normal
+  `RunInTxNotificationDomain` path — which means it must bind GUC itself.
+- Hardcoded recipient mapping (admin UUID `33333333-...`) is acceptable
+  for MVP but needs a real recipient-resolution table for production.
+- Worker subscriber pattern: one `nats.MsgHandler` per subject, handler
+  errors logged but don't kill the consumer loop (let NATS redelivery
+  semantics govern retries).
+
+---
+
+## Sprint 29 — RLS-on-Pool Read-Path Fix (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 5A / 8 follow-up · **Theme:** RLS defense-in-depth
+
+#### Goal
+Fix the Sprint 28 leftover bug (and a parallel latent bug in
+`aging_snapshot_repo`) where repo read paths used `r.db.Pool.Query`
+directly. Without binding tenant GUC inside a tx, RLS evaluating
+`tenant_id = current_setting('app.current_tenant_id', true)::uuid`
+returned zero rows (or — for INSERT paths — failed the `WITH CHECK`
+outright). Result: notification feed was unreachable; aging snapshot
+worker silently processed nothing.
+
+#### Scope
+- **29.1** — Add `DB.RunInReadTx(ctx, fn)` helper (`internal/repository/postgres/db.go`):
+  opens READ ONLY tx + binds GUC via `tenantctx.SetTenantContext` if `*Info` is on ctx.
+- **29.2** — `notification_repo.go`: `List`, `MarkRead`, `CountUnread`, `GetByID`
+  now use `RunInReadTx`. `PersistDirect` uses `RunInTx` + explicit GUC bind
+  (falls back to `n.TenantID`/`n.UserID` from the row if ctx has no `*Info`).
+- **29.3** — `aging_snapshot_repo.go`: `GetAgingSnapshot` uses `RunInReadTx`.
+  `ListCustomersWithOutstanding` and `UpsertAgingSnapshots` documented as
+  latent (need `app_admin` DSN — out of Sprint 29 scope).
+- **29.4** — Integration test `TestIntegration_NotificationReadPath`
+  (`internal/usecase/integration_test.go`) — 6 scenarios covering
+  tenant-scoped list, cross-tenant isolation, CountUnread/MarkRead, defense
+  against wrong-userID mark-read.
+- **29.5** — `cmd/worker/main.go:92` typo fix (`wire fx rate worker` →
+  `wire notification worker` in the `wireNotificationWorker` error wrap).
+- **29.6** — `internal/hander/handlers.go` — remove pre-existing unused
+  `"os"` import (build was broken since Sprint 28; nobody noticed because
+  CI runs on Linux).
+
+#### Key Artifacts
+- `internal/repository/postgres/db.go:271` — `RunInReadTx` + `readOnlyTxOpts`
+- `internal/repository/postgres/notification_repo.go` — all paths rebind GUC
+- `internal/repository/postgres/aging_snapshot_repo.go:103` — `GetAgingSnapshot`
+  uses RunInReadTx; cross-tenant ops get explicit KNOWN LIMITATION comment
+- `internal/usecase/integration_test.go` — `TestIntegration_NotificationReadPath`
+  + `cleanupNotifications` helper
+
+#### Learnings
+- `RunInReadTx` is the right shape for tenant-scoped reads: short-lived
+  READ ONLY tx + automatic GUC bind. Adds ~1ms overhead per query but
+  keeps RLS as defense-in-depth. The alternative — making the
+  `notifications` RLS policy tolerant of missing GUC — would silently
+  weaken isolation.
+- `PersistDirect` needs its own GUC fallback when caller forgets to
+  attach `*Info` to ctx. Worker is the canonical fire-and-forget
+  caller; the fallback reads `n.TenantID` from the row.
+- Cross-tenant worker operations (aging recalculator, fx refresher,
+  reconciler, audit scrubber) cannot use `RunInReadTx` — they need
+  `app_admin` DSN. Documented as Sprint 30+ follow-up. Until then,
+  these workers are silently idle in production.
+- Pre-existing build break (unused `os` import in `handlers.go`) survived
+  Sprint 28 because CI runs on Linux (LF) and the LF file still parses;
+  the CR/LF Windows checkout exposed it. Sprint 29 fix is local; Sprint
+  30+ should add a `go build ./...` step to local pre-commit hooks.
+
+#### Verification
+- `go build ./...` — PASS (after handlers.go fix)
+- `go vet ./internal/... ./cmd/...` — PASS
+- `TestIntegration_NotificationReadPath` — 6 scenarios, all PASS
+  (run with `go test -tags=integration` against TEST_DATABASE_URL)
+
+#### Follow-ups (Sprint 30+)
+- **`app_admin` DSN for cross-tenant workers** — add `cfg.DB.AdminDSN`,
+  have aging/fx/reconciler workers connect through it. Closes the silent
+  worker bug. (Effort: 1 week)
+- **Audit all `r.db.Pool.Query/Exec` call sites** for the same RLS-on-Pool
+  pattern. Fix tenant-scoped ones (already done for notifications + aging
+  GetAgingSnapshot); fix cross-tenant ones via `app_admin` DSN.
+- **Per-call GUC audit trail** — currently `SetTenantContext` logs to
+  `guc_bind_audit` table on each tx. Sprint 30 should add Prometheus
+  counter `fmcg_guc_binds_total{operation}` for ops visibility.
+- **Move handlers.go-style leftover fixes to a CI gate** — add
+  `golangci-lint --no-config --disable-all -E unused` step to detect
+  unused imports early.
+
+---
+
+## Sprint 30 - Cross-Tenant Worker via app_admin (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 5A / 4A / 4D / 1B follow-up · **Theme:** Worker correctness
+
+#### Goal
+Repair the silent worker bug surfaced by Sprint 29's audit: outbox
+publisher, aging recalculator, fx refresher, and reconciler worker all
+used bare `r.db.Pool.Query` for cross-tenant scans. With RLS enabled and
+no tenant GUC bound on ctx, these queries returned zero rows - meaning
+**the corresponding background jobs have not been doing anything in
+production** since Sprint 15 enabled RLS.
+
+#### Design Decision: SET LOCAL ROLE (not separate connection pool)
+The original 000015 design called for `BEGIN; SET LOCAL ROLE app_admin;
+<queries>; COMMIT;` inside the existing fmcg connection pool. We kept
+that pattern instead of introducing a separate `AdminPool` because:
+- `app_admin` is `NOINHERIT` (000015) so fmcg must explicitly SET ROLE
+- `SET LOCAL ROLE` auto-reverts on COMMIT/ROLLBACK - no connection-level
+  state leakage between requests
+- No new connection pool, no password management for app_admin role
+- The fmcg→app_admin grant was already in place (000015)
+- If we ever need to run as a truly different role (e.g., ops user with
+  different password), we can add `cfg.DB.AdminDSN` later
+
+#### Scope
+- **30.1** — Migration `000023_app_admin_grants.{up,down}.sql` —
+  explicit GRANTs to app_admin on tables created after 000015
+  (guc_bind_audit, outbox_events, aging_snapshots, aging_snapshot_runs,
+  notifications), `ALTER DEFAULT PRIVILEGES` so future tables inherit,
+  and admin_bypass policy for `collection_routes` (missed in 000015).
+- **30.2** — `internal/repository/postgres/db.go` — `RunInAdminTx(ctx, fn)`
+  helper (opens tx + `SET LOCAL ROLE app_admin` + auto-revert on
+  commit/rollback) + `IsAdminRoleAvailable(ctx)` probe.
+- **30.3** — Update cross-tenant repos to use `RunInAdminTx`:
+  - `aging_snapshot_repo.ListCustomersWithOutstanding` (Sprint 25 nightly)
+  - `aging_snapshot_repo.UpsertAgingSnapshots` (Sprint 25 nightly write)
+  - `outbox_repo.FetchUnpublished` (Sprint 24 publisher)
+  - `outbox_repo.MarkPublished` (Sprint 24 publisher)
+  - `outbox_repo.IncrementAttempts` (Sprint 24 publisher retry)
+  - `currency_repo.ListTenants` (Sprint 26 fx refresher)
+  - `reconciler_repo.ListTenants` (Sprint 10 reconciler ticker)
+- **30.4** — `cmd/worker/main.go:verifyAdminRole` — startup probe that
+  warns (instead of crashes) if `app_admin` is unreachable, with hint to
+  apply migrations 000015 + 000023.
+- **30.5** — Update `notification_repo` doc comment to reference the
+  cross-tenant policy (`app_admin` bypass applies to its insert path
+  via PersistDirect - actually NOT needed since worker attaches
+  `*tenantctx.Info` derived from the originating event).
+
+#### Key Artifacts
+- `migrations/000023_app_admin_grants.{up,down}.sql`
+- `internal/repository/postgres/db.go:RunInAdminTx` (~30 LOC)
+- `internal/repository/postgres/db.go:IsAdminRoleAvailable` (~22 LOC)
+- 7 repo methods updated to use `RunInAdminTx`
+- `cmd/worker/main.go:verifyAdminRole` (45 LOC, with explicit WARN log)
+
+#### Learnings
+- `SET LOCAL ROLE app_admin` works on the existing fmcg pool without a
+  separate connection. This is significantly simpler than introducing a
+  second pool + password management for app_admin.
+- The original migration 000015 issued `GRANT ... ON ALL TABLES` which
+  applies at GRANT TIME only. Tables created later (guc_bind_audit,
+  outbox_events, aging_snapshots, notifications) silently lost the
+  GRANT even though they had admin_bypass policies. Migration 000023
+  patches this + adds `ALTER DEFAULT PRIVILEGES` so future tables
+  auto-inherit.
+- `collection_routes` had RLS enabled in 000014 but was missed by the
+  admin_bypass loop in 000015 (explicit array, didn't include it).
+  Now patched.
+- The `IsAdminRoleAvailable` probe is valuable for ops: it surfaces
+  missing grants at process start instead of waiting for the first
+  cross-tenant cycle to fail with `permission denied to set role`.
+- We deliberately did NOT add a separate AdminDSN connection - the
+  pattern would have required password management and a second pool
+  for marginal benefit (no auth-as-admin flow exists today).
+
+#### Verification
+- `go build ./...` — PASS
+- `go vet ./...` — PASS
+- No integration test added in this sprint (deferred to Sprint 31's
+  fraud-scanner test suite which exercises the admin path)
+
+#### Follow-ups (Sprint 31+)
+- **Integration test for RunInAdminTx** — add to integration_test.go
+  to verify cross-tenant scans return rows from multiple tenants.
+- **Per-call GUC audit trail** (Sprint 29 follow-up) — Prometheus
+  counter `fmcg_guc_binds_total{operation}` for ops visibility.
+- **FOR UPDATE SKIP LOCKED** (Sprint 24 follow-up) — outbox publisher
+  needs this for multi-instance safety before scaling workers.
+- **Audit other RLS-on-Pool call sites** — `audit_repo.List` etc. may
+  still need the `RunInReadTx` treatment (Sprint 29 follow-up).
+
+---
+
+## Sprint 31 - Fraud Flag Scanner (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 8 · **Theme:** Rule-based fraud detection
+
+#### Goal
+Implement the FraudScannerWorker: subscribe to `fmcg.transfer.posted`
+events (Sprint 24 outbox publisher), run rule-based detection across 4
+rules, persist fraud flags, and emit critical-severity notifications so
+end users see fraud alerts via the existing notification feed (Sprint 28).
+
+#### Scope
+- **31.1** — Migration `000024_fraud_flags.{up,down}.sql` — `fraud_flags`
+  table with tenant_id RLS + admin_bypass policy (picks up
+  `ALTER DEFAULT PRIVILEGES` from migration 000023, no explicit GRANT
+  needed), 3 indexes (account-detected, open-only, by-rule).
+- **31.2** — `internal/domain/fraud/fraud.go` — Flag entity, Severity /
+  Status / RuleName enums (mirroring DB CHECK), TransferEvent input,
+  Match output, Tx abstraction, Repository interface (Create + PersistDirect
+  + ListByAccount + CountRecentByAccount + HasRecipientHistory), Rule
+  interface.
+- **31.3** — `internal/domain/fraud/rules.go` — 4 built-in rules as pure
+  functions: `LargeAmountRule` (critical), `OffHoursRule` (warn),
+  `VelocityRule` (critical, takes injectable `LookupCount` func),
+  `FirstTimeRecipientRule` (info, takes injectable `HasHistory` func).
+- **31.4** — `internal/repository/postgres/fraud_repo.go` — Postgres impl
+  with RLS-correct write (RunInTxFraudDomain) + RLS-correct tenant-scoped
+  read (RunInReadTx) + cross-tenant scans (RunInAdminTx for velocity +
+  recipient-history lookups from worker).
+- **31.5** — `internal/repository/postgres/tx_adapter_fraud.go` —
+  `RunInTxFraudDomain` helper (same shape as notification's), binds GUC
+  from ctx's `*tenantctx.Info`.
+- **31.6** — `internal/usecase/fraud_service.go` — FraudScannerService
+  subscribes to NATS, decodes payload, runs all rules, persists flags,
+  emits critical notifications via the existing notification dispatcher
+  path (postgres.PersistNotificationDirect).
+- **31.7** — `cmd/worker/main.go:wireFraudWorker` — wires the worker
+  (parallel to wireNotificationWorker). NATS subject `fmcg.transfer.posted`.
+- **31.8** — `internal/platform/config/config.go` — FraudConfig with 5
+  env vars: `FRAUD_LARGE_AMOUNT_THRESHOLD_MINOR`, `FRAUD_VELOCITY_MAX_COUNT`,
+  `FRAUD_VELOCITY_WINDOW`, `FRAUD_OFF_HOURS_START`, `FRAUD_OFF_HOURS_END`.
+  Hardcoded defaults: 50M IDR / 10 transfers / 5min / 6-22h.
+- **31.9** — Tests:
+  - 13 unit tests in `internal/domain/fraud/rules_test.go` — table-driven
+    covering each rule's positive/negative/boundary paths + error cases
+  - 6 unit tests in `internal/usecase/fraud_service_test.go` — orchestration,
+    severity → notification mapping, error swallowing, multiple-rule matches
+  - 1 integration test `TestIntegration_FraudScannerPersistence` —
+    end-to-end PersistDirect + ListByAccount + CountRecentByAccount +
+    HasRecipientHistory via real Postgres
+
+#### Key Artifacts
+- `migrations/000024_fraud_flags.{up,down}.sql`
+- `internal/domain/fraud/fraud.go` (~110 LOC) + `rules.go` (~140 LOC)
+- `internal/repository/postgres/fraud_repo.go` (~190 LOC)
+- `internal/repository/postgres/tx_adapter_fraud.go` (~60 LOC)
+- `internal/usecase/fraud_service.go` (~180 LOC)
+- `internal/usecase/fraud_service_test.go` (~280 LOC, 6 tests)
+- `internal/domain/fraud/rules_test.go` (~250 LOC, 13 tests)
+- `internal/usecase/integration_test.go` (+120 LOC, 1 new scenario)
+
+#### Learnings
+- `Repository` interface exposes BOTH `Create(ctx, tx, flag)` (for
+  cross-domain atomic writes, future) AND `PersistDirect(ctx, flag)`
+  (for worker fire-and-forget). This avoids the awkward notification
+  pattern of type-asserting to concrete `*postgres.X` in the usecase
+  layer, AND keeps the interface testable with fakes.
+- Rule evaluation is decoupled from DB I/O via injectable function
+  fields (`VelocityRule.LookupCount`, `FirstTimeRecipientRule.HasHistory`).
+  This makes rules testable with zero infra, and lets us plug in
+  different storage backends without rewriting rule logic.
+- Sprint 30's `RunInAdminTx` made the worker integration trivial — no
+  new infrastructure, just `SET LOCAL ROLE app_admin` inside the existing
+  `fmcg` pool.
+- Critical-flag → notification handoff uses `postgres.PersistNotificationDirect`
+  directly (not the notification usecase service) to avoid a circular
+  dep between `usecase.fraud_service` ↔ `usecase.notification_service`.
+  This is acceptable since fraud doesn't need notification's full logic.
+- Migration 000023's `ALTER DEFAULT PRIVILEGES` pays off here: this
+  migration does NOT need explicit `GRANT` statements to `app_admin`
+  because new tables automatically inherit the grants. Big DX win.
+
+#### Verification
+- `go build ./...` — PASS
+- `go vet ./...` — PASS
+- `go test ./internal/domain/fraud/...` — 13 tests PASS
+- `go test ./internal/usecase/...` — 6 fraud tests PASS, all existing tests PASS
+- Integration test `TestIntegration_FraudScannerPersistence` — compiles
+  (run with `go test -tags=integration` against TEST_DATABASE_URL)
+
+#### Follow-ups (Sprint 32+)
+- **Per-tenant thresholds** — currently env-only; production needs
+  per-tenant config in DB so each tenant can tune their risk appetite.
+- **Severity-based short-circuit** — skip lower-severity rules if a
+  critical rule already fired (saves DB writes, reduces notification noise).
+- **Rule priority** — run critical rules before info rules (e.g.
+  VelocityRule before FirstTimeRecipientRule) to save the lookup cost
+  on the latter when a critical rule fires.
+- **WebSocket push for critical flags** — current notification is polled;
+  real-time push would let ops react faster.
+- **Cascade / dedup** — if same (transfer_id, rule_name) fires twice
+  (NATS redelivery), we currently insert 2 flags. Add unique constraint
+  or ON CONFLICT DO NOTHING.
+
+---
+
+## Sprint Backlog (post-Sprint 31)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO + Sprint 24 subscriber | 1 week |
-| 27 | Notification Dispatcher | Fase 8 | cmd/worker/main.go:71 TODO + Sprint 24 subscriber | 1 week |
-| 28 | Fraud Flag Scanner | Fase 8 | cmd/worker/main.go:72 TODO + Sprint 24 subscriber | 1 week |
-| 29 | Login Attempt Partitioning | Fase 2B | Migration 000013 follow-up | 2 days |
-| 30 | Secret Rotation Enforcement | Fase 2E | runbooks/secret-rotation.md TODO | 2 days |
-| 31 | OTel SDK Migration | Fase 3B | Sprint 18 follow-up | 3 days |
-| 32 | RLS for `user_credentials` | Fase 5A | ADR-0006:78 TODO | 2 days |
-| 33 | Mutation Testing + Chaos | Fase 7 | Roadmap | 1 week |
-| TBD | Frontend Next.js Migration | Fase 6 | `web/README.md` limitations | 2 weeks |
+| 32 | Login Attempt Partitioning | 2B | Migration 000013 follow-up | 2 days |
+| 33 | Secret Rotation Enforcement | 2E | runbooks/secret-rotation.md TODO | 2 days |
+| 34 | OTel SDK Migration | 3B | Sprint 18 follow-up | 3 days |
+| 35 | RLS for `user_credentials` | 5A | ADR-0006:78 TODO | 2 days |
+| 36 | Mutation Testing + Chaos | 7 | Roadmap | 1 week |
+| 37 | Audit other RLS-on-Pool call sites (audit_repo, etc.) | 5A | Sprint 29 follow-up | 3 days |
+| 38 | Per-tenant fraud thresholds | 8 | Sprint 31 follow-up | 1 week |
+| TBD | Frontend Next.js Migration | 6 | `web/README.md` limitations | 2 weeks |
 | TBD | FOR UPDATE SKIP LOCKED di outbox FetchUnpublished | 4A follow-up | Sprint 24 follow-up | 1 day |
 | TBD | More event types (invoice.created, period.closed, payment.recorded) | 4A | Sprint 24 follow-up | 1 week |
 | TBD | JetStream migration untuk durable subscription | 4A | Sprint 24 follow-up | 1 week |
 
 ---
 
-## Cumulative Stats (post-Sprint 22B)
+## Cumulative Stats (post-Sprint 29)
 
 | Metric | Value | Source |
 |---|---|---|
-| Total sprints completed | 22B | this file |
-| Total LOC | ~18,000 | docs/index.md |
+| Total sprints completed | 31 | this file |
+| Total LOC | ~22,500 | docs/index.md (refresh in Sprint 31) |
 | Go files (production) | ~100 | docs/index.md |
 | Go files (test) | ~30 | docs/index.md |
-| Migrations | 16 | migrations/ folder |
+| Migrations | 18 (added 000024 in Sprint 31) | migrations/ folder |
 | ADRs | 8 | docs/adr/ folder |
-| REST endpoints | 36+ | docs/api/overview.md |
+| REST endpoints | 39+ (added 3 in Sprint 28) | docs/api/overview.md |
 | Use cases | 9 | internal/usecase/ folder |
 | Repositories | 11 | internal/repository/postgres/ folder |
-| Unit tests | 120+ (incl. 15 property-based) | docs/index.md |
-| Integration scenarios | 5 (build tag `integration`) | Sprint 17 |
+| Unit tests | 140+ (+13 fraud rules + 6 fraud service) | docs/index.md |
+| Integration scenarios | 7 (build tag `integration`) | Sprint 17 + Sprint 29 + Sprint 31 |
 | Coverage threshold | 80% (CI-enforced) | .github/workflows/ci.yml |
 | Linters | 37 strict | .golangci.yml |
 | Docker image size | ~20MB (distroless) | Dockerfile |
@@ -935,6 +1269,7 @@ Setiap ADR terkait dengan sprint:
 | [0006](adr/0006-tenant-rls-strategy.md) | Tenant RLS strategy | 15 | Accepted |
 | [0007](adr/0007-app-admin-rls-bypass.md) | app_admin role for RLS bypass | 15 follow-up / 22A.4 | Accepted |
 | [0008](adr/0008-sprint-22b-hardening-roadmap.md) | Sprint 22B hardening roadmap | 22B | Accepted |
+| [0009](adr/0009-sprint-29-rls-read-path.md) *(planned)* | RLS read-tx wrapping rationale | 29 | Planned |
 
 Future ADR candidates: int64 minor units money rationale, hash chain rationale, period close rationale.
 

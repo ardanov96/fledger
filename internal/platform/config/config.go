@@ -28,6 +28,7 @@ type Config struct {
 	Redis      RedisConfig
 	NATS       NATSConfig
 	FX         FXConfig
+	Fraud      FraudConfig
 	JWT        JWTConfig
 	BcryptCost int
 	RateLimit  RateLimitConfig
@@ -98,6 +99,17 @@ type FXConfig struct {
 	ProviderAPIKey  string
 	ProviderTimeout time.Duration
 	Pairs           []string // parsed from comma-separated FX_PAIRS env
+}
+
+// FraudConfig holds rule thresholds for the FraudScannerWorker (Sprint 31).
+// All fields are env-configurable; zero/negative values fall back to
+// hardcoded defaults in cmd/worker/main.go buildFraudRules.
+type FraudConfig struct {
+	LargeAmountThresholdMinor int64         // flag when amount_minor >= this
+	VelocityMaxCount          int           // flag when >= N transfers in window
+	VelocityWindow            time.Duration // rolling window for velocity count
+	OffHoursStart             int           // business hours start (inclusive, 0-23)
+	OffHoursEnd               int           // business hours end (exclusive, 0-23)
 }
 
 // JWTConfig holds JWT signing/validation settings.
@@ -265,6 +277,13 @@ func Load() (*Config, error) {
 			ProviderAPIKey:  v.GetString("FX_PROVIDER_API_KEY"),
 			ProviderTimeout: v.GetDuration("FX_PROVIDER_TIMEOUT"),
 			Pairs:           splitPairs(v.GetString("FX_PAIRS")),
+		},
+		Fraud: FraudConfig{
+			LargeAmountThresholdMinor: v.GetInt64("FRAUD_LARGE_AMOUNT_THRESHOLD_MINOR"),
+			VelocityMaxCount:          v.GetInt("FRAUD_VELOCITY_MAX_COUNT"),
+			VelocityWindow:            v.GetDuration("FRAUD_VELOCITY_WINDOW"),
+			OffHoursStart:             v.GetInt("FRAUD_OFF_HOURS_START"),
+			OffHoursEnd:               v.GetInt("FRAUD_OFF_HOURS_END"),
 		},
 		JWT: JWTConfig{
 			Secret:     v.GetString("JWT_SECRET"),
