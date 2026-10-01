@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/outbox"
 )
@@ -72,6 +73,13 @@ INSERT INTO outbox_events (
 
 // ----- FetchUnpublished -----
 
+// FetchUnpublished polls outbox_events across ALL tenants for unpublished
+// events to feed the outbox publisher.
+//
+// Sprint 30: switched from bare Pool.Query to RunInAdminTx. The publisher
+// worker has no tenant context (events span tenants), so RLS USING
+// tenant_id = current_setting(...) would evaluate to NULL and return
+// zero rows. SET LOCAL ROLE app_admin bypasses RLS for this scan.
 func (r *OutboxRepository) FetchUnpublished(ctx context.Context, limit int) ([]outbox.Event, error) {
 	if limit <= 0 {
 		limit = 50
@@ -85,29 +93,40 @@ WHERE published_at IS NULL
 ORDER BY created_at ASC
 LIMIT $1
 `
-	rows, err := r.db.Pool.Query(ctx, q, limit)
-	if err != nil {
-		return nil, fmt.Errorf("fetch unpublished outbox: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]outbox.Event, 0, limit)
-	for rows.Next() {
-		var dto outboxEventDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TenantID, &dto.AggregateType, &dto.AggregateID, &dto.EventType,
-			&dto.Subject, &dto.Payload, &dto.CreatedAt, &dto.PublishedAt, &dto.Attempts,
-			&dto.LastError, &dto.Metadata,
-		); err != nil {
-			return nil, fmt.Errorf("scan outbox row: %w", err)
+	var out []outbox.Event
+	err := r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, limit)
+		if err != nil {
+			return fmt.Errorf("fetch unpublished outbox: %w", err)
 		}
-		out = append(out, dtoToEvent(dto))
+		defer rows.Close()
+
+		out = make([]outbox.Event, 0, limit)
+		for rows.Next() {
+			var dto outboxEventDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TenantID, &dto.AggregateType, &dto.AggregateID, &dto.EventType,
+				&dto.Subject, &dto.Payload, &dto.CreatedAt, &dto.PublishedAt, &dto.Attempts,
+				&dto.LastError, &dto.Metadata,
+			); err != nil {
+				return fmt.Errorf("scan outbox row: %w", err)
+			}
+			out = append(out, dtoToEvent(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ----- MarkPublished -----
 
+// MarkPublished marks the given outbox events as published (sets
+// published_at = now() WHERE published_at IS NULL).
+//
+// Sprint 30: switched to RunInAdminTx (cross-tenant update from worker).
 func (r *OutboxRepository) MarkPublished(ctx context.Context, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil
@@ -117,15 +136,19 @@ UPDATE outbox_events
 SET published_at = now()
 WHERE id = ANY($1) AND published_at IS NULL
 `
-	_, err := r.db.Pool.Exec(ctx, q, ids)
-	if err != nil {
-		return fmt.Errorf("mark outbox published: %w", err)
-	}
-	return nil
+	return r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, q, ids); err != nil {
+			return fmt.Errorf("mark outbox published: %w", err)
+		}
+		return nil
+	})
 }
 
 // ----- IncrementAttempts -----
 
+// IncrementAttempts records a publish failure for one outbox event.
+//
+// Sprint 30: switched to RunInAdminTx (cross-tenant update from worker).
 func (r *OutboxRepository) IncrementAttempts(ctx context.Context, id uuid.UUID, lastErr string) error {
 	const q = `
 UPDATE outbox_events
@@ -133,11 +156,12 @@ SET attempts   = attempts + 1,
     last_error = $2
 WHERE id = $1 AND published_at IS NULL
 `
-	_, err := r.db.Pool.Exec(ctx, q, id, lastErr)
-	if err != nil {
-		return fmt.Errorf("increment outbox attempts: %w", err)
-	}
-	return nil
+	return r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, q, id, lastErr); err != nil {
+			return fmt.Errorf("increment outbox attempts: %w", err)
+		}
+		return nil
+	})
 }
 
 // =============================================================================

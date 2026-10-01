@@ -19,10 +19,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/runut/fmcg-wallet/internal/domain/currency"
+	"github.com/runut/fmcg-wallet/internal/domain/fraud"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
+	"github.com/runut/fmcg-wallet/internal/domain/notification"
 	"github.com/runut/fmcg-wallet/internal/domain/reconciler"
 	"github.com/runut/fmcg-wallet/internal/infra"
 	"github.com/runut/fmcg-wallet/internal/infra/fxprovider"
@@ -60,6 +63,16 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Sprint 30: verify `app_admin` role is reachable for cross-tenant
+	// worker operations (outbox publisher, aging recalculator, fx refresher,
+	// reconciler). Without migration 000023 + 000015 grants, RunInAdminTx
+	// would fail at first use with `permission denied to set role "app_admin"`.
+	// We surface a clear WARN at startup instead of crashing later mid-cycle.
+	if err := verifyAdminRole(ctx, cfg, log); err != nil {
+		log.Warn("admin role check failed; cross-tenant workers may fail at runtime",
+			"error", err)
+	}
+
 	// Wire ReconcilerWorker (Sprint 10 — Fase 1B).
 	// Same wiring as cmd/api/main.go line 113-127, but without the API
 	// surface — worker process is dedicated to background jobs.
@@ -89,14 +102,21 @@ func run() error {
 	// Subscribes to NATS fmcg.> events from the outbox publisher,
 	// creates in-app notification rows for end users.
 	if err := wireNotificationWorker(ctx, cfg, log); err != nil {
-		return fmt.Errorf("wire fx rate worker: %w", err)
+		return fmt.Errorf("wire notification worker: %w", err)
+	}
+
+	// Wire FraudScannerWorker (Sprint 31 — Fase 8).
+	// Consumes `fmcg.transfer.posted` events, runs rule-based detection,
+	// persists fraud_flags, emits critical notifications.
+	if err := wireFraudWorker(ctx, cfg, log); err != nil {
+		return fmt.Errorf("wire fraud worker: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
 	// Future workers (placeholders)
 	// -------------------------------------------------------------------------
-	// TODO Fase 8: notification_dispatcher (subscribe to NATS outbox events)
-	// TODO Fase 8: fraud_flag_scanner (subscribe to NATS outbox events)
+	// TODO Fase 8: projection_writer (CQRS read-model materializer)
+	// TODO Fase 8: account_balance_recalculator (daily snapshot)
 
 	// Heartbeat so the process doesn't exit (for debugging idle state).
 	go heartbeat(ctx, log)
@@ -112,6 +132,32 @@ func run() error {
 	// via ctx, in-flight RunNow call finishes up to ~30s).
 	time.Sleep(2 * time.Second)
 	log.Info("worker stopped")
+	return nil
+}
+
+// verifyAdminRole checks whether the current DB role can switch to app_admin
+// (Sprint 30). Logs the result so operators see cross-tenant worker
+// readiness at startup instead of discovering failures at runtime. Returns
+// the error (if any) so the caller can choose to abort; we currently log
+// and let the worker start anyway, since some workers don't need admin.
+func verifyAdminRole(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	pool, err := infra.NewPGXPool(ctx, &cfg.DB)
+	if err != nil {
+		return fmt.Errorf("connect for admin check: %w", err)
+	}
+	defer pool.Close()
+
+	db := postgres.NewDB(pool)
+	ok, err := db.IsAdminRoleAvailable(ctx)
+	if err != nil {
+		return fmt.Errorf("admin availability check: %w", err)
+	}
+	if !ok {
+		log.Warn("app_admin role NOT available — cross-tenant workers (outbox publisher, aging, fx, reconciler) will fail",
+			"hint", "apply migration 000023 and ensure fmcg is granted app_admin (migration 000015)")
+		return fmt.Errorf("app_admin role unreachable")
+	}
+	log.Info("app_admin role available — cross-tenant workers enabled")
 	return nil
 }
 
@@ -448,4 +494,106 @@ func wireNotificationWorker(ctx context.Context, cfg *config.Config, log *slog.L
 		"nats_url", cfg.NATS.URL,
 	)
 	return nil
+}
+
+// wireFraudWorker starts the FraudScannerWorker (Sprint 31 / Fase 8).
+//
+// Consumes `fmcg.transfer.posted` events from the outbox publisher
+// (Sprint 24). For each event, runs the rule engine (4 rules: large
+// amount, off-hours, velocity, first-time recipient). Persists one row
+// per match in `fraud_flags`. Critical flags also create a notification
+// row so users see it via Sprint 28 feed.
+func wireFraudWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+	pool, err := infra.NewPGXPool(ctx, &cfg.DB)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	db := postgres.NewDB(pool)
+	fraudRepo := postgres.NewFraudFlagRepository(db)
+	notifRepo := postgres.NewNotificationRepository(db)
+
+	natsClient, err := infra.NewNATSClient(ctx, cfg.NATS, log)
+	if err != nil {
+		return fmt.Errorf("connect nats: %w", err)
+	}
+
+	// Configure rules from config
+	rules := buildFraudRules(cfg, fraudRepo)
+
+	// Build a notification creator for critical-flag notifications.
+	// We use the existing notification dispatcher's PersistDirect path
+	// (postgres.PersistNotificationDirect) so the worker writes a
+	// notification row without needing the notification service
+	// (which would create a circular dep).
+	notifCreator := &fraudNotifAdapter{notifRepo: notifRepo}
+
+	svc := usecase.NewFraudScannerService(usecase.FraudDeps{
+		Repo:          fraudRepo,
+		NotifNotifier: notifCreator,
+		Broker:        natsClient,
+		Subjects:      []string{"fmcg.transfer.posted"},
+		Rules:         rules,
+		Logger:        log,
+	})
+	if err := svc.Subscribe(ctx); err != nil {
+		return fmt.Errorf("fraud subscribe: %w", err)
+	}
+
+	log.Info("fraud scanner worker started",
+		"subjects", "fmcg.transfer.posted",
+		"rules", len(rules),
+		"nats_url", cfg.NATS.URL,
+	)
+	return nil
+}
+
+// buildFraudRules constructs the 4 rules (Sprint 31 MVP) from config.
+func buildFraudRules(cfg *config.Config, repo *postgres.FraudFlagRepository) []fraud.Rule {
+	largeThreshold := cfg.Fraud.LargeAmountThresholdMinor
+	if largeThreshold <= 0 {
+		largeThreshold = 50_000_000 // 50M IDR minor = ~$3k USD
+	}
+	velocityMax := cfg.Fraud.VelocityMaxCount
+	if velocityMax <= 0 {
+		velocityMax = 10
+	}
+	velocityWindow := cfg.Fraud.VelocityWindow
+	if velocityWindow <= 0 {
+		velocityWindow = 5 * time.Minute
+	}
+	offHoursStart := cfg.Fraud.OffHoursStart
+	if offHoursStart < 0 || offHoursStart > 23 {
+		offHoursStart = 6
+	}
+	offHoursEnd := cfg.Fraud.OffHoursEnd
+	if offHoursEnd < 0 || offHoursEnd > 23 {
+		offHoursEnd = 22
+	}
+	return []fraud.Rule{
+		fraud.LargeAmountRule{ThresholdMinor: largeThreshold},
+		fraud.OffHoursRule{StartHour: offHoursStart, EndHour: offHoursEnd},
+		fraud.VelocityRule{
+			MaxCount: velocityMax,
+			Window:   velocityWindow,
+			LookupCount: func(ctx context.Context, tenantID, accountID uuid.UUID, window time.Duration) (int, error) {
+				return repo.CountRecentByAccount(ctx, tenantID, accountID, window)
+			},
+		},
+		fraud.FirstTimeRecipientRule{
+			HasHistory: func(ctx context.Context, tenantID, fromAccount, toAccount uuid.UUID) (bool, error) {
+				return repo.HasRecipientHistory(ctx, tenantID, fromAccount, toAccount)
+			},
+		},
+	}
+}
+
+// fraudNotifAdapter satisfies usecase.NotificationCreator by delegating
+// to postgres.PersistNotificationDirect. Kept thin so the worker doesn't
+// import the notification usecase package.
+type fraudNotifAdapter struct {
+	notifRepo *postgres.NotificationRepository
+}
+
+func (a *fraudNotifAdapter) CreateDirect(ctx context.Context, n notification.Notification) error {
+	return postgres.PersistNotificationDirect(ctx, a.notifRepo, n)
 }

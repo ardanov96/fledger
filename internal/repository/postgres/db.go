@@ -27,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // =============================================================================
@@ -265,4 +266,105 @@ func (db *DB) RunInTx(ctx context.Context, fn func(pgx.Tx) error) error {
 // executeTx is an unexported alias kept for compatibility with internal callers.
 func (db *DB) executeTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	return db.RunInTx(ctx, fn)
+}
+
+// readOnlyTxOpts opens the tx as READ ONLY for read-only repositories.
+// READ ONLY is a strong hint to Postgres that the tx won't write; the
+// planner can skip some work and the DB can short-circuit RLS WITH CHECK.
+var readOnlyTxOpts = pgx.TxOptions{IsoLevel: pgx.ReadCommitted, AccessMode: pgx.ReadOnly}
+
+// RunInReadTx opens a READ-ONLY transaction, binds tenant GUC variables
+// from the context (if a *tenantctx.Info is present), and runs fn.
+//
+// Sprint 29 / Fase 8 fix: the previous pattern (using `r.db.Pool.Query`
+// directly) left tenant GUC unset on the connection, which meant RLS USING
+// clauses evaluated against NULL and returned zero rows for the caller —
+// or, for INSERT, failed the WITH CHECK outright. By opening a tx and
+// calling `SELECT set_config(..., true)` (is_local=true) we ensure:
+//   - RLS sees the correct tenant_id for SELECT
+//   - RLS WITH CHECK accepts the row when the writer (worker) supplies the
+//     tenant_id explicitly via the *tenantctx.Info it places on the ctx
+//   - GUC auto-reverts on COMMIT/ROLLBACK so the connection is safe to
+//     return to the pool
+//
+// If no *tenantctx.Info is present on ctx, GUC binding is skipped and
+// queries rely on RLS evaluating to zero rows (the "fail-closed" default
+// for our tenant-isolation policies). Callers that NEED data should ensure
+// the context carries one — typically the HTTP middleware
+// (TenantContextMiddleware) does this for /v1/* routes.
+func (db *DB) RunInReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	return db.runInTx(ctx, readOnlyTxOpts, func(tx pgx.Tx) error {
+		if info := tenantctx.InfoFromContext(ctx); info != nil {
+			if err := tenantctx.SetTenantContext(ctx, tx, info); err != nil {
+				return fmt.Errorf("read tx: bind tenant context: %w", err)
+			}
+		}
+		return fn(tx)
+	})
+}
+
+// RunInAdminTx opens a transaction on the regular pool, switches the role
+// to `app_admin` via `SET LOCAL ROLE` for the duration of the tx, runs fn,
+// and auto-reverts the role on COMMIT/ROLLBACK.
+//
+// Sprint 30: closes the "silent worker bug" from Sprint 29. Cross-tenant
+// worker operations (outbox publisher scanning all unpublished events,
+// aging recalculator scanning all tenants with outstanding invoices,
+// fx refresher listing tenants with FX rates, reconciler listing all
+// tenants) cannot bind GUC because there is no single tenant context.
+// They need the `app_admin` role which bypasses RLS via the admin_bypass
+// policies established by migrations 000015-000023.
+//
+// Why SET LOCAL ROLE inside a tx (not a separate connection pool):
+//   - app_admin is NOINHERIT (migration 000015) so fmcg must explicitly
+//     SET ROLE app_admin per operation
+//   - `SET LOCAL ROLE` is tx-scoped — auto-reverts on COMMIT/ROLLBACK
+//   - No additional connection pool, no password management for app_admin
+//   - Existing fmcg connection pool is reused, simpler worker main.go
+//
+// If the fmcg role lacks GRANT app_admin (it has it via 000015), this will
+// fail with `ERROR: permission denied to set role "app_admin"`. The
+// migration 000023 ensures all required tables have GRANTs to app_admin.
+//
+// Idempotent: if called concurrently or in a nested tx the inner SET LOCAL
+// ROLE is a no-op (already app_admin).
+func (db *DB) RunInAdminTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	return db.runInTx(ctx, defaultTxOpts, func(tx pgx.Tx) error {
+		// SET LOCAL ROLE app_admin — auto-reverts on COMMIT/ROLLBACK.
+		// We do NOT bind tenant GUC; admin operations explicitly
+		// bypass RLS for cross-tenant visibility.
+		if _, err := tx.Exec(ctx, "SET LOCAL ROLE app_admin"); err != nil {
+			return fmt.Errorf("admin tx: SET LOCAL ROLE app_admin: %w", err)
+		}
+		return fn(tx)
+	})
+}
+
+// IsAdminRoleAvailable returns true if the current DB role can switch to
+// app_admin. Used by ops tooling (and integration tests) to detect missing
+// grants before issuing a RunInAdminTx call that would otherwise fail with
+// "permission denied to set role".
+//
+// The check attempts an actual SET LOCAL ROLE inside a throwaway tx — this
+// is the source of truth because Postgres evaluates the membership grant
+// (via pg_auth_members) at SET time, and the only thing we need to know is
+// whether SET LOCAL ROLE will succeed.
+//
+// Safe to call at startup: rolls back immediately.
+func (db *DB) IsAdminRoleAvailable(ctx context.Context) (bool, error) {
+	var canSet bool
+	err := db.runInTx(ctx, defaultTxOpts, func(tx pgx.Tx) error {
+		// SET LOCAL ROLE inside a tx; the assignment succeeds or fails
+		// based on whether current_user has been GRANTED app_admin.
+		if _, err := tx.Exec(ctx, "SET LOCAL ROLE app_admin"); err != nil {
+			canSet = false
+			return nil // not a real error — caller decides what to do
+		}
+		canSet = true
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("check admin role: %w", err)
+	}
+	return canSet, nil
 }

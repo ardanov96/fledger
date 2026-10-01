@@ -1,5 +1,6 @@
 // aging_snapshot_repo.go — Postgres impl of AgingSnapshotRepository.
-// Sprint 25 / Fase 4D.
+// Sprint 25 / Fase 4D (initial). Sprint 29 (read paths) — fixes
+// tenant-scoped reads via RunInReadTx.
 package postgres
 
 import (
@@ -32,13 +33,20 @@ var _ invoice.AgingSnapshotRepository = (*AgingSnapshotRepository)(nil)
 // UpsertAgingSnapshots atomically replaces all rows for the given run.
 //
 // Strategy (single transaction):
-//  1. DELETE FROM aging_snapshots WHERE snapshot_run_id = $1 (idempotent)
-//  2. INSERT ... (one row per snapshot in the batch)
-//  3. The new rows are queryable immediately on commit
+//  1. SET LOCAL ROLE app_admin (Sprint 30 — cross-tenant write)
+//  2. DELETE FROM aging_snapshots WHERE snapshot_run_id = $1 (idempotent)
+//  3. INSERT ... (one row per snapshot in the batch)
+//  4. The new rows are queryable immediately on commit
 //
 // We choose DELETE + INSERT (not MERGE/UPSERT) for simplicity and
 // predictable cardinality: at most len(snapshots) rows after the call.
 // ON CONFLICT is unnecessary because step 1 guarantees no collisions.
+//
+// Sprint 30: switched from RunInTx to RunInAdminTx because the snapshots
+// span all tenants (the worker iterates over ListCustomersWithOutstanding
+// results, which are cross-tenant). Without app_admin role, RLS WITH CHECK
+// on aging_snapshots would reject inserts for tenants other than the GUC
+// (and GUC is unset on worker ctx).
 func (r *AgingSnapshotRepository) UpsertAgingSnapshots(ctx context.Context, runID string, snapshots []invoice.AgingSnapshot) error {
 	if len(snapshots) == 0 {
 		return nil
@@ -48,7 +56,7 @@ func (r *AgingSnapshotRepository) UpsertAgingSnapshots(ctx context.Context, runI
 		return fmt.Errorf("upsert aging snapshots: invalid run_id %q: %w", runID, err)
 	}
 
-	return r.db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
+	return r.db.RunInAdminTx(ctx, func(pgxTx pgx.Tx) error {
 		// 1. DELETE any leftover rows from this run (idempotent re-runs)
 		if _, err := pgxTx.Exec(ctx,
 			`DELETE FROM aging_snapshots WHERE snapshot_run_id = $1`, runUUID,
@@ -100,6 +108,13 @@ func (r *AgingSnapshotRepository) UpsertAgingSnapshots(ctx context.Context, runI
 
 // ----- GetAgingSnapshot -----
 
+// GetAgingSnapshot returns cached aging summary for one customer (or all
+// customers in the tenant when customerID is "").
+//
+// Sprint 29: runs inside a read tx with tenant GUC bound from the context.
+// Without GUC binding, the SELECT WHERE on tenant_id collides with the
+// RLS USING clause (which compares to NULL → no rows match) and the API
+// endpoint would silently return empty.
 func (r *AgingSnapshotRepository) GetAgingSnapshot(ctx context.Context, tenantID, customerID string) ([]invoice.AgingSummary, error) {
 	var (
 		q    string
@@ -123,27 +138,41 @@ ORDER BY bucket
 		args = []any{tenantID}
 	}
 
-	rows, err := r.db.Pool.Query(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("get aging snapshot: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]invoice.AgingSummary, 0, 6)
-	for rows.Next() {
-		var s invoice.AgingSummary
-		if err := rows.Scan(&s.Bucket, &s.Count, &s.OutstandingMinor); err != nil {
-			return nil, fmt.Errorf("scan aging snapshot: %w", err)
+	var out []invoice.AgingSummary
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, args...)
+		if err != nil {
+			return fmt.Errorf("get aging snapshot: %w", err)
 		}
-		s.TenantID = tenantID
-		s.CustomerID = customerID
-		out = append(out, s)
+		defer rows.Close()
+
+		out = make([]invoice.AgingSummary, 0, 6)
+		for rows.Next() {
+			var s invoice.AgingSummary
+			if err := rows.Scan(&s.Bucket, &s.Count, &s.OutstandingMinor); err != nil {
+				return fmt.Errorf("scan aging snapshot: %w", err)
+			}
+			s.TenantID = tenantID
+			s.CustomerID = customerID
+			out = append(out, s)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ----- ListCustomersWithOutstanding -----
 
+// ListCustomersWithOutstanding scans ALL tenants for outstanding invoices
+// to feed the nightly aging recalculator worker.
+//
+// Sprint 30: runs inside RunInAdminTx so the SET LOCAL ROLE app_admin
+// bypasses RLS for this cross-tenant scan. Previously (pre-Sprint-30)
+// this ran on the bare pool which returned 0 rows because RLS filtered
+// out non-matching tenants.
 func (r *AgingSnapshotRepository) ListCustomersWithOutstanding(ctx context.Context) ([]invoice.CustomerRef, error) {
 	const q = `
 SELECT DISTINCT tenant_id, customer_id
@@ -151,24 +180,31 @@ FROM invoices
 WHERE status IN ('open', 'partial', 'overdue')
 ORDER BY tenant_id, customer_id
 `
-	rows, err := r.db.Pool.Query(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("list customers with outstanding: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]invoice.CustomerRef, 0, 64)
-	for rows.Next() {
-		var c invoice.CustomerRef
-		var tid, cid uuid.UUID
-		if err := rows.Scan(&tid, &cid); err != nil {
-			return nil, fmt.Errorf("scan customer ref: %w", err)
+	var out []invoice.CustomerRef
+	err := r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q)
+		if err != nil {
+			return fmt.Errorf("list customers with outstanding: %w", err)
 		}
-		c.TenantID = tid.String()
-		c.CustomerID = cid.String()
-		out = append(out, c)
+		defer rows.Close()
+
+		out = make([]invoice.CustomerRef, 0, 64)
+		for rows.Next() {
+			var c invoice.CustomerRef
+			var tid, cid uuid.UUID
+			if err := rows.Scan(&tid, &cid); err != nil {
+				return fmt.Errorf("scan customer ref: %w", err)
+			}
+			c.TenantID = tid.String()
+			c.CustomerID = cid.String()
+			out = append(out, c)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ----- StartRun / FinishRun -----

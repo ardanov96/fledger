@@ -305,23 +305,38 @@ ORDER BY period_start ASC
 	return out, rows.Err()
 }
 
+// ListTenants returns distinct tenant IDs that have at least one
+// accounting_period. Sprint 10 / ReconcilerWorker iterates this list
+// to run reconciliation per-tenant on a schedule.
+//
+// Sprint 30: switched from bare Pool.Query to RunInAdminTx. The
+// accounting_periods table has RLS (migration 000014 + admin_bypass in
+// 000015). Without the admin role, this scan returned zero rows because
+// GUC was unset on worker ctx.
 func (r *ReconcilerRepository) ListTenants(ctx context.Context) ([]string, error) {
 	const q = `SELECT DISTINCT tenant_id FROM accounting_periods ORDER BY tenant_id`
-	rows, err := r.db.Pool.Query(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("list tenants: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]string, 0, 4)
-	for rows.Next() {
-		var t string
-		if err := rows.Scan(&t); err != nil {
-			return nil, fmt.Errorf("scan tenant: %w", err)
+	var out []string
+	err := r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q)
+		if err != nil {
+			return fmt.Errorf("list tenants: %w", err)
 		}
-		out = append(out, t)
+		defer rows.Close()
+
+		out = make([]string, 0, 4)
+		for rows.Next() {
+			var t string
+			if err := rows.Scan(&t); err != nil {
+				return fmt.Errorf("scan tenant: %w", err)
+			}
+			out = append(out, t)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // =============================================================================

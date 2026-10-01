@@ -205,6 +205,11 @@ func (r *CurrencyRepository) CreateFxRateNoTx(ctx context.Context, fr currency.F
 // ListTenants returns distinct tenant IDs that have at least one FX rate
 // (or at least one currency registered). Sprint 26 / FxRateRefresher iterates
 // this list to refresh rates per-tenant.
+//
+// Sprint 30: switched from bare Pool.Query to RunInAdminTx. The fx_rates
+// table has RLS (migration 000014 + admin_bypass in 000015). Without the
+// admin role, this scan returned zero rows because GUC was unset on
+// worker ctx.
 func (r *CurrencyRepository) ListTenants(ctx context.Context) ([]uuid.UUID, error) {
 	const q = `
 SELECT DISTINCT tenant_id FROM currencies
@@ -212,21 +217,28 @@ UNION
 SELECT DISTINCT tenant_id FROM fx_rates
 ORDER BY 1
 `
-	rows, err := r.db.Pool.Query(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("list fx tenants: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]uuid.UUID, 0, 4)
-	for rows.Next() {
-		var t uuid.UUID
-		if err := rows.Scan(&t); err != nil {
-			return nil, fmt.Errorf("scan tenant: %w", err)
+	var out []uuid.UUID
+	err := r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q)
+		if err != nil {
+			return fmt.Errorf("list fx tenants: %w", err)
 		}
-		out = append(out, t)
+		defer rows.Close()
+
+		out = make([]uuid.UUID, 0, 4)
+		for rows.Next() {
+			var t uuid.UUID
+			if err := rows.Scan(&t); err != nil {
+				return fmt.Errorf("scan tenant: %w", err)
+			}
+			out = append(out, t)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // GetFxRate reads a rate by id.

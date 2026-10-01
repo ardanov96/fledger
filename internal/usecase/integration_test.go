@@ -27,6 +27,10 @@
 //   3. TestIntegration_RLSIsolation: tenant A cannot see tenant B rows; sales_rep scope
 //   4. TestIntegration_PeriodCloseAndReconciler: full monthly close flow → reconciler status=balanced
 //   5. TestIntegration_TamperDetection: tamper ledger entry directly → reconciler detects it
+//   6. TestIntegration_NotificationReadPath (Sprint 29): notification feed read
+//      via /v1/notifications code path — verifies RLS + tenant-scoped List,
+//      GetByID, MarkRead, CountUnread all see correct rows. Pre-Sprint-29
+//      code returned 500 because RLS evaluated tenant_id = NULL → zero rows.
 package usecase
 
 import (
@@ -45,7 +49,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runut/fmcg-wallet/internal/domain/fraud"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
+	"github.com/runut/fmcg-wallet/internal/domain/notification"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
 	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 	"github.com/runut/fmcg-wallet/internal/repository/postgres"
@@ -108,6 +114,9 @@ func (e *IntegrationTestEnv) cleanupTenant(t *testing.T, tenants ...string) {
 		"fx_rates", "currencies",
 		"user_credentials",
 		"audit_logs",
+		"fraud_flags",
+		"notifications",
+		"outbox_events",
 	}
 	for _, table := range tables {
 		if _, err := e.Pool.Exec(ctx, "TRUNCATE TABLE "+table+" CASCADE"); err != nil {
@@ -511,6 +520,182 @@ func TestIntegration_TamperDetection(t *testing.T) {
 		"immutability trigger should block UPDATE OR hash chain should detect")
 	// If the trigger was somehow bypassed, hash chain verifier would detect on reconcile.
 	// (Full hash chain check happens via ReconcilerWorker.RunReconciliation with RunHashCheck=true.)
+}
+
+// =============================================================================
+// Scenario 6: Sprint 29 — notification read paths respect RLS + tenant ctx
+// =============================================================================
+//
+// Regression guard for the Sprint 28 bug where GET /v1/notifications
+// returned 500 because the repo used bare `r.db.Pool.Query`. Without GUC
+// bound, RLS evaluating `tenant_id = current_setting('app.current_tenant_id')`
+// against NULL returned zero rows for callers (or failed outright on INSERT
+// for the worker).
+//
+// What this verifies:
+//   - List returns rows for the correct tenant/user
+//   - CountUnread matches List filter
+//   - MarkRead only affects the requesting user's row
+//   - Cross-tenant isolation: tenant B cannot see tenant A's notifications
+func TestIntegration_NotificationReadPath(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+	env.cleanupNotifications(t)
+
+	ctx := context.Background()
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+	userA := uuid.New()
+	userB := uuid.New()
+
+	repo := postgres.NewNotificationRepository(env.DB)
+
+	// Seed 3 notifications for tenantA/userA and 2 for tenantB/userB.
+	// We seed via the worker path (PersistDirect) which itself now uses
+	// RunInTx + GUC bind — verifies both write & read paths work.
+	for i := 0; i < 3; i++ {
+		n := notification.Notification{
+			ID:       uuid.New(),
+			TenantID: tenantA,
+			UserID:   userA,
+			Type:     "transfer.posted",
+			Title:    "Sprint29 tenantA row",
+			Body:     map[string]any{"i": i},
+			Severity: notification.SeverityInfo,
+			Status:   notification.StatusUnread,
+		}
+		require.NoError(t, postgres.PersistNotificationDirect(ctx, repo, n))
+	}
+	for i := 0; i < 2; i++ {
+		n := notification.Notification{
+			ID:       uuid.New(),
+			TenantID: tenantB,
+			UserID:   userB,
+			Type:     "transfer.posted",
+			Title:    "Sprint29 tenantB row",
+			Body:     map[string]any{"i": i},
+			Severity: notification.SeverityInfo,
+			Status:   notification.StatusUnread,
+		}
+		require.NoError(t, postgres.PersistNotificationDirect(ctx, repo, n))
+	}
+
+	// --- Case 1: tenantA/userA sees 3 rows (RLS scopes correctly) ---
+	readCtxA := env.setTenantCtx(ctx, tenantA, userA)
+	listA, err := repo.List(readCtxA, notification.ListFilter{
+		TenantID: tenantA, UserID: userA, Limit: 50,
+	})
+	require.NoError(t, err, "List must succeed with tenant GUC bound")
+	assert.Len(t, listA, 3, "tenantA/userA should see exactly their 3 notifications")
+
+	// --- Case 2: tenantB/userB sees their 2 rows ---
+	readCtxB := env.setTenantCtx(ctx, tenantB, userB)
+	listB, err := repo.List(readCtxB, notification.ListFilter{
+		TenantID: tenantB, UserID: userB, Limit: 50,
+	})
+	require.NoError(t, err)
+	assert.Len(t, listB, 2, "tenantB/userB should see exactly their 2 notifications")
+
+	// --- Case 3: CountUnread matches List filter ---
+	countA, err := repo.CountUnread(readCtxA, tenantA, userA)
+	require.NoError(t, err)
+	assert.Equal(t, 3, countA, "CountUnread should match List for tenantA")
+
+	// --- Case 4: MarkRead affects only the target row ---
+	firstID := listA[0].ID
+	affected, err := repo.MarkRead(readCtxA, firstID, userA)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), affected, "MarkRead should affect exactly 1 row")
+
+	countAfter, err := repo.CountUnread(readCtxA, tenantA, userA)
+	require.NoError(t, err)
+	assert.Equal(t, 2, countAfter, "after MarkRead, unread count drops by 1")
+
+	// --- Case 5: MarkRead with wrong userID is a no-op (defense-in-depth) ---
+	affectedWrong, err := repo.MarkRead(readCtxA, firstID, userB) // userB != owner
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), affectedWrong, "MarkRead with wrong userID must affect 0 rows")
+
+	// --- Case 6: GetByID respects tenant context ---
+	got, err := repo.GetByID(readCtxA, firstID)
+	require.NoError(t, err)
+	assert.Equal(t, firstID, got.ID)
+	assert.Equal(t, notification.StatusRead, got.Status, "after MarkRead, status should be 'read'")
+}
+
+// cleanupNotifications truncates only the notifications table for fast per-test isolation.
+// Use before scenarios that don't otherwise clear notifications.
+func (e *IntegrationTestEnv) cleanupNotifications(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := e.Pool.Exec(ctx, "TRUNCATE TABLE notifications"); err != nil {
+		t.Logf("warning: truncate notifications: %v", err)
+	}
+}
+
+// =============================================================================
+// Scenario 7: Sprint 31 — fraud scanner persists flags via the rules engine
+// =============================================================================
+//
+// Verifies the end-to-end flow:
+//   - PersistDirect creates a fraud_flags row (with GUC binding via RunInTxFraudDomain)
+//   - ListByAccount returns it (with GUC binding via RunInReadTx)
+//   - Cross-tenant isolation (tenant B cannot see tenant A's flags)
+//   - VelocityRule via CountRecentByAccount (cross-tenant RunInAdminTx)
+//   - FirstTimeRecipientRule via HasRecipientHistory (cross-tenant RunInAdminTx)
+func TestIntegration_FraudScannerPersistence(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+
+	ctx := context.Background()
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+	userA := uuid.New()
+
+	repo := postgres.NewFraudFlagRepository(env.DB)
+
+	// Seed one flag for tenantA via PersistDirect
+	txCtx := env.setTenantCtx(ctx, tenantA, userA)
+	flag := fraud.Flag{
+		ID:         uuid.New(),
+		TenantID:   tenantA,
+		AccountID:  uuid.New(),
+		TransferID: uuid.New(),
+		RuleName:   fraud.RuleLargeAmount,
+		Severity:   fraud.SeverityCritical,
+		Status:     fraud.StatusOpen,
+		Evidence: map[string]any{
+			"amount_minor":    100_000_000,
+			"threshold_minor": 50_000_000,
+		},
+		DetectedAt: time.Now().UTC(),
+	}
+	require.NoError(t, repo.PersistDirect(ctx, flag),
+		"PersistDirect should succeed — Sprint 30/31 admin role + GUC binding")
+
+	// --- ListByAccount returns the flag ---
+	listA, err := repo.ListByAccount(txCtx, tenantA, flag.AccountID, 10)
+	require.NoError(t, err, "ListByAccount must succeed with GUC bound")
+	require.Len(t, listA, 1, "tenantA should see their flag")
+	assert.Equal(t, flag.ID, listA[0].ID)
+	assert.Equal(t, fraud.SeverityCritical, listA[0].Severity)
+
+	// --- Cross-tenant isolation: tenantB cannot see tenantA's flag ---
+	txCtxB := env.setTenantCtx(ctx, tenantB, uuid.New())
+	listB, err := repo.ListByAccount(txCtxB, tenantB, flag.AccountID, 10)
+	require.NoError(t, err)
+	assert.Len(t, listB, 0, "tenantB should NOT see tenantA's flags")
+
+	// --- CountRecentByAccount via RunInAdminTx (worker path) ---
+	// No transactions seeded; should return 0
+	count, err := repo.CountRecentByAccount(ctx, tenantA, flag.AccountID, time.Minute)
+	require.NoError(t, err, "CountRecentByAccount must succeed via RunInAdminTx")
+	assert.Equal(t, 0, count, "no transactions seeded")
+
+	// --- HasRecipientHistory via RunInAdminTx ---
+	has, err := repo.HasRecipientHistory(ctx, tenantA, uuid.New(), uuid.New())
+	require.NoError(t, err, "HasRecipientHistory must succeed via RunInAdminTx")
+	assert.False(t, has, "no transactions seeded")
 }
 
 // =============================================================================
