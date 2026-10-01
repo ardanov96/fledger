@@ -1,4 +1,10 @@
-// notification_repo.go - Postgres impl of notification.Repository (Sprint 28).
+// notification_repo.go - Postgres impl of notification.Repository (Sprint 28/29).
+//
+// Sprint 29: ALL read & write paths now run inside a tx that binds tenant
+// GUC variables via `r.db.RunInReadTx` / `r.db.RunInTx`. This fixes the
+// Sprint 28 bug where bare-Pool queries against the RLS-enabled
+// `notifications` table returned zero rows (RLS USING evaluated against
+// NULL when `app.current_tenant_id` was unset on the pool connection).
 package postgres
 
 import (
@@ -12,6 +18,7 @@ import (
 
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 	"github.com/runut/fmcg-wallet/internal/domain/notification"
+	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
 // NotificationRepository implements notification.Repository against Postgres.
@@ -62,7 +69,9 @@ INSERT INTO notifications (
 }
 
 // =============================================================================
-// Reads (use pool; rely on RLS to scope by current_setting('app.current_tenant_id'))
+// Reads & writes (Sprint 29 fix: every path runs inside a tx that binds
+// tenant GUC via tenantctx.SetTenantContext). This makes RLS evaluate
+// against the correct tenant_id instead of NULL.
 // =============================================================================
 
 func (r *NotificationRepository) GetByID(ctx context.Context, id uuid.UUID) (notification.Notification, error) {
@@ -71,13 +80,18 @@ SELECT id, tenant_id, user_id, type, title, body, severity, status, created_at, 
 FROM notifications
 WHERE id = $1
 `
-	var n notification.Notification
-	var bodyRaw []byte
-	var severity, status string
-	err := r.db.Pool.QueryRow(ctx, q, id).Scan(
-		&n.ID, &n.TenantID, &n.UserID, &n.Type, &n.Title,
-		&bodyRaw, &severity, &status, &n.CreatedAt, &n.ReadAt,
+	var (
+		n         notification.Notification
+		bodyRaw   []byte
+		severity  string
+		statusStr string
 	)
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, q, id).Scan(
+			&n.ID, &n.TenantID, &n.UserID, &n.Type, &n.Title,
+			&bodyRaw, &severity, &statusStr, &n.CreatedAt, &n.ReadAt,
+		)
+	})
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return notification.Notification{}, apperrors.ErrNotFound
@@ -85,7 +99,7 @@ WHERE id = $1
 		return notification.Notification{}, fmt.Errorf("get notification: %w", err)
 	}
 	n.Severity = notification.Severity(severity)
-	n.Status = notification.Status(status)
+	n.Status = notification.Status(statusStr)
 	if len(bodyRaw) > 0 {
 		_ = json.Unmarshal(bodyRaw, &n.Body)
 	}
@@ -93,9 +107,10 @@ WHERE id = $1
 }
 
 // List returns notifications matching filter, newest first.
-// Filters explicitly by tenant_id + user_id in the WHERE clause so we don't
-// need to wrap in a tenant-bound tx. (The pool connection used here has no
-// GUC context; relying on RLS would require tx-bound execution.)
+//
+// Sprint 29: runs inside a read tx with tenant GUC bound from the context
+// (set by TenantContextMiddleware for /v1/* routes). RLS now scopes rows
+// correctly and the app-layer WHERE provides defense-in-depth filtering.
 func (r *NotificationRepository) List(ctx context.Context, f notification.ListFilter) ([]notification.Notification, error) {
 	limit := f.Limit
 	if limit <= 0 {
@@ -105,8 +120,6 @@ func (r *NotificationRepository) List(ctx context.Context, f notification.ListFi
 		limit = 200
 	}
 
-	// Build query dynamically. tenant_id is part of the WHERE so we don't
-	// need tenant GUC binding (unlike RLS-only path).
 	q := `
 SELECT id, tenant_id, user_id, type, title, body, severity, status, created_at, read_at
 FROM notifications
@@ -124,31 +137,41 @@ WHERE tenant_id = $1 AND user_id = $2
 	args = append(args, limit)
 	q += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", len(args))
 
-	rows, err := r.db.Pool.Query(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list notifications: %w", err)
-	}
-	defer rows.Close()
+	var out []notification.Notification
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, args...)
+		if err != nil {
+			return fmt.Errorf("list notifications: %w", err)
+		}
+		defer rows.Close()
 
-	out := make([]notification.Notification, 0, limit)
-	for rows.Next() {
-		var n notification.Notification
-		var bodyRaw []byte
-		var severity, status string
-		if err := rows.Scan(
-			&n.ID, &n.TenantID, &n.UserID, &n.Type, &n.Title,
-			&bodyRaw, &severity, &status, &n.CreatedAt, &n.ReadAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan notification: %w", err)
+		out = make([]notification.Notification, 0, limit)
+		for rows.Next() {
+			var (
+				n         notification.Notification
+				bodyRaw   []byte
+				severity  string
+				statusStr string
+			)
+			if err := rows.Scan(
+				&n.ID, &n.TenantID, &n.UserID, &n.Type, &n.Title,
+				&bodyRaw, &severity, &statusStr, &n.CreatedAt, &n.ReadAt,
+			); err != nil {
+				return fmt.Errorf("scan notification: %w", err)
+			}
+			n.Severity = notification.Severity(severity)
+			n.Status = notification.Status(statusStr)
+			if len(bodyRaw) > 0 {
+				_ = json.Unmarshal(bodyRaw, &n.Body)
+			}
+			out = append(out, n)
 		}
-		n.Severity = notification.Severity(severity)
-		n.Status = notification.Status(status)
-		if len(bodyRaw) > 0 {
-			_ = json.Unmarshal(bodyRaw, &n.Body)
-		}
-		out = append(out, n)
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *NotificationRepository) CountUnread(ctx context.Context, tenantID, userID uuid.UUID) (int, error) {
@@ -158,7 +181,10 @@ FROM notifications
 WHERE tenant_id = $1 AND user_id = $2 AND status = 'unread'
 `
 	var n int
-	if err := r.db.Pool.QueryRow(ctx, q, tenantID, userID).Scan(&n); err != nil {
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, q, tenantID, userID).Scan(&n)
+	})
+	if err != nil {
 		return 0, fmt.Errorf("count unread: %w", err)
 	}
 	return n, nil
@@ -170,16 +196,29 @@ UPDATE notifications
 SET status = 'read', read_at = COALESCE(read_at, now())
 WHERE id = $1 AND user_id = $2 AND status = 'unread'
 `
-	tag, err := r.db.Pool.Exec(ctx, q, id, userID)
+	var affected int64
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, q, id, userID)
+		if err != nil {
+			return fmt.Errorf("mark read: %w", err)
+		}
+		affected = tag.RowsAffected()
+		return nil
+	})
 	if err != nil {
-		return 0, fmt.Errorf("mark read: %w", err)
+		return 0, err
 	}
-	return tag.RowsAffected(), nil
+	return affected, nil
 }
 
 // PersistDirect is a helper used by the NotificationWorker to insert a
-// notification row using the pool directly (no business tx wrapper).
-// Bypasses the domain Tx interface requirement for fire-and-forget writes.
+// notification row. Sprint 29: now runs inside a write tx with GUC bound
+// from ctx — the worker is expected to attach a *tenantctx.Info to ctx
+// before calling (derived from the originating outbox event's tenant_id).
+//
+// RLS WITH CHECK on the table is `tenant_id = current_setting(...).uuid OR
+// current_user='app_admin'`. Without GUC, fmcg-role inserts would be
+// rejected; the tx + SetTenantContext flow makes them accepted.
 func PersistDirect(ctx context.Context, r *NotificationRepository, n notification.Notification) error {
 	bodyJSON, err := json.Marshal(n.Body)
 	if err != nil {
@@ -195,14 +234,27 @@ INSERT INTO notifications (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
 `
-	_, err = r.db.Pool.Exec(ctx, q,
-		n.ID, n.TenantID, n.UserID, n.Type, n.Title,
-		string(bodyJSON), string(n.Severity), string(n.Status), n.CreatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("insert notification: %w", err)
-	}
-	return nil
+	return r.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		// Ensure GUC is bound even if caller forgot to attach Info.
+		// The worker SHOULD attach *tenantctx.Info{TenantID: n.TenantID}
+		// so this is a fallback path that derives tenant from the row.
+		if tenantctx.InfoFromContext(ctx) == nil {
+			info := &tenantctx.Info{TenantID: n.TenantID, UserID: n.UserID}
+			if err := tenantctx.SetTenantContext(ctx, tx, info); err != nil {
+				return fmt.Errorf("persist direct: bind tenant: %w", err)
+			}
+		} else if err := tenantctx.SetTenantContext(ctx, tx, tenantctx.InfoFromContext(ctx)); err != nil {
+			return fmt.Errorf("persist direct: bind tenant: %w", err)
+		}
+		_, err := tx.Exec(ctx, q,
+			n.ID, n.TenantID, n.UserID, n.Type, n.Title,
+			string(bodyJSON), string(n.Severity), string(n.Status), n.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("insert notification: %w", err)
+		}
+		return nil
+	})
 }
 
 // PersistNotificationDirect is the exported wrapper so the usecase package
