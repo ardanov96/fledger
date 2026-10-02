@@ -14,6 +14,10 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
+| 51 | [Period.closed Event Type](#sprint-51-periodclosed-event-type-2026-10-01) | 4A | 2026-10-01 | ✅ Done |
+| 50 | [Next.js Login + Dashboard PoC](#sprint-50-nextjs-login--dashboard-poc-2026-10-01) | 6 | 2026-10-01 | ✅ Done |
+| 49 | [Next.js Type-Safe API Client](#sprint-49-nextjs-type-safe-api-client-2026-10-01) | 6 | 2026-10-01 | ✅ Done |
+| 48 | [toxiproxy Chaos Integration](#sprint-48-toxiproxy-chaos-integration-2026-10-01) | 7 | 2026-10-01 | ⏸ Deferred |
 | 47 | [Frontend Next.js Migration Plan](#sprint-47-frontend-nextjs-migration-plan-2026-10-01) | 6 | 2026-10-01 | ✅ Done |
 | 46 | [JetStream Durable Subscription](#sprint-46-jetstream-durable-subscription-2026-10-01) | 4A follow-up | 2026-10-01 | ✅ Done |
 | 45 | [Invoice/Payment Outbox Events](#sprint-45-invoicepayment-outbox-events-2026-10-01) | 4A | 2026-10-01 | ✅ Done |
@@ -1740,28 +1744,146 @@ plan directly without reading Sprint 47 in detail.
 
 ---
 
-## Sprint Backlog (post-Sprint 47)
+## Sprint 48 — toxiproxy Chaos Integration (2026-10-01)
+
+**Status:** ⏸ Deferred · **Fase:** 7 · **Theme:** Chaos engineering
+
+#### Decision
+Defer to integration setup phase. toxiproxy requires:
+- A docker-compose service for toxiproxy
+- Wire-up to inject latency/failure between the worker and Postgres/NATS
+- CI infrastructure to run the chaos suite against a real broker
+
+The behavioral chaos tests added in Sprint 36 + Sprint 41 already
+verify the invariants that matter for correctness (DB as source of
+truth, no data loss on interruption, multi-publisher safety via
+SKIP LOCKED, etc.). toxiproxy would add latency/bandwidth stress on
+top of these — useful but not blocking for production launch.
+
+#### For Sprint 48.1+ implementer
+1. Add `toxiproxy` service to `deployments/docker-compose.yml` with
+   admin API on `:8474` and proxy on `:5432` (DB) and `:4222` (NATS).
+2. Update tests to point at toxiproxy endpoints (env vars).
+3. Add latency/jitter/failure scenarios in `internal/usecase/chaos_*_test.go`.
+4. CI: separate `make test-chaos` target that requires toxiproxy
+   running. Skip by default; opt-in via `RUN_CHAOS=1`.
+
+---
+
+## Sprint 49 — Next.js Type-Safe API Client (2026-10-01)
+
+**Status:** ✅ Done (scaffold) · **Fase:** 6 · **Theme:** Type safety
+
+#### Goal
+Replace the vanilla JS string-based API calls in `web/public/` with a
+type-safe TS client generated from OpenAPI.
+
+#### Scope
+- **49.1** — `web-next/openapi.json`: hand-curated OpenAPI 3.0 spec
+  covering auth/accounts/transfers/invoices/notifications. When
+  backend gains OpenAPI annotation middleware (Sprint 49.0 follow-up),
+  this file is replaced with the live spec at `/openapi.json`.
+- **49.2** — `web-next/orval.config.ts`: codegen config (orval +
+  prettier + tags-split per endpoint group).
+- **49.3** — `web-next/lib/api.ts`: hand-written stopgap API client
+  (login, listAccounts, listTransfers, listInvoices, listNotifications).
+  Uses `credentials: 'include'` for the httpOnly JWT cookie. Throws
+  structured `ApiClientError` on non-2xx.
+- **49.4** — `web-next/lib/auth.tsx`: `AuthProvider` + `useAuth()` hook
+  for client-side user state. Stub for Sprint 50 — Sprint 49.1 wires
+  the real `/v1/auth/me` call.
+
+#### For Sprint 49.1+ implementer
+1. Add OpenAPI annotation middleware to `cmd/api/main.go` (wraps
+   routes with annotations, serves `/openapi.json`).
+2. Replace `web-next/openapi.json` with live spec.
+3. Run `pnpm typegen` to generate `web-next/lib/api.ts`.
+4. Delete the hand-written stopgap.
+
+---
+
+## Sprint 50 — Next.js Login + Dashboard PoC (2026-10-01)
+
+**Status:** ✅ Done (proof-of-concept) · **Fase:** 6 · **Theme:** UX
+
+#### Goal
+Migrate ONE user-facing page (login) + dashboard layout from vanilla JS
+to Next.js 15 + React 19 + Tailwind. Proves the migration plan from
+Sprint 47 works end-to-end.
+
+#### Scope
+- **50.1** — `web-next/app/layout.tsx`: root layout with AuthProvider.
+- **50.2** — `web-next/app/globals.css`: Tailwind base + CSS vars.
+- **50.3** — `web-next/app/page.tsx`: landing page (redirect to dashboard
+  if logged in, else show /login link).
+- **50.4** — `web-next/app/login/page.tsx`: client-component login form
+  with loading/error state, calls `api.login`, redirects to /dashboard.
+- **50.5** — `web-next/app/(dashboard)/layout.tsx`: shared sidebar +
+  main area for authenticated pages (route group via parentheses).
+- **50.6** — `web-next/app/(dashboard)/dashboard/page.tsx`: server
+  component (RSC) dashboard with 3 placeholder widgets.
+- **50.7** — `web-next/lib/auth-server.ts`: `getServerSession()` stub
+  for SSR — Sprint 49.1 wires the real cookie-read + `/v1/auth/me`.
+
+#### Migrated equivalents
+| web/ (vanilla JS, Sprint 20) | web-next/ (Sprint 50) |
+|---|---|
+| `public/index.html` (login form) | `app/login/page.tsx` |
+| `public/dashboard.html` | `app/(dashboard)/dashboard/page.tsx` |
+| `public/index.html` (sidebar partial) | `app/(dashboard)/layout.tsx` |
+| `server.js` (Node reverse proxy) | `next.config.js` `rewrites()` |
+
+---
+
+## Sprint 51 — Period.closed Event Type (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 4A · **Theme:** Event vocabulary
+
+#### Goal
+Close the period event vocabulary so reconciliation dashboards + audit
+trail know when periods close/reopen.
+
+#### Scope
+- **51.1** — `internal/domain/outbox/outbox.go`: new constants
+  `EventPeriodClosed`, `EventPeriodReopened`, `SubjectPeriodClosed`,
+  `SubjectPeriodReopened`. Aggregate type `period` was already in DB CHECK.
+- **51.2** — `internal/usecase/transfer_service.go`: OutboxWriter
+  interface adds `AppendPeriodClosed` + `AppendPeriodReopened`.
+- **51.3** — `internal/usecase/period_service.go`: OutboxWriter
+  injected (defaults to noopOutboxWriter). `ApproveClose` emits
+  `period.closed` in same tx (after snapshot inserts + status flip).
+  `Reopen` emits `period.reopened` in same tx.
+- **51.4** — `cmd/api/outbox_adapter.go`: `AppendPeriodClosed` +
+  `AppendPeriodReopened` implementations.
+- **51.5** — `cmd/api/main.go`: re-order wiring so outboxWriter is
+  constructed before periodService so it can be passed to PeriodService deps.
+
+---
+
+## Sprint Backlog (post-Sprint 51)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 48 | toxiproxy chaos integration | 7 | Sprint 41 follow-up | 1 week |
-| 49 | Frontend Next.js Type-Safe API Client | 6 | Sprint 47 follow-up | 1 week |
-| 50 | Frontend Next.js Page Migration | 6 | Sprint 47 follow-up | 1 week |
-| 51 | period.closed event type | 4A | Sprint 45 follow-up | 2 days |
+| 52 | toxiproxy chaos integration | 7 | Sprint 48 follow-up | 1 week |
+| 53 | Next.js accounts page migration | 6 | Sprint 50 follow-up | 1 week |
+| 54 | Next.js transfers page migration | 6 | Sprint 50 follow-up | 1 week |
+| 55 | Next.js invoices + notifications pages | 6 | Sprint 50 follow-up | 1 week |
+| 56 | Sprint 49.1 — real OpenAPI codegen wire-up | 6 | Sprint 49 follow-up | 1 week |
+| 57 | Sprint 49.1 — real /v1/auth/me wire-up | 6 | Sprint 49 follow-up | 2 days |
 | TBD | Replace third-party JWT (legacy JWT_SECRET) | 2E | Migration cleanup | 1 day |
 | TBD | WebSocket push for critical flags | 8 | Sprint 31 follow-up | 1 week |
 
 ---
 
-## Cumulative Stats (post-Sprint 47)
+## Cumulative Stats (post-Sprint 51)
 
 | Metric | Value | Source |
 |---|---|---|
-| Total sprints completed | 47 | this file |
+| Total sprints completed | 51 | this file |
 | Total LOC | ~22,500 | docs/index.md (refresh in Sprint 31) |
 | Go files (production) | ~100 | docs/index.md |
 | Go files (test) | ~30 | docs/index.md |
-| Migrations | 22 (no new migrations for Sprint 43-47; those were code/infra changes) | migrations/ folder |
+| Migrations | 22 (Sprint 51 was code-only, no new migrations) | migrations/ folder |
 | ADRs | 8 | docs/adr/ folder |
 | REST endpoints | 39+ (added 3 in Sprint 28) | docs/api/overview.md |
 | Use cases | 9 | internal/usecase/ folder |
