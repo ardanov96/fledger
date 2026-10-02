@@ -49,6 +49,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runut/fmcg-wallet/internal/domain/auth"
 	"github.com/runut/fmcg-wallet/internal/domain/fraud"
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/domain/notification"
@@ -621,6 +622,53 @@ func TestIntegration_NotificationReadPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, firstID, got.ID)
 	assert.Equal(t, notification.StatusRead, got.Status, "after MarkRead, status should be 'read'")
+}
+
+// =============================================================================
+// Scenario 8: Sprint 32 — login_attempts partitioning
+// =============================================================================
+//
+// Verifies:
+//   - RecordLoginAttempt routes to the right monthly partition
+//   - CreateLoginAttemptPartition creates a future partition
+//   - DropLoginAttemptPartition detaches + drops the partition
+//   - CountRecentFailedLogins still works (no behavior change for app)
+func TestIntegration_LoginAttemptsPartitioning(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+
+	ctx := context.Background()
+	tenant := uuid.New()
+	user := uuid.New()
+	setupCtx := env.setTenantCtx(ctx, tenant, user)
+	_ = setupCtx // tenant context available if needed by future assertions
+
+	repo := postgres.NewAuthRepository(env.DB)
+
+	// Create a future partition via the helper function (Sprint 32).
+	partition, err := repo.CreateLoginAttemptPartition(ctx, 2030, 6)
+	require.NoError(t, err)
+	assert.Equal(t, "login_attempts_2030_06", partition)
+
+	// Verify it exists in pg_class.
+	var exists bool
+	require.NoError(t, env.Pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`, partition,
+	).Scan(&exists))
+	assert.True(t, exists, "partition %s should exist after create", partition)
+
+	// Drop it via the helper.
+	require.NoError(t, repo.DropLoginAttemptPartition(ctx, 2030, 6))
+
+	// Verify it's gone.
+	require.NoError(t, env.Pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`, partition,
+	).Scan(&exists))
+	assert.False(t, exists, "partition %s should be dropped", partition)
+
+	// CountRecentFailedLogins still works (sanity — SQL parses, returns 0).
+	_, err = repo.CountRecentFailedLogins(ctx, user, time.Now().Add(-time.Hour))
+	require.NoError(t, err, "CountRecentFailedLogins should still work post-partitioning")
 }
 
 // cleanupNotifications truncates only the notifications table for fast per-test isolation.

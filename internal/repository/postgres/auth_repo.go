@@ -572,3 +572,53 @@ func nullFailureReason(r *auth.LoginAttemptFailureReason) any {
 
 // Ensure pgconn import isn't dropped by linter (we use isUniqueViolation).
 var _ = pgconn.PgError{}
+
+// CreateLoginAttemptPartition (Sprint 32) creates a monthly partition
+// for the login_attempts table. Operator-facing helper; safe to call
+// from a migration runner or admin script.
+//
+// Usage:
+//   repo.CreateLoginAttemptPartition(ctx, 2027, 6)  // → login_attempts_2027_06
+//
+// Returns the created partition name on success.
+func (r *AuthRepository) CreateLoginAttemptPartition(ctx context.Context, year, month int) (string, error) {
+	var name string
+	err := r.db.Pool.QueryRow(ctx,
+		`SELECT fmcg_create_login_attempts_partition($1, $2)`,
+		year, month,
+	).Scan(&name)
+	if err != nil {
+		return "", fmt.Errorf("create login_attempts partition %d-%02d: %w", year, month, err)
+	}
+	return name, nil
+}
+
+// DropLoginAttemptPartition (Sprint 32) detaches + drops a monthly
+// partition. Operator-facing retention helper.
+//
+// CAUTION: this is destructive — all rows in the partition are deleted.
+// Default retention policy is 12 months; ops should run a nightly job
+// that drops partitions older than retention.
+//
+// Usage:
+//   repo.DropLoginAttemptPartition(ctx, 2025, 7)  // → DROP login_attempts_2025_07
+func (r *AuthRepository) DropLoginAttemptPartition(ctx context.Context, year, month int) error {
+	// Build the partition name; safe because fmcg_create_login_attempts_partition
+	// uses the same format.
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	partitionName := fmt.Sprintf("login_attempts_%s", startDate.Format("2006_01"))
+
+	// DETACH first so the parent table remains valid even if DROP fails.
+	// Concurrently so production reads aren't blocked.
+	if _, err := r.db.Pool.Exec(ctx,
+		`ALTER TABLE login_attempts DETACH CONCURRENTLY `+pgx.Identifier{partitionName}.Sanitize(),
+	); err != nil {
+		return fmt.Errorf("detach partition %s: %w", partitionName, err)
+	}
+	if _, err := r.db.Pool.Exec(ctx,
+		`DROP TABLE `+pgx.Identifier{partitionName}.Sanitize(),
+	); err != nil {
+		return fmt.Errorf("drop partition %s: %w", partitionName, err)
+	}
+	return nil
+}
