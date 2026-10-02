@@ -37,36 +37,6 @@ var _ fraud.Repository = (*FraudFlagRepository)(nil)
 // Create
 // =============================================================================
 
-func (r *FraudFlagRepository) Create(ctx context.Context, tx fraud.Tx, f fraud.Flag) error {
-	a, ok := tx.(*fraudTxAdapter)
-	if !ok {
-		return fmt.Errorf("postgres: expected *fraudTxAdapter, got %T", tx)
-	}
-	evidence, err := json.Marshal(f.Evidence)
-	if err != nil {
-		return fmt.Errorf("marshal evidence: %w", err)
-	}
-	if f.DetectedAt.IsZero() {
-		f.DetectedAt = time.Now().UTC()
-	}
-	const q = `
-INSERT INTO fraud_flags (
-    id, tenant_id, account_id, transfer_id, rule_name, severity,
-    status, evidence, detected_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
-)
-`
-	if _, err := a.pgxTx.Exec(ctx, q,
-		f.ID, f.TenantID, f.AccountID, f.TransferID,
-		string(f.RuleName), string(f.Severity), string(f.Status),
-		string(evidence), f.DetectedAt,
-	); err != nil {
-		return fmt.Errorf("insert fraud flag: %w", err)
-	}
-	return nil
-}
-
 // =============================================================================
 // Reads
 // =============================================================================
@@ -177,11 +147,53 @@ SELECT EXISTS (
 
 // PersistDirect writes a fraud flag using the pool (via RunInTxFraudDomain
 // so GUC is bound from ctx). Used by the FraudScannerService from the
-// worker context — no business tx wrapper needed since fraud flags are
-// fire-and-forget (re-creation on duplicate event is idempotent via
-// the (transfer_id, rule_name) natural dedup).
+// worker context — no business tx wrapper needed.
+//
+// Sprint 42: uses ON CONFLICT (transfer_id, rule_name) DO NOTHING via
+// the Create() method's INSERT statement. When NATS redelivers a
+// transfer.posted event (worker crash mid-publish), the scanner
+// re-runs the rule and would normally insert a duplicate row. The
+// UNIQUE constraint + ON CONFLICT DO NOTHING ensures exactly one
+// flag row per (transfer_id, rule_name) pair.
 func (r *FraudFlagRepository) PersistDirect(ctx context.Context, f fraud.Flag) error {
 	return r.db.RunInTxFraudDomain(ctx, func(tx fraud.Tx) error {
 		return r.Create(ctx, tx, f)
 	})
+}
+
+// Create persists a flag inside the caller's tx.
+//
+// Sprint 42: uses ON CONFLICT DO NOTHING. When the same
+// (transfer_id, rule_name) already exists, the INSERT is silently
+// ignored and no error is raised. RowsAffected() returns 0 in that case
+// (vs 1 for a fresh insert), which callers can check if they care.
+func (r *FraudFlagRepository) Create(ctx context.Context, tx fraud.Tx, f fraud.Flag) error {
+	a, ok := tx.(*fraudTxAdapter)
+	if !ok {
+		return fmt.Errorf("postgres: expected *fraudTxAdapter, got %T", tx)
+	}
+	evidence, err := json.Marshal(f.Evidence)
+	if err != nil {
+		return fmt.Errorf("marshal evidence: %w", err)
+	}
+	if f.DetectedAt.IsZero() {
+		f.DetectedAt = time.Now().UTC()
+	}
+	const q = `
+INSERT INTO fraud_flags (
+    id, tenant_id, account_id, transfer_id, rule_name, severity,
+    status, evidence, detected_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+)
+ON CONFLICT (transfer_id, rule_name) DO NOTHING
+`
+	if _, err := a.pgxTx.Exec(ctx, q,
+		f.ID, f.TenantID, f.AccountID, f.TransferID,
+		string(f.RuleName), string(f.Severity), string(f.Status),
+		string(evidence), f.DetectedAt,
+	); err != nil {
+		return fmt.Errorf("insert fraud flag: %w", err)
+	}
+	return nil
 }

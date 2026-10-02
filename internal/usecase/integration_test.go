@@ -785,6 +785,72 @@ func TestIntegration_AccountInvoiceTransactionRLS(t *testing.T) {
 	assert.Len(t, otherList, 0, "tenant B List should return empty (no rows for B)")
 }
 
+// =============================================================================
+// Scenario 11: Sprint 42 — fraud flag dedup on (transfer_id, rule_name)
+// =============================================================================
+//
+// Verifies that inserting the same (transfer_id, rule_name) twice (which
+// happens when NATS redelivers a transfer.posted message) doesn't create
+// duplicate fraud_flag rows. Migration 000028 adds the UNIQUE constraint;
+// the repo uses ON CONFLICT DO NOTHING.
+func TestIntegration_FraudFlagDedup(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+
+	ctx := context.Background()
+	tenant := uuid.New()
+	user := uuid.New()
+	txCtx := env.setTenantCtx(ctx, tenant, user)
+
+	repo := postgres.NewFraudFlagRepository(env.DB)
+
+	transferID := uuid.New()
+	accountID := uuid.New()
+
+	// First insert — fresh row
+	flag1 := fraud.Flag{
+		ID:         uuid.New(),
+		TenantID:   tenant,
+		AccountID:  accountID,
+		TransferID: transferID,
+		RuleName:   fraud.RuleLargeAmount,
+		Severity:   fraud.SeverityCritical,
+		Status:     fraud.StatusOpen,
+		DetectedAt: time.Now().UTC(),
+	}
+	require.NoError(t, repo.PersistDirect(ctx, flag1))
+
+	// Second insert — same (transfer_id, rule_name), different ID
+	flag2 := fraud.Flag{
+		ID:         uuid.New(), // different ID
+		TenantID:   tenant,
+		AccountID:  accountID,
+		TransferID: transferID, // same transfer
+		RuleName:   fraud.RuleLargeAmount, // same rule
+		Severity:   fraud.SeverityCritical,
+		Status:     fraud.StatusOpen,
+		DetectedAt: time.Now().UTC(),
+	}
+	require.NoError(t, repo.PersistDirect(ctx, flag2),
+		"Sprint 42: second insert should NOT fail (ON CONFLICT DO NOTHING)")
+
+	// Verify only one row exists for this (transfer_id, rule_name)
+	var count int
+	require.NoError(t, env.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM fraud_flags WHERE transfer_id = $1 AND rule_name = $2`,
+		transferID, string(fraud.RuleLargeAmount),
+	).Scan(&count))
+	assert.Equal(t, 1, count, "should have exactly 1 row per (transfer_id, rule_name)")
+
+	// Verify it's the FIRST flag (not the second)
+	var persistedID uuid.UUID
+	require.NoError(t, env.Pool.QueryRow(ctx,
+		`SELECT id FROM fraud_flags WHERE transfer_id = $1 AND rule_name = $2`,
+		transferID, string(fraud.RuleLargeAmount),
+	).Scan(&persistedID))
+	assert.Equal(t, flag1.ID, persistedID, "first insert should win (flag1.ID == persisted, not flag2.ID)")
+}
+
 // cleanupNotifications truncates only the notifications table for fast per-test isolation.
 // Use before scenarios that don't otherwise clear notifications.
 func (e *IntegrationTestEnv) cleanupNotifications(t *testing.T) {
