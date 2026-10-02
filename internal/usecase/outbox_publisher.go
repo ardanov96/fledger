@@ -35,8 +35,21 @@ import (
 
 // EventBroker is the minimal interface the publisher needs from a NATS client.
 // Defined here so the use case can be unit-tested with a fake broker.
+//
+// Sprint 46: PublishJS is optional. If implemented, the publisher uses
+// it (JetStream durable publish). Otherwise, falls back to Publish
+// (core NATS, fire-and-forget). The interface type-asserts at call
+// time, so brokers that only implement Publish (e.g. test fakes) work
+// transparently.
 type EventBroker interface {
 	Publish(ctx context.Context, subject string, payload []byte) error
+}
+
+// JetStreamBroker is the optional interface for brokers that support
+// durable JetStream publish. Sprint 46.
+type JetStreamBroker interface {
+	EventBroker
+	PublishJS(ctx context.Context, subject string, payload []byte) error
 }
 
 // OutboxPublisher polls the outbox and publishes events to the broker.
@@ -105,7 +118,7 @@ func (p *OutboxPublisher) RunOnce(ctx context.Context) (published int, err error
 			continue
 		}
 
-		if perr := p.broker.Publish(ctx, e.Subject, payload); perr != nil {
+		if perr := p.publish(ctx, e.Subject, payload); perr != nil {
 			p.log.Warn("outbox publisher: broker publish failed",
 				"event_id", e.ID,
 				"subject", e.Subject,
@@ -137,4 +150,13 @@ func (p *OutboxPublisher) RunOnce(ctx context.Context) (published int, err error
 	}
 
 	return len(publishedIDs), nil
+}
+
+// publish dispatches to PublishJS (if broker implements JetStreamBroker)
+// or falls back to Publish. Sprint 46.
+func (p *OutboxPublisher) publish(ctx context.Context, subject string, payload []byte) error {
+	if js, ok := p.broker.(JetStreamBroker); ok {
+		return js.PublishJS(ctx, subject, payload)
+	}
+	return p.broker.Publish(ctx, subject, payload)
 }

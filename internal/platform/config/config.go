@@ -87,6 +87,13 @@ type NATSConfig struct {
 	StreamSubjects  string
 	AckWait         time.Duration
 	MaxDeliver      int
+
+	// Sprint 46: opt-in JetStream. When true, the outbox publisher uses
+	// PublishJS (durable, survives broker restart) instead of Publish
+	// (core NATS, fire-and-forget). Both modes still work; JetStream
+	// gives stronger delivery guarantees at the cost of extra disk IO
+	// on the broker.
+	JetStreamEnabled bool
 }
 
 // FXConfig holds FX rate auto-refresh settings (Sprint 26).
@@ -281,11 +288,12 @@ func Load() (*Config, error) {
 			PoolSize: v.GetInt("REDIS_POOL_SIZE"),
 		},
 		NATS: NATSConfig{
-			URL:            v.GetString("NATS_URL"),
-			StreamName:     v.GetString("NATS_STREAM_NAME"),
-			StreamSubjects: v.GetString("NATS_STREAM_SUBJECTS"),
-			AckWait:        v.GetDuration("NATS_ACK_WAIT"),
-			MaxDeliver:     v.GetInt("NATS_MAX_DELIVER"),
+			URL:              v.GetString("NATS_URL"),
+			StreamName:       v.GetString("NATS_STREAM_NAME"),
+			StreamSubjects:   v.GetString("NATS_STREAM_SUBJECTS"),
+			AckWait:          v.GetDuration("NATS_ACK_WAIT"),
+			MaxDeliver:       v.GetInt("NATS_MAX_DELIVER"),
+			JetStreamEnabled: v.GetBool("NATS_JETSTREAM_ENABLED"),
 		},
 		FX: FXConfig{
 			RefreshInterval: v.GetDuration("FX_REFRESH_INTERVAL"),

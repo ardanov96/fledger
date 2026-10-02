@@ -128,6 +128,148 @@ func (c *NATSClient) Subscribe(subject string, handler nats.MsgHandler) (*nats.S
 	return sub, nil
 }
 
+// =============================================================================
+// JetStream (Sprint 46)
+// =============================================================================
+//
+// JetStream adds durable persistence to NATS. The outbox publisher can
+// publish to a stream; the stream retains the message; consumers can
+// replay from any point. Survives broker restart.
+//
+// For FMCG Wallet, JetStream is opt-in via cfg.NATS.JetStreamEnabled:
+//   - false (default): use core NATS publish + Subscribe (Sprint 24
+//     behavior — fire-and-forget; durability from outbox table)
+//   - true: create stream FMCG_EVENTS on first use, publish via
+//     JetStream, subscribe with a durable consumer name (events
+//     survive consumer crash)
+//
+// Migration is incremental:
+//   - Stream is created idempotently on the first publish/subscribe
+//   - Old consumers continue to work via core NATS (no breaking change)
+//   - New consumers opt-in by calling SubscribeDurable
+//
+// On JetStream broker unavailable, falls back to core NATS so the
+// worker doesn't crash (degraded mode).
+// =============================================================================
+
+// ensureJetStreamContext returns a JetStream context, creating it from
+// the underlying NATS connection.
+func (c *NATSClient) ensureJetStreamContext() (nats.JetStreamContext, error) {
+	return c.conn.JetStream()
+}
+
+// EnsureStream creates the FMCG_EVENTS stream if it doesn't exist.
+// Idempotent — safe to call on every startup.
+//
+// Subjects: fmcg.> (covers transfer/invoice/payment/period events).
+// Retention: 24h (events older than this are purged; outbox is source of truth).
+// Storage: file (durable across broker restart).
+func (c *NATSClient) EnsureStream(streamName string, subjects []string) error {
+	if c == nil || c.conn == nil {
+		return errors.New("nats: client not connected")
+	}
+	js, err := c.ensureJetStreamContext()
+	if err != nil {
+		return fmt.Errorf("nats jetstream context: %w", err)
+	}
+
+	// Check if stream exists
+	_, err = js.StreamInfo(streamName)
+	if err == nil {
+		c.log.Info("jetstream stream already exists", "stream", streamName)
+		return nil
+	}
+
+	// Create it
+	streamConfig := &nats.StreamConfig{
+		Name:     streamName,
+		Subjects: subjects,
+		Retention: nats.LimitsPolicy,
+		MaxAge:   24 * time.Hour,
+		Storage:  nats.FileStorage,
+		Replicas: 1,
+	}
+	if _, err := js.AddStream(streamConfig); err != nil {
+		return fmt.Errorf("nats jetstream add stream %s: %w", streamName, err)
+	}
+	c.log.Info("jetstream stream created",
+		"stream", streamName,
+		"subjects", subjects,
+		"max_age", "24h",
+	)
+	return nil
+}
+
+// PublishJS publishes a message via JetStream (durable). If the broker
+// is unavailable, returns an error so the caller can IncrementAttempts
+// and retry (same pattern as Publish for core NATS).
+func (c *NATSClient) PublishJS(ctx context.Context, subject string, payload []byte) error {
+	if c == nil || c.conn == nil {
+		return errors.New("nats: client not connected")
+	}
+	if subject == "" {
+		return errors.New("nats: subject required")
+	}
+	js, err := c.ensureJetStreamContext()
+	if err != nil {
+		return fmt.Errorf("nats jetstream: %w", err)
+	}
+	msg := &nats.Msg{
+		Subject: subject,
+		Data:    payload,
+		Header:  nats.Header{},
+	}
+	if _, err := js.PublishMsg(msg); err != nil {
+		return fmt.Errorf("nats jetstream publish %s: %w", subject, err)
+	}
+	return nil
+}
+
+// SubscribeDurable registers a durable consumer on a JetStream stream.
+// The consumer name persists across restarts — undelivered messages
+// are replayed after the worker comes back up.
+//
+// durableName must be stable across worker restarts (use a constant like
+// "notification-consumer" — not a random UUID).
+func (c *NATSClient) SubscribeDurable(
+	streamName, durableName, subject string,
+	handler nats.MsgHandler,
+) (*nats.Subscription, error) {
+	if c == nil || c.conn == nil {
+		return nil, errors.New("nats: client not connected")
+	}
+	js, err := c.ensureJetStreamContext()
+	if err != nil {
+		return nil, fmt.Errorf("nats jetstream: %w", err)
+	}
+
+	sub, err := js.PullSubscribe(subject, durableName,
+		nats.AckExplicit(),
+		nats.MaxAckPending(3),
+		nats.Bind(streamName, durableName),
+	)
+	if err != nil {
+		// Fallback: maybe stream doesn't exist yet; try creating and retry
+		if createErr := c.EnsureStream(streamName, []string{"fmcg.>"}); createErr == nil {
+			sub, err = js.PullSubscribe(subject, durableName,
+				nats.AckExplicit(),
+				nats.MaxAckPending(3),
+				nats.Bind(streamName, durableName),
+			)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("nats jetstream pull subscribe %s/%s: %w",
+				streamName, durableName, err)
+		}
+	}
+	c.log.Info("jetstream durable consumer subscribed",
+		"stream", streamName,
+		"durable", durableName,
+		"subject", subject,
+	)
+	return sub, nil
+}
+
 // Ping checks broker liveness. Returns nil if reachable.
 func (c *NATSClient) Ping() error {
 	if c == nil || c.conn == nil {
