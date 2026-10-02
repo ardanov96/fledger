@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/runut/fmcg-wallet/internal/domain/outbox"
 	"github.com/runut/fmcg-wallet/internal/domain/period"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
@@ -43,18 +44,21 @@ type PeriodTxRunner interface {
 // Dependencies:
 //   - repo        — Postgres-backed period repo (all reads/writes)
 //   - db          — Tx runner (so we can wrap multi-step writes in one tx)
+//   - outbox      — Sprint 51: emits period.closed + period.reopened events
 //   - log         — structured logger
 type PeriodService struct {
-	repo period.Repository
-	db   PeriodTxRunner
-	log  *slog.Logger
-	now  func() time.Time // injectable for tests
+	repo   period.Repository
+	db     PeriodTxRunner
+	outbox OutboxWriter
+	log    *slog.Logger
+	now    func() time.Time // injectable for tests
 }
 
 // PeriodServiceDeps bundles dependencies.
 type PeriodServiceDeps struct {
 	Repo    period.Repository
 	DB      PeriodTxRunner
+	Outbox  OutboxWriter // optional; if nil, falls back to noopOutboxWriter
 	Logger  *slog.Logger
 	NowFunc func() time.Time // optional; defaults to time.Now
 }
@@ -69,7 +73,17 @@ func NewPeriodService(deps PeriodServiceDeps) *PeriodService {
 	if nowFn == nil {
 		nowFn = func() time.Time { return time.Now().UTC() }
 	}
-	return &PeriodService{repo: deps.Repo, db: deps.DB, log: log, now: nowFn}
+	ob := deps.Outbox
+	if ob == nil {
+		ob = noopOutboxWriter{}
+	}
+	return &PeriodService{
+		repo:   deps.Repo,
+		db:     deps.DB,
+		outbox: ob,
+		log:    log,
+		now:    nowFn,
+	}
 }
 
 // =============================================================================
@@ -246,6 +260,30 @@ func (s *PeriodService) ApproveClose(ctx context.Context, in ApproveCloseInput) 
 			return fmt.Errorf("close period: %w", err)
 		}
 
+		// Sprint 51: emit period.closed event in same tx so it commits/
+		// rolls back together with the period status flip + snapshot inserts.
+		if err := s.outbox.AppendPeriodClosed(ctx, tx, outbox.Event{
+			ID:            uuid.New(),
+			TenantID:      uuid.MustParse(req.TenantID),
+			AggregateType: outbox.AggregatePeriod,
+			AggregateID:   uuid.MustParse(req.PeriodID),
+			EventType:     outbox.EventPeriodClosed,
+			Subject:       outbox.SubjectPeriodClosed,
+			Payload: map[string]any{
+				"period_id":      req.PeriodID,
+				"request_id":     req.ID,
+				"approver_id":    in.ApproverID,
+				"tenant_id":      req.TenantID,
+				"total_debit":    td,
+				"total_credit":   tc,
+				"imbalance":      imb,
+				"trial_bal_ok":   true,
+				"snapshot_count": len(accounts),
+			},
+		}); err != nil {
+			return fmt.Errorf("append period.closed event: %w", err)
+		}
+
 		// Refresh out with approved values.
 		req.Status = period.CloseRequestApproved
 		req.ApproverID = in.ApproverID
@@ -391,6 +429,26 @@ func (s *PeriodService) Reopen(ctx context.Context, in ReopenInput) (period.Peri
 		if err := s.repo.UpdatePeriodStatus(ctx, tx, in.PeriodID, period.PeriodStatusOpen); err != nil {
 			return fmt.Errorf("reopen: %w", err)
 		}
+
+		// Sprint 51: emit period.reopened event in same tx. Used by
+		// reconciliation dashboards + audit trail.
+		if err := s.outbox.AppendPeriodReopened(ctx, tx, outbox.Event{
+			ID:            uuid.New(),
+			TenantID:      uuid.MustParse(p.TenantID),
+			AggregateType: outbox.AggregatePeriod,
+			AggregateID:   uuid.MustParse(in.PeriodID),
+			EventType:     outbox.EventPeriodReopened,
+			Subject:       outbox.SubjectPeriodReopened,
+			Payload: map[string]any{
+				"period_id": in.PeriodID,
+				"admin_id":  in.AdminID,
+				"tenant_id": p.TenantID,
+				"reason":    in.Reason,
+			},
+		}); err != nil {
+			return fmt.Errorf("append period.reopened event: %w", err)
+		}
+
 		p.Status = period.PeriodStatusOpen
 		out = p
 		return nil

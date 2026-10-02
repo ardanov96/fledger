@@ -106,6 +106,8 @@ type OutboxWriter interface {
 	AppendTransferPosted(ctx context.Context, tx any, e outbox.Event) error
 	AppendInvoiceCreated(ctx context.Context, tx any, e outbox.Event) error
 	AppendPaymentRecorded(ctx context.Context, tx any, e outbox.Event) error
+	AppendPeriodClosed(ctx context.Context, tx any, e outbox.Event) error
+	AppendPeriodReopened(ctx context.Context, tx any, e outbox.Event) error
 }
 
 // TransferServiceDeps bundles all dependencies for TransferService.
@@ -168,6 +170,12 @@ func (noopOutboxWriter) AppendInvoiceCreated(_ context.Context, _ any, _ outbox.
 	return nil
 }
 func (noopOutboxWriter) AppendPaymentRecorded(_ context.Context, _ any, _ outbox.Event) error {
+	return nil
+}
+func (noopOutboxWriter) AppendPeriodClosed(_ context.Context, _ any, _ outbox.Event) error {
+	return nil
+}
+func (noopOutboxWriter) AppendPeriodReopened(_ context.Context, _ any, _ outbox.Event) error {
 	return nil
 }
 

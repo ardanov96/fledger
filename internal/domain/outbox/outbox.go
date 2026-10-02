@@ -70,15 +70,22 @@ const (
 	EventInvoiceCreated   = "invoice.created"
 	EventPaymentRecorded  = "payment.recorded"
 	EventInvoiceOverdue   = "invoice.overdue"
+
+	// Sprint 51: period lifecycle events so reconciliation status +
+	// audit dashboards know when periods close.
+	EventPeriodClosed = "period.closed"
+	EventPeriodReopened = "period.reopened"
 )
 
 // Standard subject prefixes. Matches NATS_STREAM_SUBJECTS default "fmcg.>".
 const (
 	SubjectPrefix = "fmcg."
 
-	SubjectTransferPosted = "fmcg.transfer.posted"
-	SubjectInvoiceCreated = "fmcg.invoice.created"
+	SubjectTransferPosted  = "fmcg.transfer.posted"
+	SubjectInvoiceCreated  = "fmcg.invoice.created"
 	SubjectPaymentRecorded = "fmcg.payment.recorded"
+	SubjectPeriodClosed    = "fmcg.period.closed"
+	SubjectPeriodReopened  = "fmcg.period.reopened"
 )
 
 // =============================================================================

@@ -57,5 +57,25 @@ func (a *outboxWriterAdapter) AppendPaymentRecorded(ctx context.Context, tx any,
 	return a.repo.Insert(ctx, outboxTx, e)
 }
 
+// AppendPeriodClosed (Sprint 51) — emitted by PeriodService.ApproveClose.
+func (a *outboxWriterAdapter) AppendPeriodClosed(ctx context.Context, tx any, e outbox.Event) error {
+	pgxTx, err := postgres.UnwrapPgxTx(tx)
+	if err != nil {
+		return fmt.Errorf("outbox adapter (period.closed): %w", err)
+	}
+	outboxTx := postgres.WrapOutboxTx(pgxTx)
+	return a.repo.Insert(ctx, outboxTx, e)
+}
+
+// AppendPeriodReopened (Sprint 51) — emitted by PeriodService.ReopenPeriod.
+func (a *outboxWriterAdapter) AppendPeriodReopened(ctx context.Context, tx any, e outbox.Event) error {
+	pgxTx, err := postgres.UnwrapPgxTx(tx)
+	if err != nil {
+		return fmt.Errorf("outbox adapter (period.reopened): %w", err)
+	}
+	outboxTx := postgres.WrapOutboxTx(pgxTx)
+	return a.repo.Insert(ctx, outboxTx, e)
+}
+
 // Compile-time guard: ensure outboxWriterAdapter satisfies usecase.OutboxWriter.
 var _ usecase.OutboxWriter = (*outboxWriterAdapter)(nil)

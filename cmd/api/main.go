@@ -128,6 +128,14 @@ func run() error {
 		log,
 	)
 
+	// Outbox writer is needed by TransferService, InvoiceService, AND
+	// PeriodService (Sprint 45 + 51). It's the most-derived dep so we
+	// construct it last and late-bind where needed.
+	outboxWriter := newOutboxWriterAdapter(outboxRepo)
+
+	// PeriodService is first constructed WITHOUT Outbox (for the
+	// transfer resolver) and then REBUILT with Outbox for the actual
+	// period-close flow.
 	periodService := usecase.NewPeriodService(usecase.PeriodServiceDeps{
 		Repo:   periodRepo,
 		DB:     periodTx,
@@ -135,7 +143,15 @@ func run() error {
 	})
 
 	transferPeriodResolver := &periodResolverAdapter{svc: periodService}
-	outboxWriter := newOutboxWriterAdapter(outboxRepo)
+
+	// Re-bind PeriodService with Outbox now that the writer exists
+	// (Sprint 51: period.closed + period.reopened events).
+	periodService = usecase.NewPeriodService(usecase.PeriodServiceDeps{
+		Repo:   periodRepo,
+		DB:     periodTx,
+		Outbox: outboxWriter,
+		Logger: log,
+	})
 	transferService := usecase.NewTransferService(usecase.TransferServiceDeps{
 		Accounts:     accountRepo,
 		Transactions: transactionRepo,
