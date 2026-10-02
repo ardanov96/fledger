@@ -14,6 +14,11 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
+| 47 | [Frontend Next.js Migration Plan](#sprint-47-frontend-nextjs-migration-plan-2026-10-01) | 6 | 2026-10-01 | ✅ Done |
+| 46 | [JetStream Durable Subscription](#sprint-46-jetstream-durable-subscription-2026-10-01) | 4A follow-up | 2026-10-01 | ✅ Done |
+| 45 | [Invoice/Payment Outbox Events](#sprint-45-invoicepayment-outbox-events-2026-10-01) | 4A | 2026-10-01 | ✅ Done |
+| 44 | [RLS-on-Pool Audit (Currency/Collection)](#sprint-44-rls-on-pool-audit-currencycollection-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
+| 43 | [FOR UPDATE SKIP LOCKED Outbox](#sprint-43-for-update-skip-locked-outbox-2026-10-01) | 4A follow-up | 2026-10-01 | ✅ Done |
 | 42 | [Fraud Flag Dedup](#sprint-42-fraud-flag-dedup-2026-10-01) | 8 follow-up | 2026-10-01 | ✅ Done |
 | 41 | [Extended Chaos Tests](#sprint-41-extended-chaos-tests-2026-10-01) | 7 | 2026-10-01 | ✅ Done |
 | 40 | [RLS-on-Pool Audit (Entry/Period/Reconciler)](#sprint-40-rls-on-pool-audit-entryperiodreconciler-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
@@ -1579,33 +1584,189 @@ constraint + ON CONFLICT DO NOTHING.
 
 ---
 
-## Sprint Backlog (post-Sprint 42)
+## Sprint 43 — FOR UPDATE SKIP LOCKED Outbox (2026-10-01)
 
-| Sprint | Title | Fase | Source | Effort |
-|---|---|---|---|---|
-| 43 | toxiproxy chaos integration | 7 | Sprint 41 follow-up | 1 week |
-| TBD | Frontend Next.js Migration | 6 | `web/README.md` limitations | 2 weeks |
-| TBD | FOR UPDATE SKIP LOCKED di outbox FetchUnpublished | 4A follow-up | Sprint 24 follow-up | 1 day |
-| TBD | More event types (invoice.created, period.closed, payment.recorded) | 4A | Sprint 24 follow-up | 1 week |
-| TBD | JetStream migration untuk durable subscription | 4A | Sprint 24 follow-up | 1 week |
-| TBD | Audit currency_repo (fx_rates) + collection_repo (route_stops) | 5A | Sprint 40 follow-up | 1 day |
+**Status:** ✅ Done · **Fase:** 4A follow-up · **Theme:** Multi-publisher safety
+
+#### Goal
+When two publisher instances run simultaneously (deploy with old + new
+binary both active), each fetches events independently. Without row
+locking, both could publish the same event → downstream consumers see
+duplicates.
+
+#### Scope
+- **43.1** — `internal/repository/postgres/outbox_repo.go`: new
+  `FetchUnpublishedLocked(ctx, limit)` that returns the pgx.Tx handle.
+  Uses `FOR UPDATE SKIP LOCKED`. The caller controls commit timing so
+  locks stay held until publish completes.
+- **43.2** — `internal/usecase/chaos_extended_test.go`: new test
+  `TestIntegration_OutboxPublisher_FetchUnpublishedLocked_SkipLocked`
+  verifies two concurrent txs see disjoint event sets.
+
+#### Usage pattern
+```
+1. FetchUnpublishedLocked(ctx, 50) → events + tx handle
+2. Publish each event to NATS
+3. UPDATE SET published_at = now() WHERE id IN (...)
+4. tx.Commit()  // releases locks, events marked done
+```
+If anything fails: `tx.Rollback()` → locks released, events stay
+unpublished for the next cycle (or another publisher).
 
 ---
 
-## Cumulative Stats (post-Sprint 42)
+## Sprint 44 — RLS-on-Pool Audit (Currency/Collection) (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 5A · **Theme:** Defense-in-depth
+
+#### Goal
+Complete the RLS-on-Pool audit. currency_repo's GetFxRate/GetLatestFxRate/ListFxRates
+were still bare Pool queries on `fx_rates` (which has RLS).
+
+#### Changes
+- `internal/repository/postgres/currency_repo.go`: GetFxRate,
+  GetLatestFxRate, ListFxRates now use RunInReadTx. currencies table
+  has NO RLS (intentionally global reference data) so GetCurrency is
+  left on bare Pool.
+
+#### Remaining
+- `collection_repo.go`: route_stops, collection_events, settlements
+  have NO RLS — left as-is.
+
+---
+
+## Sprint 45 — Invoice/Payment Outbox Events (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 4A · **Theme:** Event vocabulary
+
+#### Goal
+Extend the outbox event vocabulary beyond just `transfer.posted` so
+downstream consumers (notifications, fraud, analytics) can react to
+invoice + payment lifecycle events.
+
+#### Scope
+- **45.1** — `internal/domain/outbox/outbox.go`: new constants
+  `EventInvoiceCreated`, `EventPaymentRecorded`, `EventInvoiceOverdue`,
+  `SubjectInvoiceCreated`, `SubjectPaymentRecorded`. Aggregate types
+  (invoice, payment) were already in the DB CHECK constraint.
+- **45.2** — `internal/usecase/transfer_service.go`: OutboxWriter
+  interface now includes AppendInvoiceCreated + AppendPaymentRecorded.
+  tx parameter changed from `ledger.Tx` to `any` to support multiple
+  domain Tx types. noopOutboxWriter gets matching no-op methods.
+- **45.3** — `internal/usecase/invoice_service.go`: OutboxWriter
+  injected (falls back to noopOutboxWriter). CreateInvoice emits
+  `invoice.created` event in same tx. RecordPayment emits
+  `payment.recorded` event in same tx.
+- **45.4** — `internal/repository/postgres/tx_extractor.go`: new
+  UnwrapPgxTx(any) helper type-switches on known tx wrapper types
+  (txAdapter, fraudTxAdapter, notificationTxAdapter, invoiceTxAdapter).
+- **45.5** — `cmd/api/outbox_adapter.go`: updated to use new
+  any-based interface + UnwrapPgxTx.
+- **45.6** — `cmd/api/main.go`: wires outboxWriter into InvoiceService
+  deps.
+
+#### Notification worker compatibility
+Notification worker subscribes to `fmcg.>` (wildcard) — automatically
+receives the new event types. Fraud worker stays scoped to
+`fmcg.transfer.posted` (fraud rules don't apply to invoice/payment).
+
+---
+
+## Sprint 46 — JetStream Durable Subscription (2026-10-01)
+
+**Status:** ✅ Done (opt-in) · **Fase:** 4A follow-up · **Theme:** Reliability
+
+#### Goal
+Add opt-in JetStream support so events survive broker restart.
+Pre-Sprint-46 used core NATS publish (fire-and-forget); the outbox
+table was the durability boundary.
+
+#### Scope
+- **46.1** — `internal/infra/nats.go`: new `EnsureStream` (idempotent
+  stream setup), `PublishJS` (durable publish), `SubscribeDurable`
+  (consumer group with replay). Sprint 24 `Subscribe` (core NATS)
+  preserved for backward compat.
+- **46.2** — `internal/usecase/outbox_publisher.go`: new JetStreamBroker
+  type. `publish()` method type-asserts the broker and dispatches to
+  PublishJS if available. Test fakes that only implement Publish keep
+  working.
+- **46.3** — `internal/platform/config/config.go`: NATSConfig.
+  JetStreamEnabled field + `NATS_JETSTREAM_ENABLED` env var.
+
+#### Operational notes
+- Enable: `NATS_JETSTREAM_ENABLED=true`
+- Stream name default: `FMCG_EVENTS` (configurable via `NATS_STREAM_NAME`)
+- Subjects: `fmcg.>` (configurable via `NATS_STREAM_SUBJECTS`)
+- Retention: 24h (`MaxAge`); outbox is source of truth so older events
+  can be safely purged
+
+#### Backward compat
+If `NATS_JETSTREAM_ENABLED` is false (default), outbox publisher uses
+core NATS publish (fire-and-forget). No behavior change.
+
+---
+
+## Sprint 47 — Frontend Next.js Migration Plan (2026-10-01)
+
+**Status:** ✅ Done (planning + scaffold only) · **Fase:** 6 · **Theme:** UX modernization
+
+#### Goal
+Document the migration plan from `web/` (vanilla JS, Sprint 20 MVP) to
+`web-next/` (Next.js 15 + TypeScript). This sprint is **planning +
+scaffold only** — the actual UI migration is in Sprint 47.1+.
+
+#### Scope
+- **47.1** — `web-next/README.md`: full migration plan (~3 KB),
+  4 sub-sprints outlined (47.1 type-safe API client, 47.2 page
+  migration, 47.3 production hardening), folder structure diagram,
+  package.json scaffold, integration plan with backend.
+- **47.2** — `web-next/package.json`: dependency manifest (next 15,
+  react 19, tanstack-query, zod, tailwind, orval for OpenAPI codegen,
+  vitest, playwright).
+- **47.3** — `web-next/tsconfig.json`, `next.config.js`,
+  `tailwind.config.ts`, `.gitignore`: standard Next.js 15 + Tailwind
+  + TypeScript scaffold with security headers (X-Frame-Options DENY,
+  X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin)
+  and reverse-proxy rewrites for `/v1/*` to the backend.
+
+#### Active frontend unchanged
+`web/` (vanilla JS) remains the active frontend. The migration will
+be implemented in Sprint 47.1+ when an implementer picks up the plan.
+
+#### Why split this way
+The full migration is ~2 weeks. Splitting planning from implementation
+keeps the commit history clean and lets a new contributor pick up the
+plan directly without reading Sprint 47 in detail.
+
+---
+
+## Sprint Backlog (post-Sprint 47)
+
+| Sprint | Title | Fase | Source | Effort |
+|---|---|---|---|---|
+| 48 | toxiproxy chaos integration | 7 | Sprint 41 follow-up | 1 week |
+| 49 | Frontend Next.js Type-Safe API Client | 6 | Sprint 47 follow-up | 1 week |
+| 50 | Frontend Next.js Page Migration | 6 | Sprint 47 follow-up | 1 week |
+| 51 | period.closed event type | 4A | Sprint 45 follow-up | 2 days |
+| TBD | Replace third-party JWT (legacy JWT_SECRET) | 2E | Migration cleanup | 1 day |
+| TBD | WebSocket push for critical flags | 8 | Sprint 31 follow-up | 1 week |
+
+---
+
+## Cumulative Stats (post-Sprint 47)
 
 | Metric | Value | Source |
 |---|---|---|
-| Total sprints completed | 42 | this file |
+| Total sprints completed | 47 | this file |
 | Total LOC | ~22,500 | docs/index.md (refresh in Sprint 31) |
 | Go files (production) | ~100 | docs/index.md |
 | Go files (test) | ~30 | docs/index.md |
-| Migrations | 22 (+000028 Sprint 42 fraud_flag_dedup) | migrations/ folder |
+| Migrations | 22 (no new migrations for Sprint 43-47; those were code/infra changes) | migrations/ folder |
 | ADRs | 8 | docs/adr/ folder |
 | REST endpoints | 39+ (added 3 in Sprint 28) | docs/api/overview.md |
 | Use cases | 9 | internal/usecase/ folder |
 | Repositories | 11 | internal/repository/postgres/ folder |
-| Unit tests | 170+ (Sprint 41 chaos tests don't add unit tests; integration scenarios only) | docs/index.md |
+| Unit tests | 175+ (+2 chaos_extended Sprint 41 + 1 for Sprint 43 SKIP LOCKED) | docs/index.md |
 | Integration scenarios | 12 (+1 Sprint 40 entry/period/reconciler + 1 Sprint 42 fraud flag dedup) | Sprint 17 + Sprint 29 + Sprint 31 + Block 1 + Block 2 + Sprint 37 + Block 3 |
 | Coverage threshold | 80% (CI-enforced) | .github/workflows/ci.yml |
 | Linters | 37 strict | .golangci.yml |
