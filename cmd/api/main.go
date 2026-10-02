@@ -103,9 +103,13 @@ func run() error {
 	currencyTx := &currencyTxAdapter{db: db} // Sprint 12
 	authTx := &authTxAdapter{db: db}         // Sprint 13
 
-	// JWT signer + verifier (Sprint 13).
-	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
-	jwtSigner := jwt.NewSigner(jwt.StaticSecret{Value: []byte(cfg.JWT.Secret)})
+	// JWT signer + verifier (Sprint 13 + Sprint 33 multi-key rotation).
+// MultiKeySecret enables zero-downtime rotation: Signer uses Primary;
+// Verifier accepts tokens signed with either Primary or Secondary. See
+// docs/runbooks/secret-rotation.md for the rotation procedure.
+	jwtKeys := buildJWTSecretProvider(cfg)
+	verifier := jwt.NewVerifier(jwtKeys)
+	jwtSigner := jwt.NewSigner(jwtKeys)
 
 	// Currency service + FxRateLookup adapter (Sprint 12).
 	currencyService := usecase.NewCurrencyService(currencyRepo, currencyTx)
@@ -354,6 +358,23 @@ func resolveRBACPaths() (string, string) {
 	}
 	abs, _ := filepath.Abs(dir)
 	return filepath.Join(abs, modelFile), filepath.Join(abs, policyFile)
+}
+
+// buildJWTSecretProvider (Sprint 33) constructs the multi-key JWT secret
+// provider from config. Priority:
+//   1. JWT_SECRET_PRIMARY + JWT_SECRET_SECONDARY (rotation window)
+//   2. JWT_SECRET only (legacy single-key mode)
+//
+// Returns a MultiKeySecret so the Verifier tries both keys during rotation.
+func buildJWTSecretProvider(cfg *config.Config) jwt.SecretProvider {
+	primary := cfg.JWT.SecretPrimary
+	if primary == "" {
+		primary = cfg.JWT.Secret
+	}
+	return jwt.MultiKeySecret{Keys: [][]byte{
+		[]byte(primary),
+		[]byte(cfg.JWT.SecretSecondary),
+	}}
 }
 
 func buildRouter(

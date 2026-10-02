@@ -2,13 +2,19 @@
 
 **Goal:** Periodic rotation of secrets (JWT signing key, database password, RBAC policies) without service disruption.
 
+**Sprint 33 update:** JWT rotation now supports **zero-downtime** via the
+new `JWT_SECRET_PRIMARY` + `JWT_SECRET_SECONDARY` env vars. The Signer
+uses Primary; the Verifier accepts either. Procedure updated below.
+
 ---
 
 ## Secrets inventory
 
 | Secret | Where stored | Rotation cadence | Impact of leak |
 |---|---|---|---|
-| **JWT_SECRET** | Fly.io `fly secrets set` | Every 90 days | Attacker can mint valid JWTs for any user/tenant |
+| **JWT_SECRET_PRIMARY** (signs new) | Fly.io `fly secrets set` | Every 90 days | Attacker can mint valid JWTs |
+| **JWT_SECRET_SECONDARY** (verifies old during rotation) | Fly.io | Only during rotation windows | N/A in steady state |
+| **JWT_SECRET** (legacy single-key) | Fly.io | Every 90 days | (Deprecated — use PRIMARY/SECONDARY) |
 | **DB password** | Postgres role `fmcg` | Every 180 days | DB read/write access |
 | **RBAC policy CSV** | `internal/auth/rbac/policies/rbac_policy.csv` | On-demand | Privilege escalation |
 | **JWT_ACCESS_TTL** | 15 min (env) | Static | N/A (no secret) |
@@ -16,9 +22,11 @@
 
 ---
 
-## 1. JWT_SECRET rotation (zero-downtime)
+## 1. JWT_SECRET rotation (zero-downtime — Sprint 33)
 
-**Critical:** changing JWT_SECRET invalidates all existing tokens. Strategy: support **2 active keys** during rotation window.
+**Critical:** changing the primary signing key would invalidate all tokens.
+Strategy: support **2 active keys** during rotation window. The Signer
+always uses PRIMARY; the Verifier accepts PRIMARY OR SECONDARY.
 
 ### Step 1: Generate new key
 
@@ -27,47 +35,38 @@ NEW_JWT_SECRET=$(openssl rand -hex 32)
 echo "New secret (store securely): $NEW_JWT_SECRET"
 ```
 
-### Step 2: Set multi-key signing (planned Sprint 14+)
+### Step 2: Zero-downtime rotation (production procedure)
 
-For zero-downtime rotation, the JWT signer must accept multiple keys. Current code only supports 1 key, so rotation requires brief downtime (~30s).
-
-#### Zero-downtime procedure (production)
-
-If `jwt.Signer` supports multi-key (`StaticSecret` slice):
+**Phase A — Add new key as SECONDARY (signing continues with PRIMARY):**
 
 ```bash
-# Set new secret as additional (not yet replacing primary)
+# CURRENT primary stays the same; new key becomes secondary for verification.
 fly secrets set JWT_SECRET_PRIMARY="$CURRENT_SECRET" JWT_SECRET_SECONDARY="$NEW_JWT_SECRET"
-
-# Deploy new image (accepts either key)
 fly deploy
+# After deploy: Signer still uses OLD (PRIMARY). Verifier accepts BOTH OLD + NEW.
+# This is the rotation window (default 24h).
+```
 
-# After 24h (all old tokens expired), promote new as primary
+**Phase B — Promote new key to PRIMARY (after access tokens have expired):**
+
+Wait at least `JWT_ACCESS_TTL` (15 min) for all access tokens to expire.
+Wait additional `JWT_REFRESH_TTL` grace period if you want refresh tokens
+also rotated (recommended: 24h to be safe).
+
+```bash
 fly secrets set JWT_SECRET_PRIMARY="$NEW_JWT_SECRET" JWT_SECRET_SECONDARY=""
 fly deploy
-
-# After another 24h (all "old" tokens expired), remove secondary
-fly secrets unset JWT_SECRET_SECONDARY
-fly deploy
+# After deploy: Signer uses NEW. Verifier only accepts NEW. All old tokens now rejected.
 ```
 
-#### Brief-downtime procedure (current demo)
+**Phase C — Cleanup:**
 
 ```bash
-# 1. Generate new secret
-NEW_JWT_SECRET=$(openssl rand -hex 32)
-
-# 2. Set new secret (this invalidates ALL existing tokens)
-fly secrets set JWT_SECRET="$NEW_JWT_SECRET" --app fmcg-wallet-demo
-
-# 3. Restart app to pick up new secret
-fly apps restart fmcg-wallet-demo
-
-# Downtime: ~30s (Fly.io restart)
-# All users must re-login
+# Remove SECRET_KEY env from any old config files / CI secrets.
+# Done — rotation complete.
 ```
 
-### Step 3: Verify rotation
+### Step 3: Verify rotation (after Phase B deploy)
 
 ```bash
 # Try old token (should fail with 401 TOKEN_INVALID)
@@ -75,7 +74,7 @@ curl https://fmcg-wallet-demo.fly.dev/v1/accounts \
   -H "Authorization: Bearer $OLD_TOKEN"
 # Expected: 401 TOKEN_INVALID
 
-# Login with new credentials (should succeed)
+# Login with credentials (should succeed)
 NEW_TOKEN=$(curl -sX POST https://fmcg-wallet-demo.fly.dev/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin@demo.fmcg-wallet","password":"demo123"}' \
@@ -89,10 +88,24 @@ curl https://fmcg-wallet-demo.fly.dev/v1/accounts \
 
 ### Step 4: Update password manager
 
-Store new `JWT_SECRET` in:
+Store new `JWT_SECRET_PRIMARY` in:
 - 1Password / Vault / equivalent (team-wide)
 - CI/CD secrets (GitHub Actions)
 - Backup runbook (printed paper in safe)
+
+### Legacy mode (single JWT_SECRET)
+
+If you haven't migrated to PRIMARY/SECONDARY yet, the legacy single-key
+mode still works. Rotation requires a brief downtime (~30s for app restart):
+
+```bash
+NEW_JWT_SECRET=$(openssl rand -hex 32)
+fly secrets set JWT_SECRET="$NEW_JWT_SECRET" --app fmcg-wallet-demo
+fly apps restart fmcg-wallet-demo
+# Downtime: ~30s. All users must re-login.
+```
+
+**Recommendation:** migrate to PRIMARY/SECONDARY by next rotation.
 
 ---
 

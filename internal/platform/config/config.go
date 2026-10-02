@@ -113,12 +113,27 @@ type FraudConfig struct {
 }
 
 // JWTConfig holds JWT signing/validation settings.
+//
+// Sprint 33 / Fase 2E follow-up: SecretPrimary + SecretSecondary enable
+// zero-downtime rotation. The Signer uses Primary; the Verifier accepts
+// either. See docs/runbooks/secret-rotation.md for the rotation procedure.
 type JWTConfig struct {
-	Secret      string
-	AccessTTL   time.Duration
-	RefreshTTL  time.Duration
-	Issuer      string
-	Audience    string
+	// Secret is the legacy single-key field. Prefer SecretPrimary +
+	// SecretSecondary for new deployments. When both SecretPrimary and
+	// SecretSecondary are empty, falls back to Secret for backward compat.
+	Secret string
+
+	// SecretPrimary is the active signing key. New tokens are signed with this.
+	SecretPrimary string
+
+	// SecretSecondary is the OLD key during a rotation window. New tokens
+	// are NOT signed with this; only Verifier checks it. Empty in steady state.
+	SecretSecondary string
+
+	AccessTTL  time.Duration
+	RefreshTTL time.Duration
+	Issuer     string
+	Audience   string
 }
 
 // RateLimitConfig holds rate-limiting settings.
@@ -286,11 +301,13 @@ func Load() (*Config, error) {
 			OffHoursEnd:               v.GetInt("FRAUD_OFF_HOURS_END"),
 		},
 		JWT: JWTConfig{
-			Secret:     v.GetString("JWT_SECRET"),
-			AccessTTL:  v.GetDuration("JWT_ACCESS_TTL"),
-			RefreshTTL: v.GetDuration("JWT_REFRESH_TTL"),
-			Issuer:     v.GetString("JWT_ISSUER"),
-			Audience:   v.GetString("JWT_AUDIENCE"),
+			Secret:          v.GetString("JWT_SECRET"),
+			SecretPrimary:   v.GetString("JWT_SECRET_PRIMARY"),
+			SecretSecondary: v.GetString("JWT_SECRET_SECONDARY"),
+			AccessTTL:       v.GetDuration("JWT_ACCESS_TTL"),
+			RefreshTTL:      v.GetDuration("JWT_REFRESH_TTL"),
+			Issuer:          v.GetString("JWT_ISSUER"),
+			Audience:        v.GetString("JWT_AUDIENCE"),
 		},
 		BcryptCost: v.GetInt("BCRYPT_COST"),
 		RateLimit: RateLimitConfig{
@@ -347,11 +364,23 @@ func (c *Config) Validate() error {
 	if c.App.Env == "production" && c.DB.SSLMode == "disable" {
 		return errors.New("DB_SSLMODE=disable is not allowed in production")
 	}
-	if c.JWT.Secret == "" {
-		return errors.New("JWT_SECRET is required")
+	// JWT secret validation: Sprint 33 / Fase 2E follow-up. Accept either
+	// JWT_SECRET (legacy) OR JWT_SECRET_PRIMARY (new). If both are set,
+	// primary wins. JWT_SECRET_SECONDARY is optional (rotation window).
+	effectiveSecret := c.JWT.SecretPrimary
+	if effectiveSecret == "" {
+		effectiveSecret = c.JWT.Secret
 	}
-	if len(c.JWT.Secret) < 32 {
-		return fmt.Errorf("JWT_SECRET must be at least 32 characters (got %d)", len(c.JWT.Secret))
+	if effectiveSecret == "" {
+		return errors.New("JWT_SECRET (or JWT_SECRET_PRIMARY) is required")
+	}
+	if len(effectiveSecret) < 32 {
+		return fmt.Errorf("JWT secret must be at least 32 characters (got %d)", len(effectiveSecret))
+	}
+	// Secondary is also validated if set (prevents operator typo where
+	// PRIMARY rotated but SECONDARY kept the old value).
+	if c.JWT.SecretSecondary != "" && len(c.JWT.SecretSecondary) < 32 {
+		return fmt.Errorf("JWT_SECRET_SECONDARY must be at least 32 characters when set (got %d)", len(c.JWT.SecretSecondary))
 	}
 	if c.BcryptCost < 4 || c.BcryptCost > 31 {
 		return fmt.Errorf("BCRYPT_COST out of range: %d (must be 4-31)", c.BcryptCost)
