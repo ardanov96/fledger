@@ -14,6 +14,9 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
+| 42 | [Fraud Flag Dedup](#sprint-42-fraud-flag-dedup-2026-10-01) | 8 follow-up | 2026-10-01 | ✅ Done |
+| 41 | [Extended Chaos Tests](#sprint-41-extended-chaos-tests-2026-10-01) | 7 | 2026-10-01 | ✅ Done |
+| 40 | [RLS-on-Pool Audit (Entry/Period/Reconciler)](#sprint-40-rls-on-pool-audit-entryperiodreconciler-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
 | 39 | [OTel SDK + OTLP Exporter](#sprint-39-otel-sdk--otlp-exporter-2026-10-01) | 3B | 2026-10-01 | ✅ Done |
 | 38 | [Per-Tenant Fraud Thresholds](#sprint-38-per-tenant-fraud-thresholds-2026-10-01) | 8 | 2026-10-01 | ✅ Done |
 | 37 | [RLS-on-Pool Audit (Account/Invoice/Transaction)](#sprint-37-rls-on-pool-audit-accountinvoicetransaction-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
@@ -1502,35 +1505,108 @@ Replace the W3C-only trace context (Sprint 34) with full OpenTelemetry SDK
 
 ---
 
-## Sprint Backlog (post-Sprint 39)
+## Sprint 40 — RLS-on-Pool Audit (Entry/Period/Reconciler) (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 5A · **Theme:** Defense-in-depth
+
+#### Goal
+Continue the Sprint 37 RLS-on-Pool audit for the remaining repos:
+entry_repo, period_repo, reconciler_repo.
+
+#### Scope
+- **40.1** — `internal/repository/postgres/entry_repo.go`:
+  ListByTransaction, ListByAccount, SumForAccount now use RunInReadTx.
+  TrialBalance uses RunInAdminTx (cross-tenant SUM for reconciler).
+- **40.2** — `internal/repository/postgres/period_repo.go`: GetCloseRequest,
+  ListSnapshotsByPeriod, ListRequestsByPeriod, ListAccountsByTenant,
+  GetCurrentOpenPeriod now use RunInReadTx.
+- **40.3** — `internal/repository/postgres/reconciler_repo.go`: GetRun,
+  ListRunsByPeriod, ListRunsByTenant, ListAccountResultsByRun,
+  ListOpenPeriods now use RunInReadTx.
+
+#### Remaining (acceptable as-is)
+- `audit_repo.go`: audit_logs has NO RLS (intentionally operator-visible
+  across tenants for forensics)
+- `collection_repo.go`: route_stops, collection_events have NO RLS
+
+---
+
+## Sprint 41 — Extended Chaos Tests (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 7 · **Theme:** Worker resilience
+
+#### Goal
+Extend the Sprint 36 chaos tests with more behavioral invariants.
+
+#### Scope
+- `internal/usecase/chaos_extended_test.go` — 4 new tests:
+  - `TestIntegration_OutboxPublisher_GracefulShutdown`: SIGTERM
+    simulation via ctx cancellation; verifies FetchUnpublished respects
+    ctx and no events are lost.
+  - `TestIntegration_OutboxPublisher_ConcurrentSafety`: two publisher
+    instances call FetchUnpublished simultaneously; verifies both get
+    results (downstream must be idempotent on event_id — Sprint 24
+    follow-up: FOR UPDATE SKIP LOCKED).
+  - `TestIntegration_OutboxPublisher_EmptyQueueHandled`: graceful
+    empty result.
+  - `TestIntegration_OutboxPublisher_PaginationLimit`: limit param
+    respected, no event in two consecutive batches.
+
+#### Why not toxiproxy
+The behavioral tests verify the recovery path that matters for correctness
+(the DB schema property that outbox is source of truth). Toxiproxy
+would add latency/bandwidth stress tests on top — deferred to Sprint 41.1.
+
+---
+
+## Sprint 42 — Fraud Flag Dedup (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 8 follow-up · **Theme:** Operational cleanliness
+
+#### Goal
+When NATS redelivers a transfer.posted event (worker crash mid-publish),
+the fraud scanner re-runs the rule → duplicate flag rows. Add UNIQUE
+constraint + ON CONFLICT DO NOTHING.
+
+#### Scope
+- **42.1** — Migration `000028_fraud_flag_dedup.{up,down}.sql`: UNIQUE
+  INDEX (transfer_id, rule_name) + ADD CONSTRAINT via DO block
+  (idempotent).
+- **42.2** — `internal/repository/postgres/fraud_repo.go`: Create() uses
+  `ON CONFLICT (transfer_id, rule_name) DO NOTHING`.
+- **42.3** — Integration test `TestIntegration_FraudFlagDedup`:
+  inserts twice, verifies only 1 row exists, first insert wins.
+
+---
+
+## Sprint Backlog (post-Sprint 42)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 40 | Audit remaining RLS-on-Pool (entry, reconciler, period repos) | 5A | Sprint 37 follow-up | 3 days |
-| 41 | toxiproxy chaos integration | 7 | Sprint 36 follow-up | 1 week |
-| 42 | Cascade / dedup fraud flags (transfer_id, rule_name unique) | 8 | Sprint 31 follow-up | 2 days |
+| 43 | toxiproxy chaos integration | 7 | Sprint 41 follow-up | 1 week |
 | TBD | Frontend Next.js Migration | 6 | `web/README.md` limitations | 2 weeks |
 | TBD | FOR UPDATE SKIP LOCKED di outbox FetchUnpublished | 4A follow-up | Sprint 24 follow-up | 1 day |
 | TBD | More event types (invoice.created, period.closed, payment.recorded) | 4A | Sprint 24 follow-up | 1 week |
 | TBD | JetStream migration untuk durable subscription | 4A | Sprint 24 follow-up | 1 week |
+| TBD | Audit currency_repo (fx_rates) + collection_repo (route_stops) | 5A | Sprint 40 follow-up | 1 day |
 
 ---
 
-## Cumulative Stats (post-Sprint 39)
+## Cumulative Stats (post-Sprint 42)
 
 | Metric | Value | Source |
 |---|---|---|
-| Total sprints completed | 39 | this file |
+| Total sprints completed | 42 | this file |
 | Total LOC | ~22,500 | docs/index.md (refresh in Sprint 31) |
 | Go files (production) | ~100 | docs/index.md |
 | Go files (test) | ~30 | docs/index.md |
-| Migrations | 21 (+000027 Sprint 38 tenant_fraud_settings) | migrations/ folder |
+| Migrations | 22 (+000028 Sprint 42 fraud_flag_dedup) | migrations/ folder |
 | ADRs | 8 | docs/adr/ folder |
 | REST endpoints | 39+ (added 3 in Sprint 28) | docs/api/overview.md |
 | Use cases | 9 | internal/usecase/ folder |
 | Repositories | 11 | internal/repository/postgres/ folder |
-| Unit tests | 170+ (+6 tenant fraud settings + 4 OTel in Block 2) | docs/index.md |
-| Integration scenarios | 10 (+1 Sprint 37 account/invoice/transaction RLS) | Sprint 17 + Sprint 29 + Sprint 31 + Block 1 + Sprint 37 |
+| Unit tests | 170+ (Sprint 41 chaos tests don't add unit tests; integration scenarios only) | docs/index.md |
+| Integration scenarios | 12 (+1 Sprint 40 entry/period/reconciler + 1 Sprint 42 fraud flag dedup) | Sprint 17 + Sprint 29 + Sprint 31 + Block 1 + Block 2 + Sprint 37 + Block 3 |
 | Coverage threshold | 80% (CI-enforced) | .github/workflows/ci.yml |
 | Linters | 37 strict | .golangci.yml |
 | Docker image size | ~20MB (distroless) | Dockerfile |
