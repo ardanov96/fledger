@@ -152,6 +152,65 @@ func TestIntegration_OutboxPublisher_EmptyQueueHandled(t *testing.T) {
 	assert.Empty(t, fetched, "empty queue should return empty slice")
 }
 
+// TestIntegration_OutboxPublisher_FetchUnpublishedLocked_SkipLocked verifies
+// Sprint 43's multi-publisher safety: when two transactions hold row
+// locks (via FOR UPDATE SKIP LOCKED), the second tx sees a disjoint
+// (smaller) batch — locked rows are skipped.
+//
+// Pattern:
+//   1. Tx1: BEGIN; SELECT FOR UPDATE SKIP LOCKED LIMIT 3 → gets 3 rows locked
+//   2. Tx2: BEGIN; SELECT FOR UPDATE SKIP LOCKED LIMIT 10 → gets next 7 rows
+//   3. Verify: tx1 events != tx2 events (disjoint)
+//   4. Tx1: COMMIT (releases locks)
+//   5. Tx2: COMMIT
+func TestIntegration_OutboxPublisher_FetchUnpublishedLocked_SkipLocked(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+
+	ctx := context.Background()
+	tenant := uuid.New()
+	user := uuid.New()
+	txCtx := env.setTenantCtx(ctx, tenant, user)
+
+	repo := postgres.NewOutboxRepository(env.DB)
+
+	// Seed 10 events
+	for i := 0; i < 10; i++ {
+		ev := outbox.Event{
+			ID:            uuid.New(),
+			TenantID:      tenant,
+			AggregateType: "transfer",
+			AggregateID:   uuid.New(),
+			EventType:     "transfer.posted",
+			Subject:       "fmcg.transfer.posted",
+			Payload:       map[string]any{"i": i},
+		}
+		require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
+			return repo.Create(ctx, tx, ev)
+		}))
+	}
+
+	// Tx1 holds locks on 3 rows
+	tx1, batch1, err := repo.FetchUnpublishedLocked(ctx, 3)
+	require.NoError(t, err)
+	defer tx1.Rollback(ctx) // safety
+	require.Len(t, batch1, 3, "tx1 should fetch 3 rows with limit=3")
+
+	// Tx2 fetches the next batch (SKIP LOCKED skips the 3 held by tx1)
+	tx2, batch2, err := repo.FetchUnpublishedLocked(ctx, 100)
+	require.NoError(t, err)
+	defer tx2.Rollback(ctx)
+	require.Len(t, batch2, 7, "tx2 should fetch 7 rows (10 total - 3 locked by tx1)")
+
+	// Verify disjoint sets
+	idSet := make(map[uuid.UUID]bool)
+	for _, e := range batch1 {
+		idSet[e.ID] = true
+	}
+	for _, e := range batch2 {
+		assert.False(t, idSet[e.ID], "event %s should NOT appear in both batches (FOR UPDATE SKIP LOCKED violation)", e.ID)
+	}
+}
 // TestIntegration_OutboxPublisher_PaginationLimit verifies that
 // the limit parameter is respected (worker shouldn't load all events
 // into memory at once).
