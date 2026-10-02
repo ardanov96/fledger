@@ -158,6 +158,7 @@ INSERT INTO reconciler_account_results (
 
 // ----- Read operations -----
 
+// GetRun (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *ReconcilerRepository) GetRun(ctx context.Context, id string) (reconciler.ReconcilerRun, error) {
 	const q = `
 SELECT id, tenant_id, period_id, started_at, finished_at, status,
@@ -166,13 +167,19 @@ SELECT id, tenant_id, period_id, started_at, finished_at, status,
 FROM reconciler_runs
 WHERE id = $1
 `
-	dto, err := scanReconcilerRun(r.db.Pool.QueryRow(ctx, q, id))
+	var dto ReconcilerRunDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanReconcilerRun(tx.QueryRow(ctx, q, id))
+		return scanErr
+	})
 	if err != nil {
 		return reconciler.ReconcilerRun{}, err
 	}
 	return dtoToReconcilerRun(dto), nil
 }
 
+// ListRunsByPeriod (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *ReconcilerRepository) ListRunsByPeriod(ctx context.Context, periodID string, limit int) ([]reconciler.ReconcilerRun, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -186,27 +193,35 @@ WHERE period_id = $1
 ORDER BY started_at DESC
 LIMIT $2
 `
-	rows, err := r.db.Pool.Query(ctx, q, periodID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list runs by period: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]reconciler.ReconcilerRun, 0, limit)
-	for rows.Next() {
-		var dto ReconcilerRunDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.StartedAt, &dto.FinishedAt, &dto.Status,
-			&dto.TotalDebit, &dto.TotalCredit, &dto.Imbalance,
-			&dto.HashChainOK, &dto.HashChainErrors, &dto.TriggeredBy, &dto.Metadata,
-		); err != nil {
-			return nil, fmt.Errorf("scan reconciler run: %w", err)
+	var out []reconciler.ReconcilerRun
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, periodID, limit)
+		if err != nil {
+			return fmt.Errorf("list runs by period: %w", err)
 		}
-		out = append(out, dtoToReconcilerRun(dto))
+		defer rows.Close()
+
+		out = make([]reconciler.ReconcilerRun, 0, limit)
+		for rows.Next() {
+			var dto ReconcilerRunDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.StartedAt, &dto.FinishedAt, &dto.Status,
+				&dto.TotalDebit, &dto.TotalCredit, &dto.Imbalance,
+				&dto.HashChainOK, &dto.HashChainErrors, &dto.TriggeredBy, &dto.Metadata,
+			); err != nil {
+				return fmt.Errorf("scan reconciler run: %w", err)
+			}
+			out = append(out, dtoToReconcilerRun(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
+// ListRunsByTenant (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *ReconcilerRepository) ListRunsByTenant(ctx context.Context, tenantID string, limit int) ([]reconciler.ReconcilerRun, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -220,27 +235,35 @@ WHERE tenant_id = $1
 ORDER BY started_at DESC
 LIMIT $2
 `
-	rows, err := r.db.Pool.Query(ctx, q, tenantID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list runs by tenant: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]reconciler.ReconcilerRun, 0, limit)
-	for rows.Next() {
-		var dto ReconcilerRunDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.StartedAt, &dto.FinishedAt, &dto.Status,
-			&dto.TotalDebit, &dto.TotalCredit, &dto.Imbalance,
-			&dto.HashChainOK, &dto.HashChainErrors, &dto.TriggeredBy, &dto.Metadata,
-		); err != nil {
-			return nil, fmt.Errorf("scan reconciler run: %w", err)
+	var out []reconciler.ReconcilerRun
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, tenantID, limit)
+		if err != nil {
+			return fmt.Errorf("list runs by tenant: %w", err)
 		}
-		out = append(out, dtoToReconcilerRun(dto))
+		defer rows.Close()
+
+		out = make([]reconciler.ReconcilerRun, 0, limit)
+		for rows.Next() {
+			var dto ReconcilerRunDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.StartedAt, &dto.FinishedAt, &dto.Status,
+				&dto.TotalDebit, &dto.TotalCredit, &dto.Imbalance,
+				&dto.HashChainOK, &dto.HashChainErrors, &dto.TriggeredBy, &dto.Metadata,
+			); err != nil {
+				return fmt.Errorf("scan reconciler run: %w", err)
+			}
+			out = append(out, dtoToReconcilerRun(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
+// ListAccountResultsByRun (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *ReconcilerRepository) ListAccountResultsByRun(ctx context.Context, runID string) ([]reconciler.ReconcilerAccountResult, error) {
 	const q = `
 SELECT id, run_id, period_id, account_id,
@@ -250,37 +273,45 @@ FROM reconciler_account_results
 WHERE run_id = $1
 ORDER BY account_id ASC
 `
-	rows, err := r.db.Pool.Query(ctx, q, runID)
-	if err != nil {
-		return nil, fmt.Errorf("list account results: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]reconciler.ReconcilerAccountResult, 0, 16)
-	for rows.Next() {
-		var dto ReconcilerAccountResultDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.RunID, &dto.PeriodID, &dto.AccountID,
-			&dto.DebitMinor, &dto.CreditMinor, &dto.SignedBalance,
-			&dto.EntryCount, &dto.Currency,
-		); err != nil {
-			return nil, fmt.Errorf("scan account result: %w", err)
+	var out []reconciler.ReconcilerAccountResult
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, runID)
+		if err != nil {
+			return fmt.Errorf("list account results: %w", err)
 		}
-		out = append(out, reconciler.ReconcilerAccountResult{
-			ID:            dto.ID.String(),
-			RunID:         dto.RunID.String(),
-			PeriodID:      dto.PeriodID.String(),
-			AccountID:     dto.AccountID.String(),
-			DebitMinor:    dto.DebitMinor,
-			CreditMinor:   dto.CreditMinor,
-			SignedBalance: dto.SignedBalance,
-			EntryCount:    dto.EntryCount,
-			Currency:      dto.Currency,
-		})
+		defer rows.Close()
+
+		out = make([]reconciler.ReconcilerAccountResult, 0, 16)
+		for rows.Next() {
+			var dto ReconcilerAccountResultDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.RunID, &dto.PeriodID, &dto.AccountID,
+				&dto.DebitMinor, &dto.CreditMinor, &dto.SignedBalance,
+				&dto.EntryCount, &dto.Currency,
+			); err != nil {
+				return fmt.Errorf("scan account result: %w", err)
+			}
+			out = append(out, reconciler.ReconcilerAccountResult{
+				ID:            dto.ID.String(),
+				RunID:         dto.RunID.String(),
+				PeriodID:      dto.PeriodID.String(),
+				AccountID:     dto.AccountID.String(),
+				DebitMinor:    dto.DebitMinor,
+				CreditMinor:   dto.CreditMinor,
+				SignedBalance: dto.SignedBalance,
+				EntryCount:    dto.EntryCount,
+				Currency:      dto.Currency,
+			})
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
+// ListOpenPeriods (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *ReconcilerRepository) ListOpenPeriods(ctx context.Context, tenantID string) ([]reconciler.PeriodRef, error) {
 	const q = `
 SELECT id, tenant_id
@@ -288,21 +319,28 @@ FROM accounting_periods
 WHERE tenant_id = $1 AND status IN ('open', 'closing')
 ORDER BY period_start ASC
 `
-	rows, err := r.db.Pool.Query(ctx, q, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list open periods: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]reconciler.PeriodRef, 0, 8)
-	for rows.Next() {
-		var p reconciler.PeriodRef
-		if err := rows.Scan(&p.ID, &p.TenantID); err != nil {
-			return nil, fmt.Errorf("scan period ref: %w", err)
+	var out []reconciler.PeriodRef
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, tenantID)
+		if err != nil {
+			return fmt.Errorf("list open periods: %w", err)
 		}
-		out = append(out, p)
+		defer rows.Close()
+
+		out = make([]reconciler.PeriodRef, 0, 8)
+		for rows.Next() {
+			var p reconciler.PeriodRef
+			if err := rows.Scan(&p.ID, &p.TenantID); err != nil {
+				return fmt.Errorf("scan period ref: %w", err)
+			}
+			out = append(out, p)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ListTenants returns distinct tenant IDs that have at least one

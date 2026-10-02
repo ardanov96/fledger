@@ -164,6 +164,10 @@ INSERT INTO period_close_requests (
 	return nil
 }
 
+// GetCloseRequest returns a close request by ID (read-only via pool).
+//
+// Sprint 40 fix: was bare Pool.QueryRow which returns 0 rows after RLS
+// filter. Now uses RunInReadTx so the tenant GUC is bound.
 func (r *PeriodRepository) GetCloseRequest(ctx context.Context, id string) (period.CloseRequest, error) {
 	const q = `
 SELECT id, tenant_id, period_id, requester_id, approver_id, status,
@@ -172,7 +176,12 @@ SELECT id, tenant_id, period_id, requester_id, approver_id, status,
 FROM period_close_requests
 WHERE id = $1
 `
-	dto, err := scanCloseRequest(r.db.Pool.QueryRow(ctx, q, id))
+	var dto CloseRequestDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanCloseRequest(tx.QueryRow(ctx, q, id))
+		return scanErr
+	})
 	if err != nil {
 		return period.CloseRequest{}, err
 	}
@@ -268,6 +277,7 @@ INSERT INTO period_snapshots (
 	return nil
 }
 
+// ListSnapshotsByPeriod (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *PeriodRepository) ListSnapshotsByPeriod(ctx context.Context, periodID string) ([]period.PeriodSnapshot, error) {
 	const q = `
 SELECT id, tenant_id, period_id, request_id, account_id,
@@ -276,26 +286,34 @@ FROM period_snapshots
 WHERE period_id = $1
 ORDER BY account_id ASC
 `
-	rows, err := r.db.Pool.Query(ctx, q, periodID)
-	if err != nil {
-		return nil, fmt.Errorf("list snapshots: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]period.PeriodSnapshot, 0, 16)
-	for rows.Next() {
-		var dto PeriodSnapshotDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.RequestID, &dto.AccountID,
-			&dto.BalanceMinor, &dto.Currency, &dto.EntryCount, &dto.SnapshotAt, &dto.Metadata,
-		); err != nil {
-			return nil, fmt.Errorf("scan snapshot: %w", err)
+	var out []period.PeriodSnapshot
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, periodID)
+		if err != nil {
+			return fmt.Errorf("list snapshots: %w", err)
 		}
-		out = append(out, dtoToSnapshot(dto))
+		defer rows.Close()
+
+		out = make([]period.PeriodSnapshot, 0, 16)
+		for rows.Next() {
+			var dto PeriodSnapshotDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.RequestID, &dto.AccountID,
+				&dto.BalanceMinor, &dto.Currency, &dto.EntryCount, &dto.SnapshotAt, &dto.Metadata,
+			); err != nil {
+				return fmt.Errorf("scan snapshot: %w", err)
+			}
+			out = append(out, dtoToSnapshot(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
+// ListRequestsByPeriod (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *PeriodRepository) ListRequestsByPeriod(ctx context.Context, periodID string) ([]period.CloseRequest, error) {
 	const q = `
 SELECT id, tenant_id, period_id, requester_id, approver_id, status,
@@ -305,25 +323,32 @@ FROM period_close_requests
 WHERE period_id = $1
 ORDER BY requested_at ASC
 `
-	rows, err := r.db.Pool.Query(ctx, q, periodID)
-	if err != nil {
-		return nil, fmt.Errorf("list close requests: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]period.CloseRequest, 0, 8)
-	for rows.Next() {
-		var dto CloseRequestDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.RequesterID, &dto.ApproverID, &dto.Status,
-			&dto.TrialBalanceOK, &dto.TotalDebit, &dto.TotalCredit, &dto.Imbalance,
-			&dto.RejectionReason, &dto.RequestedAt, &dto.DecidedAt, &dto.Metadata,
-		); err != nil {
-			return nil, fmt.Errorf("scan close request: %w", err)
+	var out []period.CloseRequest
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, periodID)
+		if err != nil {
+			return fmt.Errorf("list close requests: %w", err)
 		}
-		out = append(out, dtoToCloseRequest(dto))
+		defer rows.Close()
+
+		out = make([]period.CloseRequest, 0, 8)
+		for rows.Next() {
+			var dto CloseRequestDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TenantID, &dto.PeriodID, &dto.RequesterID, &dto.ApproverID, &dto.Status,
+				&dto.TrialBalanceOK, &dto.TotalDebit, &dto.TotalCredit, &dto.Imbalance,
+				&dto.RejectionReason, &dto.RequestedAt, &dto.DecidedAt, &dto.Metadata,
+			); err != nil {
+				return fmt.Errorf("scan close request: %w", err)
+			}
+			out = append(out, dtoToCloseRequest(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ----- Trial balance + entries count -----
@@ -362,23 +387,31 @@ func (r *PeriodRepository) CountEntriesForPeriod(ctx context.Context, tx period.
 	return n, nil
 }
 
+// ListAccountsByTenant (Sprint 40 fix): uses RunInReadTx so RLS evaluates.
 func (r *PeriodRepository) ListAccountsByTenant(ctx context.Context, tenantID string) ([]period.AccountRef, error) {
 	const q = `SELECT id, currency FROM accounts WHERE tenant_id = $1 ORDER BY id ASC`
-	rows, err := r.db.Pool.Query(ctx, q, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list accounts: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]period.AccountRef, 0, 16)
-	for rows.Next() {
-		var ref period.AccountRef
-		if err := rows.Scan(&ref.ID, &ref.Currency); err != nil {
-			return nil, fmt.Errorf("scan account ref: %w", err)
+	var out []period.AccountRef
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, tenantID)
+		if err != nil {
+			return fmt.Errorf("list accounts: %w", err)
 		}
-		out = append(out, ref)
+		defer rows.Close()
+
+		out = make([]period.AccountRef, 0, 16)
+		for rows.Next() {
+			var ref period.AccountRef
+			if err := rows.Scan(&ref.ID, &ref.Currency); err != nil {
+				return fmt.Errorf("scan account ref: %w", err)
+			}
+			out = append(out, ref)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *PeriodRepository) ComputeAccountBalanceAtPeriod(ctx context.Context, tx period.Tx, accountID, periodID string) (balanceMinor int64, entryCount int, err error) {
@@ -408,6 +441,10 @@ WHERE account_id = $1 AND period_id = $2
 // Matches status='open' AND period_start <= now::date <= period_end.
 // Returns ErrNotFound when no open period covers the given timestamp —
 // the caller should call InsertPeriod to create one.
+// GetCurrentOpenPeriod returns the open period that covers `now` for a tenant.
+//
+// Sprint 40 fix: was bare Pool.QueryRow which returns 0 rows after RLS
+// filter. Now uses RunInReadTx so the tenant GUC is bound.
 func (r *PeriodRepository) GetCurrentOpenPeriod(ctx context.Context, tenantID string, now time.Time) (period.Period, error) {
 	const q = `
 SELECT id, tenant_id, period_start, period_end, status
@@ -420,9 +457,11 @@ ORDER BY period_start DESC
 LIMIT 1
 `
 	var dto PeriodDTO
-	err := r.db.Pool.QueryRow(ctx, q, tenantID, now).Scan(
-		&dto.ID, &dto.TenantID, &dto.PeriodStart, &dto.PeriodEnd, &dto.Status,
-	)
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, q, tenantID, now).Scan(
+			&dto.ID, &dto.TenantID, &dto.PeriodStart, &dto.PeriodEnd, &dto.Status,
+		)
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return period.Period{}, apperrors.ErrNotFound

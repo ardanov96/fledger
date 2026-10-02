@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
 )
@@ -48,6 +50,9 @@ INSERT INTO ledger_entries (
 }
 
 // ListByTransaction returns all entries for a given transaction.
+//
+// Sprint 40 fix: was bare Pool.Query which would return 0 rows after
+// RLS filter. Now uses RunInReadTx so the tenant GUC is bound.
 func (r *EntryRepository) ListByTransaction(ctx context.Context, transactionID string) ([]ledger.Entry, error) {
 	const q = `
 SELECT id, transaction_id, account_id, amount, type, ref_type, ref_id,
@@ -56,31 +61,37 @@ FROM ledger_entries
 WHERE transaction_id = $1
 ORDER BY created_at, id
 `
-	rows, err := r.db.Pool.Query(ctx, q, transactionID)
-	if err != nil {
-		return nil, fmt.Errorf("list entries: %w", err)
-	}
-	defer rows.Close()
-
-	entries := make([]ledger.Entry, 0, 4)
-	for rows.Next() {
-		var dto EntryDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TransactionID, &dto.AccountID, &dto.Amount, &dto.Type,
-			&dto.RefType, &dto.RefID, &dto.PeriodID, &dto.Description,
-			&dto.Currency, &dto.Metadata, &dto.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan entry: %w", err)
+	var entries []ledger.Entry
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, transactionID)
+		if err != nil {
+			return fmt.Errorf("list entries: %w", err)
 		}
-		entries = append(entries, dtoToEntry(dto))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+		defer rows.Close()
+
+		entries = make([]ledger.Entry, 0, 4)
+		for rows.Next() {
+			var dto EntryDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TransactionID, &dto.AccountID, &dto.Amount, &dto.Type,
+				&dto.RefType, &dto.RefID, &dto.PeriodID, &dto.Description,
+				&dto.Currency, &dto.Metadata, &dto.CreatedAt,
+			); err != nil {
+				return fmt.Errorf("scan entry: %w", err)
+			}
+			entries = append(entries, dtoToEntry(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
 	return entries, nil
 }
 
 // ListByAccount returns paginated entries for an account.
+//
+// Sprint 40 fix: was bare Pool.Query. Now uses RunInReadTx.
 func (r *EntryRepository) ListByAccount(ctx context.Context, accountID string, filter ledger.EntryFilter) ([]ledger.Entry, error) {
 	const q = `
 SELECT id, transaction_id, account_id, amount, type, ref_type, ref_id,
@@ -101,28 +112,37 @@ LIMIT $3
 		limit = 100
 	}
 
-	rows, err := r.db.Pool.Query(ctx, q, accountID, before, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list entries by account: %w", err)
-	}
-	defer rows.Close()
-
-	entries := make([]ledger.Entry, 0, limit)
-	for rows.Next() {
-		var dto EntryDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TransactionID, &dto.AccountID, &dto.Amount, &dto.Type,
-			&dto.RefType, &dto.RefID, &dto.PeriodID, &dto.Description,
-			&dto.Currency, &dto.Metadata, &dto.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan entry: %w", err)
+	var entries []ledger.Entry
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, accountID, before, limit)
+		if err != nil {
+			return fmt.Errorf("list entries by account: %w", err)
 		}
-		entries = append(entries, dtoToEntry(dto))
+		defer rows.Close()
+
+		entries = make([]ledger.Entry, 0, limit)
+		for rows.Next() {
+			var dto EntryDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TransactionID, &dto.AccountID, &dto.Amount, &dto.Type,
+				&dto.RefType, &dto.RefID, &dto.PeriodID, &dto.Description,
+				&dto.Currency, &dto.Metadata, &dto.CreatedAt,
+			); err != nil {
+				return fmt.Errorf("scan entry: %w", err)
+			}
+			entries = append(entries, dtoToEntry(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return entries, rows.Err()
+	return entries, nil
 }
 
 // SumForAccount returns the authoritative balance for an account.
+//
+// Sprint 40 fix: was bare Pool.QueryRow. Now uses RunInReadTx.
 func (r *EntryRepository) SumForAccount(ctx context.Context, accountID string) (money.Money, error) {
 	const q = `
 SELECT COALESCE(SUM(
@@ -132,13 +152,20 @@ FROM ledger_entries
 WHERE account_id = $1
 `
 	var balance int64
-	if err := r.db.Pool.QueryRow(ctx, q, accountID).Scan(&balance); err != nil {
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, q, accountID).Scan(&balance)
+	})
+	if err != nil {
 		return money.Money(0), fmt.Errorf("sum entries: %w", err)
 	}
 	return money.NewFromMinor(balance), nil
 }
 
 // TrialBalance returns global SUM(debit) - SUM(credit).
+//
+// Sprint 40 fix: cross-tenant aggregation. The reconciler worker runs
+// this for each tenant via app_admin (Sprint 30). Now uses RunInAdminTx
+// so RLS doesn't filter out other tenants' rows.
 func (r *EntryRepository) TrialBalance(ctx context.Context) (TrialBalanceDTO, error) {
 	const q = `
 SELECT
@@ -147,7 +174,10 @@ SELECT
 FROM ledger_entries
 `
 	var tb TrialBalanceDTO
-	if err := r.db.Pool.QueryRow(ctx, q).Scan(&tb.TotalDebit, &tb.TotalCredit); err != nil {
+	err := r.db.RunInAdminTx(ctx, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, q).Scan(&tb.TotalDebit, &tb.TotalCredit)
+	})
+	if err != nil {
 		return tb, fmt.Errorf("trial balance: %w", err)
 	}
 	tb.Imbalance = tb.TotalDebit - tb.TotalCredit
