@@ -671,6 +671,52 @@ func TestIntegration_LoginAttemptsPartitioning(t *testing.T) {
 	require.NoError(t, err, "CountRecentFailedLogins should still work post-partitioning")
 }
 
+// =============================================================================
+// Scenario 9: Sprint 35 — user_credentials RLS
+// =============================================================================
+//
+// Verifies that user_credentials now enforces tenant_id RLS (was excluded
+// in Sprint 15 because app_admin role didn't exist yet). Migration 000026
+// enables RLS with admin_bypass policy, so:
+//   - Tenant A's fmcg user can see tenant A's user_credentials rows
+//   - Tenant B's fmcg user CANNOT see tenant A's user_credentials rows
+//   - app_admin role bypasses RLS for ops queries
+func TestIntegration_UserCredentialsRLS(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+
+	ctx := context.Background()
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+	userA := uuid.New()
+
+	repo := postgres.NewAuthRepository(env.DB)
+
+	// Seed user_credentials for tenantA via a tx (need a real auth.Tx for Create).
+	// We use RunInTxAuthDomain to get a properly-bound GUC context.
+	err := env.DB.RunInTxAuthDomain(ctx, func(tx auth.Tx) error {
+		return repo.CreateUserCredentials(ctx, tx, auth.UserCredentials{
+			UserID:       userA,
+			TenantID:     tenantA,
+			PasswordHash: "hashed",
+			MFAEnabled:   false,
+		})
+	})
+	require.NoError(t, err, "CreateUserCredentials for tenantA should succeed")
+
+	// --- Case 1: tenantA can read ---
+	readCtxA := env.setTenantCtx(ctx, tenantA, userA)
+	got, err := repo.GetUserCredentialsByID(readCtxA, userA)
+	require.NoError(t, err, "tenantA should read its own user_credentials")
+	assert.Equal(t, userA, got.UserID)
+
+	// --- Case 2: tenantB cannot read tenantA's row ---
+	readCtxB := env.setTenantCtx(ctx, tenantB, uuid.New())
+	_, err = repo.GetUserCredentialsByID(readCtxB, userA)
+	require.Error(t, err, "tenantB should NOT read tenantA's user_credentials")
+	assert.ErrorIs(t, err, auth.ErrUserNotFound, "RLS should make it look like user not found")
+}
+
 // cleanupNotifications truncates only the notifications table for fast per-test isolation.
 // Use before scenarios that don't otherwise clear notifications.
 func (e *IntegrationTestEnv) cleanupNotifications(t *testing.T) {

@@ -253,16 +253,28 @@ func (r *AuthRepository) GetUserCredentialsByUsername(ctx context.Context, tenan
 }
 
 // GetUserCredentialsByID reads by primary key.
+//
+// Sprint 35: runs inside RunInReadTx so RLS evaluates correctly. Migration
+// 000026 enabled FORCE RLS on user_credentials with tenant_isolation +
+// admin_bypass policies. Without GUC binding, the SELECT would return zero
+// rows (tenant_id = NULL → no match in USING clause).
 func (r *AuthRepository) GetUserCredentialsByID(ctx context.Context, userID uuid.UUID) (auth.UserCredentials, error) {
-	row := r.db.Pool.QueryRow(ctx,
-		`SELECT user_id, tenant_id, password_hash, mfa_enabled, mfa_secret,
-                mfa_recovery_codes, failed_login_count, locked_until, last_login_at,
-                password_changed_at, created_at, updated_at
-         FROM user_credentials
-         WHERE user_id = $1`,
-		userID,
+	const q = `
+SELECT user_id, tenant_id, password_hash, mfa_enabled, mfa_secret,
+       mfa_recovery_codes, failed_login_count, locked_until, last_login_at,
+       password_changed_at, created_at, updated_at
+FROM user_credentials
+WHERE user_id = $1
+`
+	var (
+		d   userCredentialsDTO
+		err error
 	)
-	d, err := scanUserCredentials(row)
+	err = r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, q, userID)
+		d, err = scanUserCredentials(row)
+		return err
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return auth.UserCredentials{}, auth.ErrUserNotFound
