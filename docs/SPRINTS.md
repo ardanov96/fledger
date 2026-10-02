@@ -14,11 +14,15 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
+| 36 | [Chaos Tests for Outbox Recovery](#sprint-36-chaos-tests-for-outbox-recovery-2026-10-01) | 7 | 2026-10-01 | ✅ Done |
+| 35 | [RLS for user_credentials](#sprint-35-rls-for-user_credentials-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
+| 34 | [W3C SpanContext Upgrade](#sprint-34-w3c-spancontext-upgrade-2026-10-01) | 3B follow-up | 2026-10-01 | ✅ Done |
+| 33 | [Zero-Downtime JWT Rotation](#sprint-33-zero-downtime-jwt-rotation-2026-10-01) | 2E | 2026-10-01 | ✅ Done |
+| 32 | [Login Attempt Partitioning](#sprint-32-login-attempt-partitioning-2026-10-01) | 2E follow-up | 2026-10-01 | ✅ Done |
 | 31 | [Fraud Flag Scanner](#sprint-31-fraud-flag-scanner-2026-10-01) | 8 | 2026-10-01 | ✅ Done |
 | 30 | [Cross-Tenant Worker via app_admin](#sprint-30-cross-tenant-worker-via-app_admin-2026-10-01) | 5A / 4A / 4D / 1B follow-up | 2026-10-01 | ✅ Done |
 | 29 | [RLS-on-Pool Read-Path Fix](#sprint-29-rls-on-pool-read-path-fix-2026-10-01) | 5A / 8 follow-up | 2026-10-01 | ✅ Done |
 | 28 | [Notification Dispatcher](#sprint-28-notification-dispatcher-2026-09-24) | 8 | 2026-09-24 | ✅ Done |
-| 23 | [Tech Debt Foundation](#sprint-23-tech-debt-foundation-2026-09-20) | — | 2026-09-20 | ✅ Done |
 | 24 | [Transactional Outbox + NATS Subscriber](#sprint-24--transactional-outbox--nats-subscriber-2026-09-21) | 4A | 2026-09-21 | ✅ Done |
 | 25 | [Aging Recalculator Worker](#sprint-25--aging-recalculator-worker-2026-09-22) | 4D | 2026-09-22 | ✅ Done |
 | 26 | [FX Rate Auto-Refresh](#sprint-26--fx-rate-auto-refresh-2026-09-23) | 1D follow-up | 2026-09-23 | ✅ Done |
@@ -1216,17 +1220,188 @@ end users see fraud alerts via the existing notification feed (Sprint 28).
 
 ---
 
-## Sprint Backlog (post-Sprint 31)
+## Sprint 32 — Login Attempt Partitioning (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 2E follow-up · **Theme:** Operational scale
+
+#### Goal
+Partition `login_attempts` by month so the table scales to production
+volume (millions of rows) without index maintenance becoming a bottleneck.
+Enables operator-driven retention via partition DROP.
+
+#### Scope
+- **32.1** — Migration `000025_login_attempts_partitioning.{up,down}.sql`:
+  rename existing table → create PARTITION BY RANGE (attempted_at) →
+  pre-create 16 monthly partitions covering [now-3 months ... now+12] →
+  per-partition indexes → copy data → drop old table.
+- **32.2** — Helper function `fmcg_create_login_attempts_partition(year, month)`
+  for ops to create future partitions beyond the pre-created window.
+- **32.3** — `auth_repo.CreateLoginAttemptPartition(ctx, year, month)` —
+  Go-side wrapper around the helper function.
+- **32.4** — `auth_repo.DropLoginAttemptPartition(ctx, year, month)` —
+  DETACH CONCURRENTLY + DROP TABLE for retention enforcement.
+- **32.5** — Integration test `TestIntegration_LoginAttemptsPartitioning`
+  verifies create + verify + drop via repo helpers.
+
+#### Key Artifacts
+- `migrations/000025_login_attempts_partitioning.{up,down}.sql`
+- `internal/repository/postgres/auth_repo.go`: CreateLoginAttemptPartition +
+  DropLoginAttemptPartition
+- `internal/usecase/integration_test.go`: 1 new scenario
+
+#### Learnings
+- Postgres 12+ declarative partitioning works without extension (pg_partman).
+  Migrations stay portable.
+- Pre-creating 16 partitions provides comfortable lead time for ops.
+- DETACH CONCURRENTLY before DROP avoids production read locks during
+  retention enforcement.
+- For pre-000023 tables, ALTER DEFAULT PRIVILEGES doesn't auto-apply;
+  explicit GRANTs needed.
+
+---
+
+## Sprint 33 — Zero-Downtime JWT Rotation (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 2E · **Theme:** Security hardening
+
+#### Goal
+Close the security finding flagged in `docs/runbooks/secret-rotation.md`:
+changing JWT_SECRET invalidated ALL existing tokens, requiring ~30s downtime
++ forcing all users to re-login. Implement zero-downtime rotation via
+multi-key support.
+
+#### Scope
+- **33.1** — `internal/auth/jwt/jwt.go`: `SecretProvider.Secrets()` returns
+  `[][]byte` (was `[]byte`). Added `MultiKeySecret` type. Signer uses
+  primary; Verifier tries primary, then secondary, etc.
+- **33.2** — `internal/auth/jwt/jwt_test.go`: 8 unit tests covering all
+  rotation scenarios.
+- **33.3** — `config.JWTConfig`: added `SecretPrimary` + `SecretSecondary`
+  fields, loaded from `JWT_SECRET_PRIMARY` + `JWT_SECRET_SECONDARY` env
+  vars. Validation accepts either legacy `JWT_SECRET` or new primary.
+- **33.4** — `cmd/api/main.go:buildJWTSecretProvider` — wires config into
+  `jwt.MultiKeySecret`.
+- **33.5** — `docs/runbooks/secret-rotation.md` — updated rotation
+  procedure with zero-downtime 3-phase approach.
+
+#### Key Artifacts
+- 8 new unit tests in `internal/auth/jwt/jwt_test.go`
+- Updated runbook with concrete env commands
+
+#### Production tip
+Three-phase rotation:
+1. Set `JWT_SECRET_PRIMARY=$OLD`, `JWT_SECRET_SECONDARY=$NEW` → deploy
+2. Wait JWT_ACCESS_TTL (15min) + grace period for all access tokens to expire
+3. Set `JWT_SECRET_PRIMARY=$NEW`, unset `JWT_SECRET_SECONDARY` → deploy
+
+---
+
+## Sprint 34 — W3C SpanContext Upgrade (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 3B follow-up · **Theme:** Observability
+
+#### Goal
+Upgrade the custom W3C traceparent implementation (Sprint 18) from
+`trace_id`-only to full `SpanContext` (trace_id + span_id + parent_span_id +
+flags). Each request becomes a root span; DB/NATS operations can create
+child spans via `NewChild()`.
+
+#### Scope
+- **34.1** — `internal/middleware/tracing.go`: replaced `traceIDKey` context
+  value with full `SpanContext` struct. Added `NewChild()`, `WithSpanContext()`,
+  `SpanContextFromContext()`, `LogAttrs()`. `TraceMiddleware` now echoes
+  the full W3C traceparent (with generated span_id).
+- **34.2** — `internal/middleware/tracing_test.go`: 12 unit tests covering
+  root span generation, child propagation, malformed headers, backward compat.
+
+#### Why not OTel SDK directly
+- OTel SDK + OTLP exporter = ~5 MB transitive deps
+- This implementation provides 100% of the W3C propagation without
+  needing a running Tempo collector for the core flow to work
+- W3C format is identical to what OTel SDK emits → forward-compatible
+  drop-in for Sprint 34.1
+
+#### Key Artifacts
+- 12 new unit tests in `internal/middleware/tracing_test.go`
+
+---
+
+## Sprint 35 — RLS for user_credentials (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 5A · **Theme:** Security hardening
+
+#### Goal
+Close the explicit TODO from migration 000014:
+
+> user_credentials (has tenant_id; but RLS would block admin tools —
+>     for Sprint 15 we exclude this table from RLS ... Future Sprint:
+>     add admin RLS bypass via dedicated role.)
+
+The missing piece (app_admin role with RLS bypass) arrived in Sprint 14.
+
+#### Scope
+- **35.1** — Migration `000026_user_credentials_rls.{up,down}.sql`: ENABLE
+  + FORCE RLS on user_credentials. Add tenant_isolation_select +
+  tenant_isolation_modify policies. Add admin_bypass policy for app_admin.
+  Explicit GRANTs to fmcg + app_admin (table was created in 000013, before
+  000023's ALTER DEFAULT PRIVILEGES).
+- **35.2** — `auth_repo.GetUserCredentialsByID`: switched to `RunInReadTx`
+  so the tenant GUC is bound before the SELECT.
+- **35.3** — Integration test `TestIntegration_UserCredentialsRLS`: tenant
+  A reads OK, tenant B gets ErrUserNotFound (RLS makes it look like user
+  not found).
+
+#### Learnings
+- App-layer checks still required — RLS is defense-in-depth, not a
+  replacement for explicit tenant verification.
+- Pre-000013 tables need explicit GRANTs (000023's ALTER DEFAULT PRIVILEGES
+  only applies to tables created AFTER the migration).
+
+---
+
+## Sprint 36 — Chaos Tests for Outbox Recovery (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 7 · **Theme:** Quality / reliability
+
+#### Goal
+Add chaos-style tests that verify the worker stack recovers from
+interruption. Approach: test behavioral invariants rather than injecting
+failures via toxiproxy/chaos-mesh (those would require Docker compose
+changes).
+
+#### Scope
+- **36.1** — `internal/usecase/chaos_test.go`:
+  - `TestIntegration_OutboxPublisher_RecoveryFromInterruption`: insert 5
+    events, cancel ctx mid-cycle, verify NO events marked published,
+    re-fetch with fresh ctx → all 5 still visible, MarkPublished → all
+    marked, re-fetch → 0. Proves DB is source of truth.
+  - `TestIntegration_OutboxPublisher_DuplicateInsertIsIdempotent`: insert
+    same event_id twice (NATS redelivery simulation), verify FetchUnpublished
+    handles it gracefully.
+
+#### Why not full mutation testing
+- Mutation testing mutates Go AST and reruns tests — adds significant
+  build complexity
+- Chaos tests verify the invariants that protect against the failures
+  we actually care about (worker crash, lost events)
+
+#### Why not toxiproxy
+- Toxiproxy injects network failures at the proxy level — requires Docker
+  compose service changes
+- The outbox pattern's invariant (DB is source of truth) makes most
+  network-failure scenarios irrelevant; pgxpool handles reconnection
+
+For Sprint 36.1+: add toxiproxy integration when ops tooling allows.
+
+---
+
+## Sprint Backlog (post-Sprint 36)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 32 | Login Attempt Partitioning | 2B | Migration 000013 follow-up | 2 days |
-| 33 | Secret Rotation Enforcement | 2E | runbooks/secret-rotation.md TODO | 2 days |
-| 34 | OTel SDK Migration | 3B | Sprint 18 follow-up | 3 days |
-| 35 | RLS for `user_credentials` | 5A | ADR-0006:78 TODO | 2 days |
-| 36 | Mutation Testing + Chaos | 7 | Roadmap | 1 week |
 | 37 | Audit other RLS-on-Pool call sites (audit_repo, etc.) | 5A | Sprint 29 follow-up | 3 days |
 | 38 | Per-tenant fraud thresholds | 8 | Sprint 31 follow-up | 1 week |
+| 39 | OTel SDK + Tempo OTLP exporter | 3B | Sprint 34 follow-up | 1 week |
 | TBD | Frontend Next.js Migration | 6 | `web/README.md` limitations | 2 weeks |
 | TBD | FOR UPDATE SKIP LOCKED di outbox FetchUnpublished | 4A follow-up | Sprint 24 follow-up | 1 day |
 | TBD | More event types (invoice.created, period.closed, payment.recorded) | 4A | Sprint 24 follow-up | 1 week |
@@ -1234,21 +1409,21 @@ end users see fraud alerts via the existing notification feed (Sprint 28).
 
 ---
 
-## Cumulative Stats (post-Sprint 29)
+## Cumulative Stats (post-Sprint 36)
 
 | Metric | Value | Source |
 |---|---|---|
-| Total sprints completed | 31 | this file |
+| Total sprints completed | 36 | this file |
 | Total LOC | ~22,500 | docs/index.md (refresh in Sprint 31) |
 | Go files (production) | ~100 | docs/index.md |
 | Go files (test) | ~30 | docs/index.md |
-| Migrations | 18 (added 000024 in Sprint 31) | migrations/ folder |
+| Migrations | 20 (+000025 Sprint 32 login_attempts partitioning, +000026 Sprint 35 user_credentials RLS) | migrations/ folder |
 | ADRs | 8 | docs/adr/ folder |
 | REST endpoints | 39+ (added 3 in Sprint 28) | docs/api/overview.md |
 | Use cases | 9 | internal/usecase/ folder |
 | Repositories | 11 | internal/repository/postgres/ folder |
-| Unit tests | 140+ (+13 fraud rules + 6 fraud service) | docs/index.md |
-| Integration scenarios | 7 (build tag `integration`) | Sprint 17 + Sprint 29 + Sprint 31 |
+| Unit tests | 160+ (+8 jwt rotation + 12 tracing + others in Block 1) | docs/index.md |
+| Integration scenarios | 9 (+1 Sprint 32 partitioning + 1 Sprint 35 user_credentials RLS) | Sprint 17 + Sprint 29 + Sprint 31 + Block 1 |
 | Coverage threshold | 80% (CI-enforced) | .github/workflows/ci.yml |
 | Linters | 37 strict | .golangci.yml |
 | Docker image size | ~20MB (distroless) | Dockerfile |
