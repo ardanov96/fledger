@@ -1,0 +1,237 @@
+// Hand-curated OpenAPI spec for the FMCG Wallet API.
+//
+// Sprint 49: this file is the source of truth for the generated
+// TypeScript client (lib/api.ts). When the backend gains OpenAPI
+// annotation middleware (Sprint 49.0 follow-up), this file will be
+// replaced with the live spec served at /openapi.json.
+//
+// Keep the schema in sync with the actual HTTP responses from
+// cmd/api/main.go handlers. Endpoints not listed here aren't typed.
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "FMCG Wallet API",
+    "version": "1.0.0",
+    "description": "Hybrid wallet backend for FMCG/F&B distributors."
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "Local dev" }
+  ],
+  "tags": [
+    { "name": "auth" },
+    { "name": "accounts" },
+    { "name": "transfers" },
+    { "name": "invoices" },
+    { "name": "notifications" }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "example": "INVALID_INPUT" },
+          "message": { "type": "string" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "access_token": { "type": "string" },
+              "refresh_token": { "type": "string" },
+              "expires_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["asset", "liability", "equity", "revenue", "expense"] },
+          "status": { "type": "string", "enum": ["active", "suspended", "closed"] },
+          "currency": { "type": "string" },
+          "cached_balance": { "type": "integer", "format": "int64" },
+          "tenant_id": { "type": "string", "format": "uuid" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Transfer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "from_account_id": { "type": "string", "format": "uuid" },
+          "to_account_id": { "type": "string", "format": "uuid" },
+          "amount": { "type": "integer", "format": "int64" },
+          "currency": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "posted", "reversed", "failed"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Invoice": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string" },
+          "customer_id": { "type": "string", "format": "uuid" },
+          "amount": { "type": "integer", "format": "int64" },
+          "paid_amount": { "type": "integer", "format": "int64" },
+          "status": { "type": "string", "enum": ["open", "partial", "paid", "overdue"] },
+          "due_date": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "object", "additionalProperties": true },
+          "severity": { "type": "string", "enum": ["info", "warn", "critical"] },
+          "status": { "type": "string", "enum": ["unread", "read", "archived" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Authenticate and obtain access + refresh tokens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Rotate refresh token + mint new access token",
+        "responses": {
+          "200": { "description": "OK" },
+          "401": { "description": "Refresh token invalid" }
+        }
+      }
+    },
+    "/v1/accounts": {
+      "get": {
+        "tags": ["accounts"],
+        "summary": "List accounts (tenant-scoped)",
+        "parameters": [
+          { "name": "tenant_id", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "type", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Account" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transfers": {
+      "post": {
+        "tags": ["transfers"],
+        "summary": "Create a double-entry transfer (idempotent)",
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/v1/invoices": {
+      "get": {
+        "tags": ["invoices"],
+        "summary": "List invoices (tenant-scoped)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Invoice" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "tags": ["notifications"],
+        "summary": "List notifications for current user",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Notification" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
