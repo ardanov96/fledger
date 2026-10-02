@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
@@ -23,6 +25,10 @@ func NewAccountRepository(db *DB) *AccountRepository {
 }
 
 // Create inserts a new account.
+//
+// Sprint 37 fix: was bare Pool.Exec which would fail RLS WITH CHECK on
+// accounts (FORCE RLS in 000014). Now runs inside RunInTx so the tenant
+// GUC is bound from the *tenantctx.Info on ctx.
 func (r *AccountRepository) Create(ctx context.Context, account ledger.Account) error {
 	const q = `
 INSERT INTO accounts (
@@ -32,21 +38,27 @@ INSERT INTO accounts (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 `
-	_, err := r.db.Pool.Exec(ctx, q,
-		account.ID, account.Code, account.Name, string(account.Type),
-		string(account.Status), account.Currency, account.CachedBalance.Minor(),
-		account.OwnerID, account.TenantID, jsonRaw(account.Metadata),
-	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return fmt.Errorf("create account: %w", apperrors.ErrAlreadyExists)
+	return r.db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
+		_, err := pgxTx.Exec(ctx, q,
+			account.ID, account.Code, account.Name, string(account.Type),
+			string(account.Status), account.Currency, account.CachedBalance.Minor(),
+			account.OwnerID, account.TenantID, jsonRaw(account.Metadata),
+		)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return fmt.Errorf("create account: %w", apperrors.ErrAlreadyExists)
+			}
+			return fmt.Errorf("create account: %w", err)
 		}
-		return fmt.Errorf("create account: %w", err)
-	}
-	return nil
+		return nil
+	})
 }
 
 // GetByID fetches a single account.
+//
+// Sprint 37 fix: was bare Pool.QueryRow which returns 0 rows when GUC
+// isn't bound (RLS evaluating tenant_id = NULL → no match). Now uses
+// RunInReadTx so the tenant GUC is bound before the SELECT.
 func (r *AccountRepository) GetByID(ctx context.Context, id string) (ledger.Account, error) {
 	const q = `
 SELECT id, code, name, type, status, currency, cached_balance,
@@ -54,7 +66,12 @@ SELECT id, code, name, type, status, currency, cached_balance,
 FROM accounts
 WHERE id = $1
 `
-	dto, err := scanAccount(r.db.Pool.QueryRow(ctx, q, id))
+	var dto AccountDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanAccount(tx.QueryRow(ctx, q, id))
+		return scanErr
+	})
 	if err != nil {
 		return ledger.Account{}, err
 	}
@@ -62,6 +79,8 @@ WHERE id = $1
 }
 
 // GetByCode fetches by tenant + code.
+//
+// Sprint 37 fix: same as GetByID. Bare Pool.QueryRow would fail RLS.
 func (r *AccountRepository) GetByCode(ctx context.Context, code string) (ledger.Account, error) {
 	const q = `
 SELECT id, code, name, type, status, currency, cached_balance,
@@ -69,7 +88,12 @@ SELECT id, code, name, type, status, currency, cached_balance,
 FROM accounts
 WHERE code = $1
 `
-	dto, err := scanAccount(r.db.Pool.QueryRow(ctx, q, code))
+	var dto AccountDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanAccount(tx.QueryRow(ctx, q, code))
+		return scanErr
+	})
 	if err != nil {
 		return ledger.Account{}, err
 	}
@@ -77,6 +101,9 @@ WHERE code = $1
 }
 
 // List returns accounts matching the filter, cursor-paginated.
+//
+// Sprint 37 fix: was bare Pool.Query which would return 0 rows after
+// RLS filter. Now uses RunInReadTx so the tenant GUC is bound.
 func (r *AccountRepository) List(ctx context.Context, filter ledger.AccountFilter) ([]ledger.Account, error) {
 	const q = `
 SELECT id, code, name, type, status, currency, cached_balance,
@@ -113,31 +140,38 @@ LIMIT $5
 		tenantID = id
 	}
 
-	rows, err := r.db.Pool.Query(ctx, q, tenantID, accountType, status, before, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list accounts: %w", err)
-	}
-	defer rows.Close()
-
-	accounts := make([]ledger.Account, 0, limit)
-	for rows.Next() {
-		var dto AccountDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.Code, &dto.Name, &dto.Type, &dto.Status, &dto.Currency,
-			&dto.CachedBalance, &dto.OwnerID, &dto.TenantID, &dto.Metadata,
-			&dto.CreatedAt, &dto.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan account: %w", err)
+	var accounts []ledger.Account
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, tenantID, accountType, status, before, limit)
+		if err != nil {
+			return fmt.Errorf("list accounts: %w", err)
 		}
-		accounts = append(accounts, dtoToAccount(dto))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+		defer rows.Close()
+
+		accounts = make([]ledger.Account, 0, limit)
+		for rows.Next() {
+			var dto AccountDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.Code, &dto.Name, &dto.Type, &dto.Status, &dto.Currency,
+				&dto.CachedBalance, &dto.OwnerID, &dto.TenantID, &dto.Metadata,
+				&dto.CreatedAt, &dto.UpdatedAt,
+			); err != nil {
+				return fmt.Errorf("scan account: %w", err)
+			}
+			accounts = append(accounts, dtoToAccount(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
 	return accounts, nil
 }
 
 // Update modifies an account.
+//
+// Sprint 37 fix: was bare Pool.Exec which would fail RLS WITH CHECK.
+// Now uses RunInTx with GUC bind.
 func (r *AccountRepository) Update(ctx context.Context, account ledger.Account) error {
 	const q = `
 UPDATE accounts
@@ -145,11 +179,16 @@ SET code = $2, name = $3, type = $4, status = $5, currency = $6,
     cached_balance = $7, owner_id = $8, metadata = $9
 WHERE id = $1
 `
-	tag, err := r.db.Pool.Exec(ctx, q,
-		account.ID, account.Code, account.Name, string(account.Type),
-		string(account.Status), account.Currency, account.CachedBalance.Minor(),
-		account.OwnerID, jsonRaw(account.Metadata),
-	)
+	var tag pgconn.CommandTag
+	err := r.db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
+		var err error
+		tag, err = pgxTx.Exec(ctx, q,
+			account.ID, account.Code, account.Name, string(account.Type),
+			string(account.Status), account.Currency, account.CachedBalance.Minor(),
+			account.OwnerID, jsonRaw(account.Metadata),
+		)
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("update account: %w", err)
 	}

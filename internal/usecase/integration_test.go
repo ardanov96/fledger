@@ -717,6 +717,74 @@ func TestIntegration_UserCredentialsRLS(t *testing.T) {
 	assert.ErrorIs(t, err, auth.ErrUserNotFound, "RLS should make it look like user not found")
 }
 
+// =============================================================================
+// Scenario 10: Sprint 37 — RLS-on-Pool audit for account/invoice/transaction
+// =============================================================================
+//
+// Verifies that the high-impact tenant-scoped repos (account, invoice,
+// transaction) work correctly under RLS with tenant GUC bound.
+//
+// Pre-Sprint 37, these repos used bare Pool.Query/QueryRow/Exec, which
+// would return 0 rows after RLS evaluation (RLS sees NULL → no match).
+// This regression guard ensures the RunInTx/RunInReadTx wrapping works.
+func TestIntegration_AccountInvoiceTransactionRLS(t *testing.T) {
+	env := NewIntegrationTestEnv(t)
+	env.cleanupTenant(t)
+
+	ctx := context.Background()
+	tenantA := uuid.New()
+	userA := uuid.New()
+	setupCtx := env.setTenantCtx(ctx, tenantA, userA)
+
+	// Seed an account
+	accountID := uuid.NewString()
+	account := ledger.Account{
+		ID:            accountID,
+		Code:          "TEST-RLS-001",
+		Name:          "RLS Test Account",
+		Type:          ledger.AccountTypeAsset,
+		Status:        ledger.AccountStatusActive,
+		Currency:      "IDR",
+		CachedBalance: money.NewFromMinor(100_000),
+		OwnerID:       userA.String(),
+		TenantID:      tenantA.String(),
+	}
+	accountRepo := postgres.NewAccountRepository(env.DB)
+	require.NoError(t, accountRepo.Create(setupCtx, account),
+		"Sprint 37 fix: account_repo.Create now uses RunInTx (GUC bound)")
+
+	// --- GetByID ---
+	got, err := accountRepo.GetByID(setupCtx, accountID)
+	require.NoError(t, err, "account_repo.GetByID with GUC bound must succeed")
+	assert.Equal(t, accountID, got.ID)
+
+	// --- GetByCode ---
+	got, err = accountRepo.GetByCode(setupCtx, "TEST-RLS-001")
+	require.NoError(t, err)
+	assert.Equal(t, accountID, got.ID)
+
+	// --- List ---
+	list, err := accountRepo.List(setupCtx, ledger.AccountFilter{
+		TenantID: tenantA.String(),
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	assert.Len(t, list, 1, "should find the 1 seeded account")
+
+	// --- Tenant B cannot see tenant A's account ---
+	tenantB := uuid.New()
+	otherCtx := env.setTenantCtx(ctx, tenantB, uuid.New())
+	_, err = accountRepo.GetByID(otherCtx, accountID)
+	require.Error(t, err, "tenant B should NOT see tenant A's account (RLS)")
+
+	otherList, err := accountRepo.List(otherCtx, ledger.AccountFilter{
+		TenantID: tenantB.String(),
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	assert.Len(t, otherList, 0, "tenant B List should return empty (no rows for B)")
+}
+
 // cleanupNotifications truncates only the notifications table for fast per-test isolation.
 // Use before scenarios that don't otherwise clear notifications.
 func (e *IntegrationTestEnv) cleanupNotifications(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
@@ -51,6 +52,9 @@ INSERT INTO transactions (
 }
 
 // GetByID returns a transaction by ID.
+//
+// Sprint 37 fix: was bare Pool.QueryRow which would return 0 rows after
+// RLS filter. Now uses RunInReadTx so the tenant GUC is bound.
 func (r *TransactionRepository) GetByID(ctx context.Context, id string, withEntries bool) (ledger.Transaction, error) {
 	const q = `
 SELECT id, idempotency_key, status, description, ref_type, ref_id,
@@ -59,7 +63,12 @@ SELECT id, idempotency_key, status, description, ref_type, ref_id,
 FROM transactions
 WHERE id = $1
 `
-	dto, err := scanTransaction(r.db.Pool.QueryRow(ctx, q, id))
+	var dto TransactionDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanTransaction(tx.QueryRow(ctx, q, id))
+		return scanErr
+	})
 	if err != nil {
 		return ledger.Transaction{}, err
 	}
@@ -71,6 +80,8 @@ WHERE id = $1
 }
 
 // GetByIdempotencyKey returns the transaction matching the key.
+//
+// Sprint 37 fix: same as GetByID.
 func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key string) (ledger.Transaction, error) {
 	const q = `
 SELECT id, idempotency_key, status, description, ref_type, ref_id,
@@ -80,7 +91,12 @@ FROM transactions
 WHERE idempotency_key = $1
 LIMIT 1
 `
-	dto, err := scanTransaction(r.db.Pool.QueryRow(ctx, q, key))
+	var dto TransactionDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanTransaction(tx.QueryRow(ctx, q, key))
+		return scanErr
+	})
 	if err != nil {
 		if err.Error() == apperrors.ErrNotFound.Error() {
 			return ledger.Transaction{}, apperrors.ErrIdempotencyConflict
@@ -91,36 +107,54 @@ LIMIT 1
 }
 
 // MarkPosted transitions status from pending to posted.
+//
+// Sprint 37 fix: now uses RunInTx so RLS WITH CHECK passes.
 func (r *TransactionRepository) MarkPosted(ctx context.Context, id string) error {
 	const q = `UPDATE transactions SET status = 'posted', posted_at = now() WHERE id = $1 AND status = 'pending'`
-	tag, err := r.db.Pool.Exec(ctx, q, id)
+	var rowsAffected int64
+	err := r.db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
+		tag, err := pgxTx.Exec(ctx, q, id)
+		if err != nil {
+			return fmt.Errorf("mark posted: %w", err)
+		}
+		rowsAffected = tag.RowsAffected()
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("mark posted: %w", err)
+		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if rowsAffected == 0 {
 		return apperrors.ErrNotFound
 	}
 	return nil
 }
 
 // MarkFailed transitions status from pending to failed.
+//
+// Sprint 37 fix: now uses RunInTx so RLS WITH CHECK passes.
 func (r *TransactionRepository) MarkFailed(ctx context.Context, id string) error {
 	const q = `UPDATE transactions SET status = 'failed' WHERE id = $1 AND status = 'pending'`
-	_, err := r.db.Pool.Exec(ctx, q, id)
-	if err != nil {
-		return fmt.Errorf("mark failed: %w", err)
-	}
-	return nil
+	return r.db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
+		_, err := pgxTx.Exec(ctx, q, id)
+		if err != nil {
+			return fmt.Errorf("mark failed: %w", err)
+		}
+		return nil
+	})
 }
 
 // MarkReversed transitions status to reversed.
+//
+// Sprint 37 fix: now uses RunInTx so RLS WITH CHECK passes.
 func (r *TransactionRepository) MarkReversed(ctx context.Context, id string) error {
 	const q = `UPDATE transactions SET status = 'reversed' WHERE id = $1 AND status = 'posted'`
-	_, err := r.db.Pool.Exec(ctx, q, id)
-	if err != nil {
-		return fmt.Errorf("mark reversed: %w", err)
-	}
-	return nil
+	return r.db.RunInTx(ctx, func(pgxTx pgx.Tx) error {
+		_, err := pgxTx.Exec(ctx, q, id)
+		if err != nil {
+			return fmt.Errorf("mark reversed: %w", err)
+		}
+		return nil
+	})
 }
 
 // dtoToTransaction converts a DB DTO to the domain entity.

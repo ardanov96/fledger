@@ -94,6 +94,8 @@ INSERT INTO invoices (
 	return nil
 }
 
+// GetByID (Sprint 37 fix): uses RunInReadTx so RLS evaluates correctly.
+// Bare Pool.QueryRow would return 0 rows after RLS filter.
 func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (invoice.Invoice, error) {
 	const q = `
 SELECT id, tenant_id, customer_id, code, amount, paid_amount,
@@ -102,13 +104,19 @@ SELECT id, tenant_id, customer_id, code, amount, paid_amount,
 FROM invoices
 WHERE id = $1
 `
-	dto, err := scanInvoice(r.db.Pool.QueryRow(ctx, q, id))
+	var dto InvoiceDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanInvoice(tx.QueryRow(ctx, q, id))
+		return scanErr
+	})
 	if err != nil {
 		return invoice.Invoice{}, err
 	}
 	return dtoToInvoice(dto), nil
 }
 
+// GetByCode (Sprint 37 fix): same as GetByID.
 func (r *InvoiceRepository) GetByCode(ctx context.Context, code string) (invoice.Invoice, error) {
 	const q = `
 SELECT id, tenant_id, customer_id, code, amount, paid_amount,
@@ -118,7 +126,12 @@ FROM invoices
 WHERE code = $1
 LIMIT 1
 `
-	dto, err := scanInvoice(r.db.Pool.QueryRow(ctx, q, code))
+	var dto InvoiceDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		dto, scanErr = scanInvoice(tx.QueryRow(ctx, q, code))
+		return scanErr
+	})
 	if err != nil {
 		return invoice.Invoice{}, err
 	}
@@ -165,7 +178,12 @@ LIMIT $5
 		status = &s
 	}
 
-	rows, err := r.db.Pool.Query(ctx, q, tenantID, customerID, status, nullStr(filter.Cursor), limit)
+	var rows pgx.Rows
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var qErr error
+		rows, qErr = tx.Query(ctx, q, tenantID, customerID, status, nullStr(filter.Cursor), limit)
+		return qErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list invoices: %w", err)
 	}
@@ -264,6 +282,8 @@ INSERT INTO invoice_payments (
 	return nil
 }
 
+// ListAllocations (Sprint 37 fix): uses RunInReadTx so RLS evaluates correctly.
+// invoice_payments table has RLS (000014).
 func (r *InvoiceRepository) ListAllocations(ctx context.Context, paymentID string) ([]invoice.Allocation, error) {
 	const q = `
 SELECT invoice_id, amount
@@ -271,25 +291,34 @@ FROM invoice_payments
 WHERE payment_id = $1
 ORDER BY allocated_at ASC
 `
-	rows, err := r.db.Pool.Query(ctx, q, paymentID)
-	if err != nil {
-		return nil, fmt.Errorf("list allocations: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]invoice.Allocation, 0, 4)
-	for rows.Next() {
-		var alloc invoice.Allocation
-		var amountMinor int64
-		if err := rows.Scan(&alloc.InvoiceID, &amountMinor); err != nil {
-			return nil, fmt.Errorf("scan allocation: %w", err)
+	var out []invoice.Allocation
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, paymentID)
+		if err != nil {
+			return fmt.Errorf("list allocations: %w", err)
 		}
-		alloc.Amount = money.NewFromMinor(amountMinor)
-		out = append(out, alloc)
+		defer rows.Close()
+
+		out = make([]invoice.Allocation, 0, 4)
+		for rows.Next() {
+			var alloc invoice.Allocation
+			var amountMinor int64
+			if err := rows.Scan(&alloc.InvoiceID, &amountMinor); err != nil {
+				return fmt.Errorf("scan allocation: %w", err)
+			}
+			alloc.Amount = money.NewFromMinor(amountMinor)
+			out = append(out, alloc)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
+// GetAging (Sprint 37 fix): uses RunInReadTx so RLS evaluates correctly.
+// v_invoice_aging is a view that joins invoices (RLS) → RLS propagates.
 func (r *InvoiceRepository) GetAging(ctx context.Context, tenantID, customerID string) ([]invoice.AgingSummary, error) {
 	var q string
 	var args []any
@@ -314,23 +343,30 @@ ORDER BY bucket
 		args = []any{tenantID}
 	}
 
-	rows, err := r.db.Pool.Query(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("get aging: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]invoice.AgingSummary, 0, 6)
-	for rows.Next() {
-		var s invoice.AgingSummary
-		if err := rows.Scan(&s.Bucket, &s.Count, &s.OutstandingMinor); err != nil {
-			return nil, fmt.Errorf("scan aging: %w", err)
+	var out []invoice.AgingSummary
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, args...)
+		if err != nil {
+			return fmt.Errorf("get aging: %w", err)
 		}
-		s.TenantID = tenantID
-		s.CustomerID = customerID
-		out = append(out, s)
+		defer rows.Close()
+
+		out = make([]invoice.AgingSummary, 0, 6)
+for rows.Next() {
+			var s invoice.AgingSummary
+			if err := rows.Scan(&s.Bucket, &s.Count, &s.OutstandingMinor); err != nil {
+				return fmt.Errorf("scan aging: %w", err)
+			}
+			s.TenantID = tenantID
+			s.CustomerID = customerID
+			out = append(out, s)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // =============================================================================
