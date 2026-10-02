@@ -121,7 +121,7 @@ func TestFraudScanner_LargeAmount_CreatesFlag_AndCriticalNotification(t *testing
 		NotifNotifier: notif,
 		Broker:        &fakeFraudBroker{},
 		Subjects:      []string{"fmcg.transfer.posted"},
-		Rules: []fraud.Rule{
+		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
 			fraud.LargeAmountRule{ThresholdMinor: 50_000_000},
 		},
 		Logger: slog.Default(),
@@ -162,7 +162,7 @@ func TestFraudScanner_InfoSeverity_NoNotification(t *testing.T) {
 		NotifNotifier: notif,
 		Broker:        &fakeFraudBroker{},
 		Subjects:      []string{"fmcg.transfer.posted"},
-		Rules: []fraud.Rule{
+		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
 			fraud.FirstTimeRecipientRule{
 				HasHistory: func(_ context.Context, _, _, _ uuid.UUID) (bool, error) {
 					return false, nil // always first-time
@@ -198,7 +198,7 @@ func TestFraudScanner_NoMatchingRules_NoFlags(t *testing.T) {
 		NotifNotifier: notif,
 		Broker:        &fakeFraudBroker{},
 		Subjects:      []string{"fmcg.transfer.posted"},
-		Rules: []fraud.Rule{
+		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
 			fraud.LargeAmountRule{ThresholdMinor: 1_000_000_000}, // 1B IDR — too high
 		},
 		Logger: slog.Default(),
@@ -220,7 +220,7 @@ func TestFraudScanner_MalformedPayload_NoError(t *testing.T) {
 	svc := NewFraudScannerService(FraudDeps{
 		Repo: repo, NotifNotifier: notif, Broker: &fakeFraudBroker{},
 		Subjects: []string{"fmcg.transfer.posted"},
-		Rules:    []fraud.Rule{fraud.LargeAmountRule{ThresholdMinor: 1}},
+		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {return []fraud.Rule{fraud.LargeAmountRule{ThresholdMinor: 1}}},
 		Logger:   slog.Default(),
 	})
 
@@ -239,7 +239,7 @@ func TestFraudScanner_RepoError_DoesNotPanic(t *testing.T) {
 	svc := NewFraudScannerService(FraudDeps{
 		Repo: repo, NotifNotifier: notif, Broker: &fakeFraudBroker{},
 		Subjects: []string{"fmcg.transfer.posted"},
-		Rules:    []fraud.Rule{fraud.LargeAmountRule{ThresholdMinor: 1}},
+		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {return []fraud.Rule{fraud.LargeAmountRule{ThresholdMinor: 1}}},
 		Logger:   slog.Default(),
 	})
 
@@ -256,7 +256,7 @@ func TestFraudScanner_MultipleRulesMatching_CreatesMultipleFlags(t *testing.T) {
 	svc := NewFraudScannerService(FraudDeps{
 		Repo: repo, NotifNotifier: notif, Broker: &fakeFraudBroker{},
 		Subjects: []string{"fmcg.transfer.posted"},
-		Rules: []fraud.Rule{
+		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
 			fraud.LargeAmountRule{ThresholdMinor: 1},
 			fraud.FirstTimeRecipientRule{
 				HasHistory: func(_ context.Context, _, _, _ uuid.UUID) (bool, error) { return false, nil },

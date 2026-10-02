@@ -48,7 +48,9 @@ type FraudDeps struct {
 	NotifNotifier NotificationCreator // Sprint 31: emit notification for critical flags
 	Broker        EventSubscriber
 	Subjects      []string // e.g. ["fmcg.transfer.posted"]
-	Rules         []fraud.Rule
+	// Rules returns the per-tenant ruleset for evaluation. Sprint 38:
+	// closure that resolves per-tenant settings (with cache) on demand.
+	Rules func(ctx context.Context, tenantID uuid.UUID) []fraud.Rule
 	Logger        *slog.Logger
 }
 
@@ -65,7 +67,7 @@ type FraudScannerService struct {
 	notifier   NotificationCreator
 	broker     EventSubscriber
 	subjects   []string
-	rules      []fraud.Rule
+	rules      func(ctx context.Context, tenantID uuid.UUID) []fraud.Rule
 	log        *slog.Logger
 }
 
@@ -146,7 +148,10 @@ func (s *FraudScannerService) handleEvent(ctx context.Context, subject string, p
 	})
 
 	flagsCreated := 0
-	for _, rule := range s.rules {
+	// Sprint 38: resolve rules per-tenant (each tenant may have different
+	// thresholds + disabled rules).
+	rules := s.rules(txCtx, te.TenantID)
+	for _, rule := range rules {
 		matches, err := rule.Evaluate(txCtx, te)
 		if err != nil {
 			s.log.Warn("fraud rule evaluation failed",

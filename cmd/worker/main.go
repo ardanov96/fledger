@@ -511,14 +511,24 @@ func wireFraudWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) 
 	db := postgres.NewDB(pool)
 	fraudRepo := postgres.NewFraudFlagRepository(db)
 	notifRepo := postgres.NewNotificationRepository(db)
+	settingsRepo := postgres.NewTenantFraudSettingsRepository(db)
+
+	// Sprint 38: tenant fraud settings service with 60s in-memory cache.
+	settingsSvc := usecase.NewTenantFraudSettingsService(usecase.TenantFraudSettingsDeps{
+		Repo:     settingsRepo,
+		Fallback: cfg.Fraud,
+		CacheTTL: 60 * time.Second,
+	})
 
 	natsClient, err := infra.NewNATSClient(ctx, cfg.NATS, log)
 	if err != nil {
 		return fmt.Errorf("connect nats: %w", err)
 	}
 
-	// Configure rules from config
-	rules := buildFraudRules(cfg, fraudRepo)
+	// Configure rules from config + per-tenant overrides (Sprint 38).
+	// buildFraudRules returns a resolver that reads from settingsSvc at
+	// event-handling time so per-tenant overrides apply.
+	rulesResolver := buildFraudRules(cfg, fraudRepo, settingsSvc)
 
 	// Build a notification creator for critical-flag notifications.
 	// We use the existing notification dispatcher's PersistDirect path
@@ -532,7 +542,7 @@ func wireFraudWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) 
 		NotifNotifier: notifCreator,
 		Broker:        natsClient,
 		Subjects:      []string{"fmcg.transfer.posted"},
-		Rules:         rules,
+		Rules:         rulesResolver,
 		Logger:        log,
 	})
 	if err := svc.Subscribe(ctx); err != nil {
@@ -541,49 +551,83 @@ func wireFraudWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) 
 
 	log.Info("fraud scanner worker started",
 		"subjects", "fmcg.transfer.posted",
-		"rules", len(rules),
+		"rules", "per-tenant-resolver",
 		"nats_url", cfg.NATS.URL,
 	)
 	return nil
 }
 
-// buildFraudRules constructs the 4 rules (Sprint 31 MVP) from config.
-func buildFraudRules(cfg *config.Config, repo *postgres.FraudFlagRepository) []fraud.Rule {
-	largeThreshold := cfg.Fraud.LargeAmountThresholdMinor
-	if largeThreshold <= 0 {
-		largeThreshold = 50_000_000 // 50M IDR minor = ~$3k USD
+// buildFraudRules constructs the 4 rules (Sprint 31 MVP) from config +
+// per-tenant overrides (Sprint 38).
+//
+// The returned closure reads per-tenant settings from settingsService on
+// each invocation, so changing tenant_fraud_settings invalidates the
+// service's cache (60s TTL) and new values take effect.
+//
+// Currently called once at startup; rules then hold references to the
+// service and lookup functions. If a tenant's settings change, the
+// fraud service re-fetches on the next rule evaluation.
+func buildFraudRules(
+	cfg *config.Config,
+	repo *postgres.FraudFlagRepository,
+	settingsSvc *usecase.TenantFraudSettingsService,
+) func(ctx context.Context, tenantID uuid.UUID) []fraud.Rule {
+	// Hard defaults if env config is zero.
+	defaultLarge := cfg.Fraud.LargeAmountThresholdMinor
+	if defaultLarge <= 0 {
+		defaultLarge = 50_000_000
 	}
-	velocityMax := cfg.Fraud.VelocityMaxCount
-	if velocityMax <= 0 {
-		velocityMax = 10
+	defaultVelocityMax := cfg.Fraud.VelocityMaxCount
+	if defaultVelocityMax <= 0 {
+		defaultVelocityMax = 10
 	}
-	velocityWindow := cfg.Fraud.VelocityWindow
-	if velocityWindow <= 0 {
-		velocityWindow = 5 * time.Minute
+	defaultVelocityWindow := cfg.Fraud.VelocityWindow
+	if defaultVelocityWindow <= 0 {
+		defaultVelocityWindow = 5 * time.Minute
 	}
-	offHoursStart := cfg.Fraud.OffHoursStart
-	if offHoursStart < 0 || offHoursStart > 23 {
-		offHoursStart = 6
+	defaultOffStart := cfg.Fraud.OffHoursStart
+	if defaultOffStart < 0 || defaultOffStart > 23 {
+		defaultOffStart = 6
 	}
-	offHoursEnd := cfg.Fraud.OffHoursEnd
-	if offHoursEnd < 0 || offHoursEnd > 23 {
-		offHoursEnd = 22
+	defaultOffEnd := cfg.Fraud.OffHoursEnd
+	if defaultOffEnd < 0 || defaultOffEnd > 23 {
+		defaultOffEnd = 22
 	}
-	return []fraud.Rule{
-		fraud.LargeAmountRule{ThresholdMinor: largeThreshold},
-		fraud.OffHoursRule{StartHour: offHoursStart, EndHour: offHoursEnd},
-		fraud.VelocityRule{
-			MaxCount: velocityMax,
-			Window:   velocityWindow,
-			LookupCount: func(ctx context.Context, tenantID, accountID uuid.UUID, window time.Duration) (int, error) {
-				return repo.CountRecentByAccount(ctx, tenantID, accountID, window)
-			},
-		},
-		fraud.FirstTimeRecipientRule{
-			HasHistory: func(ctx context.Context, tenantID, fromAccount, toAccount uuid.UUID) (bool, error) {
-				return repo.HasRecipientHistory(ctx, tenantID, fromAccount, toAccount)
-			},
-		},
+
+	// Return a closure that resolves per-tenant settings at call time.
+	return func(ctx context.Context, tenantID uuid.UUID) []fraud.Rule {
+		settings := settingsSvc.GetForTenant(ctx, tenantID)
+
+		largeThreshold := settings.EffectiveLargeAmount(defaultLarge)
+		velocityMax := settings.EffectiveVelocityMax(defaultVelocityMax)
+		velocityWindowSec := settings.EffectiveVelocityWindowSeconds(int(defaultVelocityWindow.Seconds()))
+		offStart := settings.EffectiveOffHoursStartHour(defaultOffStart)
+		offEnd := settings.EffectiveOffHoursEndHour(defaultOffEnd)
+
+		out := []fraud.Rule{}
+		if !settings.IsRuleDisabled("large_amount") {
+			out = append(out, fraud.LargeAmountRule{ThresholdMinor: largeThreshold})
+		}
+		if !settings.IsRuleDisabled("off_hours") {
+			out = append(out, fraud.OffHoursRule{StartHour: offStart, EndHour: offEnd})
+		}
+		if !settings.IsRuleDisabled("velocity") {
+			out = append(out, fraud.VelocityRule{
+				MaxCount: velocityMax,
+				Window:   time.Duration(velocityWindowSec) * time.Second,
+				LookupCount: func(ctx context.Context, tenantID, accountID uuid.UUID, window time.Duration) (int, error) {
+					return repo.CountRecentByAccount(ctx, tenantID, accountID, window)
+				},
+			})
+		}
+		if !settings.IsRuleDisabled("first_time_recipient") {
+			out = append(out, fraud.FirstTimeRecipientRule{
+				HasHistory: func(ctx context.Context, tenantID, fromAccount, toAccount uuid.UUID) (bool, error) {
+					return repo.HasRecipientHistory(ctx, tenantID, fromAccount, toAccount)
+				},
+			})
+		}
+		return out
 	}
 }
 
