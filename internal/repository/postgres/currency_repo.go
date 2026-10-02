@@ -242,15 +242,22 @@ ORDER BY 1
 }
 
 // GetFxRate reads a rate by id.
+//
+// Sprint 44 fix: fx_rates has RLS (migration 000014 + 000015). Was bare
+// Pool.QueryRow. Now uses RunInReadTx so the tenant GUC is bound.
 func (r *CurrencyRepository) GetFxRate(ctx context.Context, id uuid.UUID) (currency.FxRate, error) {
-	row := r.db.Pool.QueryRow(ctx,
-		`SELECT id, tenant_id, from_currency, to_currency, rate,
-                effective_at, expires_at, source, created_by, created_at
-         FROM fx_rates
-         WHERE id = $1`,
-		id,
-	)
-	d, err := scanFxRate(row)
+	const q = `
+SELECT id, tenant_id, from_currency, to_currency, rate,
+       effective_at, expires_at, source, created_by, created_at
+FROM fx_rates
+WHERE id = $1
+`
+	var d fxRateDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		d, scanErr = scanFxRate(tx.QueryRow(ctx, q, id))
+		return scanErr
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return currency.FxRate{}, currency.ErrFxRateNotFound
@@ -262,21 +269,27 @@ func (r *CurrencyRepository) GetFxRate(ctx context.Context, id uuid.UUID) (curre
 
 // GetLatestFxRate returns the most recent active rate for (from, to) at time t.
 // "Active" means: effective_at <= t < expires_at. Most recent = largest effective_at.
+//
+// Sprint 44 fix: uses RunInReadTx so RLS evaluates against tenant.
 func (r *CurrencyRepository) GetLatestFxRate(ctx context.Context, tenantID uuid.UUID, from, to string, at time.Time) (currency.FxRate, error) {
-	row := r.db.Pool.QueryRow(ctx,
-		`SELECT id, tenant_id, from_currency, to_currency, rate,
-                effective_at, expires_at, source, created_by, created_at
-         FROM fx_rates
-         WHERE tenant_id    = $1
-           AND from_currency = $2
-           AND to_currency   = $3
-           AND effective_at <= $4
-           AND expires_at    > $4
-         ORDER BY effective_at DESC
-         LIMIT 1`,
-		tenantID, from, to, at,
-	)
-	d, err := scanFxRate(row)
+	const q = `
+SELECT id, tenant_id, from_currency, to_currency, rate,
+       effective_at, expires_at, source, created_by, created_at
+FROM fx_rates
+WHERE tenant_id    = $1
+  AND from_currency = $2
+  AND to_currency   = $3
+  AND effective_at <= $4
+  AND expires_at    > $4
+ORDER BY effective_at DESC
+LIMIT 1
+`
+	var d fxRateDTO
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		var scanErr error
+		d, scanErr = scanFxRate(tx.QueryRow(ctx, q, tenantID, from, to, at))
+		return scanErr
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return currency.FxRate{}, currency.ErrFxRateNotFound
@@ -315,22 +328,26 @@ func (r *CurrencyRepository) ListFxRates(ctx context.Context, tenantID uuid.UUID
 	q += fmt.Sprintf(` ORDER BY effective_at DESC LIMIT $%d`, idx)
 	args = append(args, limit)
 
-	rows, err := r.db.Pool.Query(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list fx rates: %w", err)
-	}
-	defer rows.Close()
-
 	var out []currency.FxRate
-	for rows.Next() {
-		d, err := scanFxRate(rows)
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, args...)
 		if err != nil {
-			return nil, fmt.Errorf("scan fx rate: %w", err)
+			return fmt.Errorf("list fx rates: %w", err)
 		}
-		out = append(out, dtoToFxRate(d))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows err: %w", err)
+		defer rows.Close()
+
+		out = make([]currency.FxRate, 0, limit)
+		for rows.Next() {
+			d, err := scanFxRate(rows)
+			if err != nil {
+				return fmt.Errorf("scan fx rate: %w", err)
+			}
+			out = append(out, dtoToFxRate(d))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
