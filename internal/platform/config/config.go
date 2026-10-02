@@ -146,7 +146,8 @@ type RateLimitConfig struct {
 
 // TelemetryConfig holds observability settings.
 type TelemetryConfig struct {
-	OTLPEndpoint  string
+	OTELEnabled   bool    // Sprint 39: enable OpenTelemetry SDK + OTLP exporter
+	OTLPEndpoint  string  // Sprint 39 default: http://localhost:4318
 	ServiceName   string
 	SamplerRatio  float64
 	MetricsEnabled bool
@@ -317,6 +318,7 @@ func Load() (*Config, error) {
 			LoginBurst:  v.GetInt("RATELIMIT_LOGIN_BURST"),
 		},
 		Telemetry: TelemetryConfig{
+			OTELEnabled:    v.GetBool("OTEL_ENABLED"),
 			OTLPEndpoint:   v.GetString("OTEL_EXPORTER_OTLP_ENDPOINT"),
 			ServiceName:    v.GetString("OTEL_SERVICE_NAME"),
 			SamplerRatio:   v.GetFloat64("OTEL_SAMPLER_RATIO"),

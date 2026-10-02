@@ -31,6 +31,7 @@ import (
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 	"github.com/runut/fmcg-wallet/internal/platform/logger"
 	"github.com/runut/fmcg-wallet/internal/repository/postgres"
+	"github.com/runut/fmcg-wallet/internal/telemetry"
 	"github.com/runut/fmcg-wallet/internal/usecase"
 	"github.com/runut/fmcg-wallet/internal/worker"
 )
@@ -305,6 +306,32 @@ func run() error {
 		natsClient = nil
 	} else {
 		defer natsClient.Close()
+	}
+
+	// Sprint 39: OpenTelemetry SDK init (optional via OTEL_ENABLED).
+	// When enabled, sets up a TracerProvider with OTLP/HTTP exporter
+	// to the configured endpoint (default http://localhost:4318 for
+	// Tempo). Coexists with the existing TraceMiddleware (Sprint 34)
+	// which provides trace_id in logs even when OTel is off.
+	var otelShutdown telemetry.ShutdownFunc
+	if cfg.Telemetry.OTELEnabled {
+		var err error
+		otelShutdown, err = telemetry.InitTracer(ctx, telemetry.TelemetryConfig{
+			Enabled:      cfg.Telemetry.OTELEnabled,
+			OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
+			ServiceName:  cfg.Telemetry.ServiceName,
+			SamplerRatio: cfg.Telemetry.SamplerRatio,
+		})
+		if err != nil {
+			log.Warn("OTel init failed; running without distributed tracing",
+				"error", err, "endpoint", cfg.Telemetry.OTLPEndpoint)
+		} else {
+			defer func() { _ = otelShutdown(context.Background()) }()
+			log.Info("OTel tracing enabled",
+				"endpoint", cfg.Telemetry.OTLPEndpoint,
+				"service", cfg.Telemetry.ServiceName,
+				"sampler_ratio", cfg.Telemetry.SamplerRatio)
+		}
 	}
 
 	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter, globalLimiter, transferLimiter, natsClient)
