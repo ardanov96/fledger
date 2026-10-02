@@ -14,6 +14,9 @@
 
 | # | Sprint | Fase | Date | Status |
 |---|---|---|---|---|
+| 39 | [OTel SDK + OTLP Exporter](#sprint-39-otel-sdk--otlp-exporter-2026-10-01) | 3B | 2026-10-01 | ✅ Done |
+| 38 | [Per-Tenant Fraud Thresholds](#sprint-38-per-tenant-fraud-thresholds-2026-10-01) | 8 | 2026-10-01 | ✅ Done |
+| 37 | [RLS-on-Pool Audit (Account/Invoice/Transaction)](#sprint-37-rls-on-pool-audit-accountinvoicetransaction-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
 | 36 | [Chaos Tests for Outbox Recovery](#sprint-36-chaos-tests-for-outbox-recovery-2026-10-01) | 7 | 2026-10-01 | ✅ Done |
 | 35 | [RLS for user_credentials](#sprint-35-rls-for-user_credentials-2026-10-01) | 5A | 2026-10-01 | ✅ Done |
 | 34 | [W3C SpanContext Upgrade](#sprint-34-w3c-spancontext-upgrade-2026-10-01) | 3B follow-up | 2026-10-01 | ✅ Done |
@@ -1395,13 +1398,117 @@ For Sprint 36.1+: add toxiproxy integration when ops tooling allows.
 
 ---
 
-## Sprint Backlog (post-Sprint 36)
+## Sprint 37 — RLS-on-Pool Audit (Account/Invoice/Transaction) (2026-10-01)
+
+**Status:** ✅ Done (partial — high-impact repos fixed, follow-ups in 37.1) · **Fase:** 5A · **Theme:** Defense-in-depth
+
+#### Goal
+Audit remaining `r.db.Pool.Query/QueryRow/Exec` call sites that were still
+using bare pool. RLS enabled since Sprint 15 / migration 000014 means
+these queries were returning zero rows when GUC wasn't bound. The most
+critical paths (account, invoice, transaction) silently failed in
+production for HTTP endpoints that depend on them.
+
+#### Scope
+- **37.1** — `internal/repository/postgres/account_repo.go`: Create +
+  GetByID + GetByCode + List + Update now use RunInTx/RunInReadTx.
+- **37.2** — `internal/repository/postgres/transaction_repo.go`:
+  GetByID + GetByIdempotencyKey + MarkPosted + MarkFailed + MarkReversed.
+- **37.3** — `internal/repository/postgres/invoice_repo.go`:
+  GetByID + GetByCode + List + ListAllocations + GetAging.
+- **37.4** — `internal/usecase/integration_test.go`:
+  TestIntegration_AccountInvoiceTransactionRLS — verifies Create +
+  GetByID + GetByCode + List work post-fix AND tenant B cannot see
+  tenant A's rows.
+
+#### Remaining (deferred to Sprint 37.1 follow-up)
+- `entry_repo.go`: ListByTransaction, ListByAccount, GetCachedBalance,
+  GetTrialBalance — ledger_entries has RLS
+- `audit_repo.go`: List, ListGUCBinds, ListByActor — audit_logs has NO
+  RLS (intentionally operator-visible across tenants) → OK as-is
+- `reconciler_repo.go`, `period_repo.go` — need per-method audit
+
+These don't affect the primary user-facing API paths.
+
+---
+
+## Sprint 38 — Per-Tenant Fraud Thresholds (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 8 · **Theme:** Multi-tenant config
+
+#### Goal
+Replace env-only fraud thresholds with per-tenant overrides so each
+tenant can tune their own risk appetite.
+
+#### Scope
+- **38.1** — `migrations/000027_tenant_fraud_settings.{up,down}.sql`:
+  new table with RLS + admin_bypass (auto-grants via 000023 ALTER
+  DEFAULT PRIVILEGES). CHECK constraints on positive thresholds +
+  0-23 hour bounds.
+- **38.2** — `internal/domain/tenant_fraud_settings.go`:
+  TenantFraudSettings entity with EffectiveX methods (return override
+  or fallback).
+- **38.3** — `internal/repository/postgres/tenant_fraud_settings_repo.go`:
+  Postgres impl with GetByTenant (RunInReadTx), Upsert (RunInTx), Delete.
+- **38.4** — `internal/usecase/tenant_fraud_settings_service.go`:
+  caching service with 60s TTL + Invalidate() / InvalidateAll().
+- **38.5** — `internal/usecase/tenant_fraud_settings_service_test.go`:
+  6 unit tests (default fallback, per-tenant override, cache
+  invalidation, DB error fallback, disabled rules, partial override).
+- **38.6** — `internal/usecase/fraud_service.go`: Rules field changed
+  from `[]fraud.Rule` to `func(ctx, tenantID) []fraud.Rule` (closure
+  resolved per-event per-tenant).
+- **38.7** — `cmd/worker/main.go`: wireFraudWorker now creates the
+  settings service and passes a per-tenant closure.
+
+#### Production tips
+- Set per-tenant threshold:
+  `INSERT INTO tenant_fraud_settings (tenant_id, large_amount_threshold_minor) VALUES ('<uuid>', 500000000) ON CONFLICT (tenant_id) DO UPDATE SET large_amount_threshold_minor = EXCLUDED.large_amount_threshold_minor;`
+- Disable a rule:
+  `UPDATE tenant_fraud_settings SET disabled_rules = '["off_hours"]'::jsonb WHERE tenant_id = '<uuid>';`
+
+---
+
+## Sprint 39 — OTel SDK + OTLP Exporter (2026-10-01)
+
+**Status:** ✅ Done · **Fase:** 3B · **Theme:** Distributed tracing
+
+#### Goal
+Replace the W3C-only trace context (Sprint 34) with full OpenTelemetry SDK
++ OTLP/HTTP exporter to send spans to a real collector (Tempo).
+
+#### Scope
+- **39.1** — `go.mod`: new deps for OTel SDK + OTLP HTTP exporter +
+  otelhttp contrib.
+- **39.2** — `internal/telemetry/otel.go`: new package. InitTracer(ctx,
+  cfg) returns ShutdownFunc. TelemetryConfig with Enabled / OTLPEndpoint
+  / ServiceName / SamplerRatio. HTTPMiddleware returns otelhttp-wrapped
+  handler with method+path span name.
+- **39.3** — `internal/telemetry/otel_test.go`: 4 unit tests (disabled
+  no-op, stripScheme, defaults, shutdown timeout).
+- **39.4** — `internal/platform/config/config.go`: added OTELEnabled
+  bool field, OTEL_ENABLED env var.
+- **39.5** — `cmd/api/main.go`: call telemetry.InitTracer in run()
+  when OTEL_ENABLED, defer shutdown. Also fixed pre-existing missing
+  httpx import that was blocking compilation.
+
+#### Operational notes
+- Enable: `OTEL_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 OTEL_SERVICE_NAME=fmcg-wallet-api`
+- When disabled, no behavior change (current TraceMiddleware still works)
+- W3C trace context compatible with Sprint 34 — same propagation format
+- Coexistence: TraceMiddleware (Sprint 34) provides trace_id in logs
+  even when OTel is off; otelhttp (this sprint) provides full span
+  creation when OTel is on. Both can run side-by-side.
+
+---
+
+## Sprint Backlog (post-Sprint 39)
 
 | Sprint | Title | Fase | Source | Effort |
 |---|---|---|---|---|
-| 37 | Audit other RLS-on-Pool call sites (audit_repo, etc.) | 5A | Sprint 29 follow-up | 3 days |
-| 38 | Per-tenant fraud thresholds | 8 | Sprint 31 follow-up | 1 week |
-| 39 | OTel SDK + Tempo OTLP exporter | 3B | Sprint 34 follow-up | 1 week |
+| 40 | Audit remaining RLS-on-Pool (entry, reconciler, period repos) | 5A | Sprint 37 follow-up | 3 days |
+| 41 | toxiproxy chaos integration | 7 | Sprint 36 follow-up | 1 week |
+| 42 | Cascade / dedup fraud flags (transfer_id, rule_name unique) | 8 | Sprint 31 follow-up | 2 days |
 | TBD | Frontend Next.js Migration | 6 | `web/README.md` limitations | 2 weeks |
 | TBD | FOR UPDATE SKIP LOCKED di outbox FetchUnpublished | 4A follow-up | Sprint 24 follow-up | 1 day |
 | TBD | More event types (invoice.created, period.closed, payment.recorded) | 4A | Sprint 24 follow-up | 1 week |
@@ -1409,21 +1516,21 @@ For Sprint 36.1+: add toxiproxy integration when ops tooling allows.
 
 ---
 
-## Cumulative Stats (post-Sprint 36)
+## Cumulative Stats (post-Sprint 39)
 
 | Metric | Value | Source |
 |---|---|---|
-| Total sprints completed | 36 | this file |
+| Total sprints completed | 39 | this file |
 | Total LOC | ~22,500 | docs/index.md (refresh in Sprint 31) |
 | Go files (production) | ~100 | docs/index.md |
 | Go files (test) | ~30 | docs/index.md |
-| Migrations | 20 (+000025 Sprint 32 login_attempts partitioning, +000026 Sprint 35 user_credentials RLS) | migrations/ folder |
+| Migrations | 21 (+000027 Sprint 38 tenant_fraud_settings) | migrations/ folder |
 | ADRs | 8 | docs/adr/ folder |
 | REST endpoints | 39+ (added 3 in Sprint 28) | docs/api/overview.md |
 | Use cases | 9 | internal/usecase/ folder |
 | Repositories | 11 | internal/repository/postgres/ folder |
-| Unit tests | 160+ (+8 jwt rotation + 12 tracing + others in Block 1) | docs/index.md |
-| Integration scenarios | 9 (+1 Sprint 32 partitioning + 1 Sprint 35 user_credentials RLS) | Sprint 17 + Sprint 29 + Sprint 31 + Block 1 |
+| Unit tests | 170+ (+6 tenant fraud settings + 4 OTel in Block 2) | docs/index.md |
+| Integration scenarios | 10 (+1 Sprint 37 account/invoice/transaction RLS) | Sprint 17 + Sprint 29 + Sprint 31 + Block 1 + Sprint 37 |
 | Coverage threshold | 80% (CI-enforced) | .github/workflows/ci.yml |
 | Linters | 37 strict | .golangci.yml |
 | Docker image size | ~20MB (distroless) | Dockerfile |
