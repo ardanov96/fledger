@@ -64,6 +64,12 @@ const (
 // additional events added per-domain in later sprints).
 const (
 	EventTransferPosted = "transfer.posted"
+
+	// Sprint 45: more event types so downstream consumers (notifications,
+	// fraud, analytics) can react to invoice + payment lifecycle events.
+	EventInvoiceCreated   = "invoice.created"
+	EventPaymentRecorded  = "payment.recorded"
+	EventInvoiceOverdue   = "invoice.overdue"
 )
 
 // Standard subject prefixes. Matches NATS_STREAM_SUBJECTS default "fmcg.>".
@@ -71,6 +77,8 @@ const (
 	SubjectPrefix = "fmcg."
 
 	SubjectTransferPosted = "fmcg.transfer.posted"
+	SubjectInvoiceCreated = "fmcg.invoice.created"
+	SubjectPaymentRecorded = "fmcg.payment.recorded"
 )
 
 // =============================================================================

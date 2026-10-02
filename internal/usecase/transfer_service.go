@@ -86,14 +86,26 @@ type PeriodResolver interface {
 
 // OutboxWriter abstracts the outbox insert so the use case layer stays
 // decoupled from the postgres package. Implemented in cmd/api by an adapter
-// that extracts the pgx.Tx from the ledger.Tx and wraps it as outbox.Tx.
+// that extracts the pgx.Tx from the typed domain Tx (ledger/invoice/period)
+// and wraps it as outbox.Tx.
 //
 // Sprint 24 / Fase 4A: used to write the `transfer.posted` event in the
 // SAME tx as the ledger writes. If the transfer tx commits, the event is
 // durable and will be published by the OutboxPublisherWorker. If it rolls
 // back, the event row is never written — no orphan events.
+//
+// Sprint 45: extends with AppendInvoiceCreated + AppendPaymentRecorded.
+// Same tx semantics — both are written in the business tx so they
+// commit/rollback together with the underlying entity.
+//
+// The tx parameter is `any` rather than a typed domain Tx (e.g. ledger.Tx)
+// because the same OutboxWriter is used by services holding different
+// domain Tx types (TransferService holds ledger.Tx, InvoiceService holds
+// invoice.Tx). The adapter in cmd/api type-switches on the concrete type.
 type OutboxWriter interface {
-	AppendTransferPosted(ctx context.Context, tx ledger.Tx, e outbox.Event) error
+	AppendTransferPosted(ctx context.Context, tx any, e outbox.Event) error
+	AppendInvoiceCreated(ctx context.Context, tx any, e outbox.Event) error
+	AppendPaymentRecorded(ctx context.Context, tx any, e outbox.Event) error
 }
 
 // TransferServiceDeps bundles all dependencies for TransferService.
@@ -149,7 +161,13 @@ func (stubUuidPeriodResolver) GetOrCreateOpenPeriod(_ context.Context, _ string,
 // nil so the transfer succeeds normally.
 type noopOutboxWriter struct{}
 
-func (noopOutboxWriter) AppendTransferPosted(_ context.Context, _ ledger.Tx, _ outbox.Event) error {
+func (noopOutboxWriter) AppendTransferPosted(_ context.Context, _ any, _ outbox.Event) error {
+	return nil
+}
+func (noopOutboxWriter) AppendInvoiceCreated(_ context.Context, _ any, _ outbox.Event) error {
+	return nil
+}
+func (noopOutboxWriter) AppendPaymentRecorded(_ context.Context, _ any, _ outbox.Event) error {
 	return nil
 }
 

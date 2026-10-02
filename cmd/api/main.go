@@ -151,6 +151,7 @@ func run() error {
 		Invoices:     invoiceRepo,
 		CreditLimits: creditLimitRepo,
 		DB:           invoiceTx,
+		Outbox:       outboxWriter, // Sprint 45: emit invoice.created + payment.recorded
 		Logger:       log,
 	})
 	periodAPI := &periodAPIAdapter{svc: periodService}

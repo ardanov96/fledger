@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/runut/fmcg-wallet/internal/domain/invoice"
+	"github.com/runut/fmcg-wallet/internal/domain/outbox"
 	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 	"github.com/runut/fmcg-wallet/internal/platform/money"
 )
@@ -40,6 +41,7 @@ type InvoiceService struct {
 	creditLimits invoice.CreditLimitRepository
 	db           InvoiceTxRunner
 	ensurePeriod EnsureOpenPeriodFunc
+	outbox       OutboxWriter // Sprint 45: emits invoice.created + payment.recorded
 	log          *slog.Logger
 }
 
@@ -49,6 +51,7 @@ type InvoiceServiceDeps struct {
 	CreditLimits invoice.CreditLimitRepository
 	DB           InvoiceTxRunner
 	EnsurePeriod EnsureOpenPeriodFunc
+	Outbox       OutboxWriter // optional; if nil, falls back to noopOutboxWriter
 	Logger       *slog.Logger
 }
 
@@ -64,11 +67,16 @@ func NewInvoiceService(deps InvoiceServiceDeps) *InvoiceService {
 			return "00000000-0000-0000-0000-000000000001", nil
 		}
 	}
+	outbox := deps.Outbox
+	if outbox == nil {
+		outbox = noopOutboxWriter{}
+	}
 	return &InvoiceService{
 		invoices:     deps.Invoices,
 		creditLimits: deps.CreditLimits,
 		db:           deps.DB,
 		ensurePeriod: ensure,
+		outbox:       outbox,
 		log:          log,
 	}
 }
@@ -131,6 +139,28 @@ func (s *InvoiceService) CreateInvoice(ctx context.Context, input invoice.Create
 		}
 		if err := s.invoices.Create(ctx, tx, inv); err != nil {
 			return fmt.Errorf("create invoice: %w", err)
+		}
+
+		// Sprint 45: emit invoice.created event in same tx so it commits
+		// or rolls back together with the invoice insert.
+		if err := s.outbox.AppendInvoiceCreated(ctx, tx, outbox.Event{
+			ID:            uuid.New(),
+			TenantID:      uuid.MustParse(input.TenantID),
+			AggregateType: outbox.AggregateInvoice,
+			AggregateID:   uuid.MustParse(id),
+			EventType:     outbox.EventInvoiceCreated,
+			Subject:       outbox.SubjectInvoiceCreated,
+			Payload: map[string]any{
+				"invoice_id":  id,
+				"customer_id": input.CustomerID,
+				"code":        input.Code,
+				"amount":       input.Amount.String(),
+				"due_date":     input.DueDate.Format(time.RFC3339),
+				"tenant_id":    input.TenantID,
+			},
+			Metadata: input.Metadata,
+		}); err != nil {
+			return fmt.Errorf("append invoice.created event: %w", err)
 		}
 
 		out = inv
@@ -212,6 +242,28 @@ func (s *InvoiceService) RecordPayment(ctx context.Context, input invoice.Paymen
 			Method:      input.Method,
 			CustomerID:  input.CustomerID,
 			TotalMinor:  allocatedSum.Minor(),
+		}
+
+		// Sprint 45: emit payment.recorded event in same tx so it commits
+		// or rolls back together with the allocations.
+		if err := s.outbox.AppendPaymentRecorded(ctx, tx, outbox.Event{
+			ID:            uuid.New(),
+			TenantID:      uuid.MustParse(input.TenantID),
+			AggregateType: outbox.AggregatePayment,
+			AggregateID:   uuid.MustParse(paymentID),
+			EventType:     outbox.EventPaymentRecorded,
+			Subject:       outbox.SubjectPaymentRecorded,
+			Payload: map[string]any{
+				"payment_id":  paymentID,
+				"customer_id": input.CustomerID,
+				"amount":       input.Amount.String(),
+				"method":       string(input.Method),
+				"mode":         string(input.Mode),
+				"allocations":  len(allocations),
+				"tenant_id":    input.TenantID,
+			},
+		}); err != nil {
+			return fmt.Errorf("append payment.recorded event: %w", err)
 		}
 
 		s.log.Info("payment recorded",

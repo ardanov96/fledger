@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/runut/fmcg-wallet/internal/domain/ledger"
 	"github.com/runut/fmcg-wallet/internal/domain/outbox"
 	"github.com/runut/fmcg-wallet/internal/repository/postgres"
 	"github.com/runut/fmcg-wallet/internal/usecase"
@@ -28,10 +27,31 @@ func newOutboxWriterAdapter(repo *postgres.OutboxRepository) *outboxWriterAdapte
 
 // AppendTransferPosted extracts the pgx.Tx from the ledger.Tx (passed into
 // the TransferService tx closure) and writes the event in the same tx.
-func (a *outboxWriterAdapter) AppendTransferPosted(ctx context.Context, tx ledger.Tx, e outbox.Event) error {
-	pgxTx, err := postgres.UnwrapPgxTxFromLedger(tx)
+func (a *outboxWriterAdapter) AppendTransferPosted(ctx context.Context, tx any, e outbox.Event) error {
+	pgxTx, err := postgres.UnwrapPgxTx(tx)
 	if err != nil {
-		return fmt.Errorf("outbox adapter: %w", err)
+		return fmt.Errorf("outbox adapter (transfer): %w", err)
+	}
+	outboxTx := postgres.WrapOutboxTx(pgxTx)
+	return a.repo.Insert(ctx, outboxTx, e)
+}
+
+// AppendInvoiceCreated (Sprint 45) — same tx semantics as AppendTransferPosted.
+// Inserts in the business tx so it commits/rolls back together with the invoice.
+func (a *outboxWriterAdapter) AppendInvoiceCreated(ctx context.Context, tx any, e outbox.Event) error {
+	pgxTx, err := postgres.UnwrapPgxTx(tx)
+	if err != nil {
+		return fmt.Errorf("outbox adapter (invoice): %w", err)
+	}
+	outboxTx := postgres.WrapOutboxTx(pgxTx)
+	return a.repo.Insert(ctx, outboxTx, e)
+}
+
+// AppendPaymentRecorded (Sprint 45) — same tx semantics.
+func (a *outboxWriterAdapter) AppendPaymentRecorded(ctx context.Context, tx any, e outbox.Event) error {
+	pgxTx, err := postgres.UnwrapPgxTx(tx)
+	if err != nil {
+		return fmt.Errorf("outbox adapter (payment): %w", err)
 	}
 	outboxTx := postgres.WrapOutboxTx(pgxTx)
 	return a.repo.Insert(ctx, outboxTx, e)
