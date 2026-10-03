@@ -32,22 +32,38 @@ import (
 	"sync"
 	"time"
 
-	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 	"github.com/runut/fmcg-wallet/internal/platform/httpx"
+	"github.com/runut/fmcg-wallet/internal/ratelimit"
+	apperrors "github.com/runut/fmcg-wallet/internal/platform/errors"
 )
 
 // MultiTierLimiter applies N independent RateLimiters, each with its own
 // key extractor. A request is allowed only if EVERY tier allows it; if any
 // tier rejects, the request is denied and that tier's response is used.
+//
+// Sprint 62: optional tierResolver. When non-nil, the "tenant" tier
+// dynamically resolves its bucket size + RPS from the resolver (which
+// the caller wires to the per-tenant tier service). When nil, falls
+// back to the static tenant bucket created at construction time
+// (Sprint 14 behavior).
 type MultiTierLimiter struct {
-	tiers []tier
+	tiers           []tier
+	tierResolver    TierResolver // optional, Sprint 62
+	tierLimiterMu   sync.Mutex
+	tenantLimiters  map[string]*tenantLimiterEntry
 }
 
-type tier struct {
-	name    string
-	limiter *RateLimiter
-	keyFunc KeyExtractor
+// Tier is one stage in the MultiTierLimiter chain. Exported (Sprint 62) so
+// callers outside the middleware package (e.g. cmd/api/main.go) can compose
+// tiers without exposing the unexported struct.
+type Tier struct {
+	Name    string
+	Limiter *RateLimiter
+	KeyFunc KeyExtractor
 }
+
+// alias for backwards compatibility with internal callers
+type tier = Tier
 
 // KeyExtractor returns the per-tier key for a request. Empty string means
 // the tier should be bypassed for this request.
@@ -59,18 +75,84 @@ func NewMultiTierLimiter(tiers ...tier) *MultiTierLimiter {
 	return &MultiTierLimiter{tiers: tiers}
 }
 
+// NewMultiTierLimiterWithTierResolver is NewMultiTierLimiter + per-tenant
+// dynamic limits (Sprint 62). When tierResolver is non-nil, the limiter
+// uses TierLimits from the resolver (cached 60s per tenant in the caller's
+// service). When nil, behaves as NewMultiTierLimiter (uses static buckets).
+func NewMultiTierLimiterWithTierResolver(resolver TierResolver, tiers ...tier) *MultiTierLimiter {
+	return &MultiTierLimiter{tiers: tiers, tierResolver: resolver}
+}
+
 // Allow runs every tier; if any rejects, returns (false, tierName).
+//
+// Sprint 62: when tierResolver is configured, the "tenant" tier looks up
+// per-tenant limits dynamically. Other tiers use their static buckets.
 func (m *MultiTierLimiter) Allow(r *http.Request) (allowed bool, rejectedBy string) {
+	tenantID := extractPrincipalField(r, "tenant_id")
+	var limits TierLimits
+	var limitsOK bool
+	if m.tierResolver != nil && tenantID != "" {
+		var err error
+		limits, limitsOK, err = m.tierResolver(r.Context(), tenantID)
+		if err != nil {
+			// Resolver error → fall back to static buckets for this request.
+			limitsOK = false
+		}
+	}
+
 	for _, t := range m.tiers {
-		key := t.keyFunc(r)
+		key := t.KeyFunc(r)
 		if key == "" {
 			continue // tier bypassed (e.g. no user_id)
 		}
-		if !t.limiter.Allow(key) {
-			return false, t.name
+		// Sprint 62: for the tenant tier, dynamically resolve the
+		// limiter if resolver is configured. Re-bucket when tier config
+		// changes (i.e., burst or RPS changes).
+		if m.tierResolver != nil && t.Name == "tenant" && limitsOK {
+			tierLimiter := m.tenantLimiterFor(tenantID, limits)
+			if !tierLimiter.Allow(key) {
+				return false, t.Name
+			}
+			continue
+		}
+		if !t.Limiter.Allow(key) {
+			return false, t.Name
 		}
 	}
 	return true, ""
+}
+
+// tenantLimiterFor returns (and caches) a per-tenant RateLimiter sized
+// according to the resolved TierLimits. Sprint 62.
+func (m *MultiTierLimiter) tenantLimiterFor(tenantID string, limits TierLimits) *RateLimiter {
+	// Simple inline cache: rate limiters keyed by tenant.
+	// For typical 100-1000 tenants a mutex+map is fine.
+	m.tierLimiterMu.Lock()
+	defer m.tierLimiterMu.Unlock()
+	if m.tenantLimiters == nil {
+		m.tenantLimiters = make(map[string]*tenantLimiterEntry)
+	}
+	if entry, ok := m.tenantLimiters[tenantID]; ok &&
+		entry.burst == float64(limits.TenantBurst) &&
+		entry.rps == float64(limits.TenantRPS) {
+		return entry.limiter
+	}
+	rl := NewRateLimiter(float64(limits.TenantBurst), float64(limits.TenantRPS))
+	entry := tenantLimiterEntry{
+		limiter: rl,
+		burst:   float64(limits.TenantBurst),
+		rps:     float64(limits.TenantRPS),
+	}
+	m.tenantLimiters[tenantID] = &entry
+	return rl
+}
+
+// tenantLimiterEntry caches the bucket + its dimensions so we can
+// detect config changes (and rebuild the bucket) when limits change.
+type tenantLimiterEntry struct {
+	limiter *RateLimiter
+	burst   float64
+	rps     float64
 }
 
 // MultiTierMiddleware wraps a MultiTierLimiter into an HTTP middleware.
@@ -110,6 +192,13 @@ func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) 
 		})
 	}
 }
+
+// TierLimits and TierResolver are defined in internal/ratelimit/types.go
+// (Sprint 62) so the usecase package can produce them and the middleware
+// package can consume them without a circular import. Re-aliased here for
+// readability.
+type TierLimits = ratelimit.TierLimits
+type TierResolver = ratelimit.TierResolver
 
 // ----- Key extractors -----
 

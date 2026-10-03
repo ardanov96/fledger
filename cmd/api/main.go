@@ -95,6 +95,7 @@ func run() error {
 	currencyRepo := postgres.NewCurrencyRepository(db) // Sprint 12 / Fase 1D
 	authRepo := postgres.NewAuthRepository(db)         // Sprint 13
 	outboxRepo := postgres.NewOutboxRepository(db)     // Sprint 24 / Fase 4A
+	rateTierRepo := postgres.NewTenantRateLimitTierRepository(db) // Sprint 62
 
 	txAdapter := &dbTxAdapter{db: db}
 	invoiceTx := &invoiceTxAdapter{db: db}
@@ -261,6 +262,17 @@ func run() error {
 		GUCRepo: newAuditGUCAdapter(auditRepo), // Sprint 23 / 22B.5 — type-bridge to handler
 	}
 
+	// Sprint 62: tenant rate limit tier service with cache. When configured,
+	// the per-tenant bucket sizes come from this service (per-tenant SLA
+	// tier: free / standard / premium / enterprise) instead of static env
+	// defaults. Falls back to defaults if DB query fails.
+	rateTierSvc := usecase.NewTenantRateLimitTierService(usecase.TenantRateLimitTierDeps{
+		Repo:     rateTierRepo,
+		CacheTTL: 60 * time.Second,
+	})
+	rateResolver := rateTierSvc.AsTierResolver()
+	log.Info("tenant rate limit tier service ready", "cache_ttl", "60s")
+
 	// Sprint 14 follow-up: multi-tier rate limiter for /v1/* (per-IP + per-user + per-tenant).
 	// Enable via RATE_LIMIT_GLOBAL_ENABLED=true. Independent from /auth/login limiter.
 	var globalLimiter *middleware.MultiTierLimiter
@@ -291,8 +303,13 @@ func run() error {
 				gTenantRps = f
 			}
 		}
-		globalLimiter = middleware.NewGlobalLimiterWithConfig(gBurst, gRps, gTenantBurst, gTenantRps)
-		log.Info("global rate limiter enabled", "ip_burst", gBurst, "ip_rps", gRps, "tenant_burst", gTenantBurst, "tenant_rps", gTenantRps)
+		globalLimiter = middleware.NewMultiTierLimiterWithTierResolver(
+			rateResolver,
+			middleware.Tier{"ip", middleware.NewRateLimiter(gBurst, gRps), middleware.KeyByIP},
+			middleware.Tier{"user", middleware.NewRateLimiter(gBurst, gRps), middleware.KeyByUser},
+			middleware.Tier{"tenant", middleware.NewRateLimiter(gTenantBurst, gTenantRps), middleware.KeyByTenant},
+		)
+		log.Info("global rate limiter enabled (per-tenant tiers via DB)", "ip_burst", gBurst, "ip_rps", gRps, "tenant_burst", gTenantBurst, "tenant_rps", gTenantRps)
 
 		// Per-endpoint transfer limiter (tighter than global for writes)
 		tBurst := 30.0
@@ -309,7 +326,12 @@ func run() error {
 				tRps = f
 			}
 		}
-		transferLimiter = middleware.NewTransferLimiterWithConfig(tBurst, tRps, tTenantBurst, tTenantRps)
+		transferLimiter = middleware.NewMultiTierLimiterWithTierResolver(
+			rateResolver,
+			middleware.Tier{"ip", middleware.NewRateLimiter(tBurst, tRps), middleware.KeyByIP},
+			middleware.Tier{"user", middleware.NewRateLimiter(tBurst, tRps), middleware.KeyByUser},
+			middleware.Tier{"tenant", middleware.NewRateLimiter(tTenantBurst, tTenantRps), middleware.KeyByTenant},
+		)
 		log.Info("transfer rate limiter enabled", "user_burst", tBurst, "user_rps", tRps, "tenant_burst", tTenantBurst, "tenant_rps", tTenantRps)
 	}
 
