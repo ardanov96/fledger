@@ -259,10 +259,102 @@ Then mount via docker-compose volume override or configmap in production.
 
 ## Sprint 59 follow-ups
 
-- Sprint 59.1: add real Slack/PagerDuty receivers
-- Sprint 59.2: per-tenant rate limits (some customers want different SLAs)
-- Sprint 59.3: rate-limiter-specific alerts (current MultiTierLimiter doesn't expose metrics)
-- Sprint 59.4: fraud flag spike alerts (Sprint 31 follow-up)
+- ✅ Sprint 60: add real Slack/PagerDuty receivers (done — see alerting-deployment.md)
+- ✅ Sprint 61: rate-limiter-specific alerts (done — see FMCTenantRateLimit* below)
+- Sprint 62: per-tenant rate limits (some customers want different SLAs)
+- Sprint 63: fraud flag spike alerts (Sprint 31 follow-up)
+
+---
+
+## Per-tenant rate-limit alerts (Sprint 61)
+
+### `FMCTenantRateLimitHitsSpike` (warning)
+
+**Severity:** warning
+**Metric:** `sum by (tenant_id) (rate(fmcg_ratelimit_rejected_total[5m])) > 20`
+**Threshold:** > 20 rejections/s per tenant for 5m
+
+**What it means:** A specific tenant is hitting rate limits at > 20/s. Could be:
+- Runaway client (retry loop)
+- Attack (credential stuffing, enumeration)
+- Bug in their integration
+
+**First response:**
+1. Check Loki for that tenant's request patterns (`X-Request-Fields` has tenant_id)
+2. Look at `Loki: 401/403 with top IPs by tenant`
+3. Check `Loki: 429 responses by IP` — single IP or distributed?
+4. If single IP, recommend WAF/CDN block
+5. If many IPs, escalate to security review
+
+**Mitigation:**
+- Contact tenant (CS may have customer contact)
+- Raise their tier limit temporarily (Sprint 62)
+- Add to allow-list if legitimate business spike
+
+---
+
+### `FMCTenantRateLimitCritical` (critical)
+
+**Severity:** critical
+**Metric:** Same as above, threshold > 100/s
+**Threshold:** > 100 rejections/s per tenant for 5m
+
+**What it means:** A tenant is generating >100 rejections/s for 5 min. This is either accidental DoS (buggy client) or intentional abuse.
+
+**First response:**
+1. **Page oncall** (PagerDuty via Sprint 60 routing)
+2. Check if this tenant has any business-critical reason for spike (campaign launch?)
+3. If yes: temporarily raise tier in DB (Sprint 62: per-tenant config table)
+4. If no: WAF/CDN rate-block their CIDR range
+5. Update status to ops channel
+
+**Mitigation:**
+- Increase tier limit: Sprint 62 follow-up
+- Block at WAF if abusive
+- Communicate via status page if customer-facing impact
+
+---
+
+### `FMCLoginRateLimitPerTenantSpike` (warning)
+
+**Severity:** warning
+**Metric:** per-tenant rejections > 10/s AND global > 50/s
+**Threshold:** both conditions for 5m
+
+**What it means:** Login endpoint specifically — likely account enumeration / credential stuffing.
+
+**First response:**
+1. Check IPs in Loki: `Loki: 401 by tenant_id by IP`
+2. If single IP brute forcing many usernames → IP block
+3. If many IPs distributed attack → check MFA enforcement + force password reset for affected users
+4. Run `Loki: failed login attempts per username` — find targeted accounts
+5. Notify affected users via email (template in `templates/security_alert.md`)
+
+**Mitigation:**
+- IP block via WAF for the offending IP range
+- Temporary stricter IP limit: `RATE_LIMIT_LOGIN_BURST=3 RATE_LIMIT_LOGIN_RPS=0.2`
+- Force password reset for accounts with > N failed logins in last hour
+
+---
+
+### `FMCRateLimitAllowedDecreased` (warning)
+
+**Severity:** warning
+**Metric:** allowed / (allowed + rejected) < 0.5 for 10m
+**Threshold:** >50% of requests rejected
+
+**What it means:** More than half of all requests are being rate-limited. Could be legitimate surge OR misconfiguration.
+
+**First response:**
+1. Check if there's a campaign / known event driving traffic
+2. If no, check `Loki: top tenants by 429 rate` — single tenant or broad?
+3. If broad: rate limits are probably too tight, raise them
+4. If single tenant: see FMCTenantRateLimitCritical runbook
+
+**Mitigation:**
+- Tune limits per-tier (Sprint 62)
+- Add a quick "is this expected?" check with CS / product team
+- Document the rate of requests vs limits in the dashboard
 
 ---
 

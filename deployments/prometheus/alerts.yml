@@ -198,3 +198,83 @@ groups:
         annotations:
           summary: "NATS broker reconnecting frequently"
           description: "{{ $value }} reconnects in 5m. Broker may be unstable."
+
+  # ---------------------------------------------------------------------------
+  # Per-tenant rate limiting (Sprint 61)
+  # ---------------------------------------------------------------------------
+  # Sprint 61: ratelimit_allowed_total / ratelimit_rejected_total now carry
+  # a tenant_id label (Sprint 61). These alerts fire when a single tenant
+  # is responsible for an unusual amount of rate-limit rejections — usually
+  # a sign of misuse, attack, or runaway client.
+  - name: rate_limit_per_tenant
+    interval: 60s
+    rules:
+      - alert: FMCTenantRateLimitHitsSpike
+        # A specific tenant generates > 100 rate-limit hits in 5m.
+        # Likely causes: runaway client (retry loop), attack, or buggy code.
+        expr: |
+          sum by (tenant_id) (rate(fmcg_ratelimit_rejected_total[5m])) > 20
+        for: 5m
+        labels:
+          severity: warning
+          area: ratelimit
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} hitting rate limits (>20/s for 5m)"
+          description: |
+            Tenant {{ $labels.tenant_id }} is generating > 20 rate-limit rejections/s
+            over the last 5 minutes. Investigate their traffic — could be runaway client,
+            attack, or a bug in their integration.
+
+      - alert: FMCTenantRateLimitCritical
+        # Same metric but critical threshold.
+        expr: |
+          sum by (tenant_id) (rate(fmcg_ratelimit_rejected_total[5m])) > 100
+        for: 5m
+        labels:
+          severity: critical
+          area: ratelimit
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} DOSing the API (>100/s for 5m) — PAGE ONCALL"
+          description: |
+            A tenant is generating >100 rejections/s for 5 min. This is either:
+            (a) accidental DoS from buggy client retry loop,
+            (b) intentional abuse.
+            Consider temporarily raising their tier limit or rate-blocking at the WAF.
+
+      - alert: FMCLoginRateLimitPerTenantSpike
+        # Login endpoint specifically (account enumeration defense).
+        # Per-tenant hits > 10/s for 5m suggests brute force / enumeration.
+        expr: |
+          sum by (tenant_id) (rate(fmcg_ratelimit_rejected_total{tier=~"ip|tenant"}[5m])) > 10
+          AND on() (sum(rate(fmcg_ratelimit_rejected_total[1m])) > 50)
+        for: 5m
+        labels:
+          severity: warning
+          area: ratelimit
+        annotations:
+          summary: "Per-tenant rate-limit hit (possibly account enumeration)"
+          description: |
+            Per-tenant rejections > 10/s AND global rate-limit rejections > 50/s
+            for 5 min. Could be account enumeration attack.
+            Check: are these from one IP or many? If one IP → likely single attacker.
+            If many IPs → distributed attack.
+
+      - alert: FMCRateLimitAllowedDecreased
+        # Allowed rate dropped to near-zero while rejected stayed normal — could
+        # indicate the limiter is misconfigured (everyone being rejected).
+        expr: |
+          (
+            sum(rate(fmcg_ratelimit_allowed_total[5m]))
+            /
+            (sum(rate(fmcg_ratelimit_allowed_total[5m])) + sum(rate(fmcg_ratelimit_rejected_total[5m])))
+          ) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          area: ratelimit
+        annotations:
+          summary: "<50% of requests being allowed by rate limiter"
+          description: |
+            Allowed/total ratio < 50% for 10 min. Either legitimate surge
+            (campaign, DDoS) OR rate limit thresholds are too tight (regression
+            from a config change).

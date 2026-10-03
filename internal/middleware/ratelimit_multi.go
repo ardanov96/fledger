@@ -75,13 +75,14 @@ func (m *MultiTierLimiter) Allow(r *http.Request) (allowed bool, rejectedBy stri
 
 // MultiTierMiddleware wraps a MultiTierLimiter into an HTTP middleware.
 //
-// Observability (Sprint 22B.1): the Prometheus counters in prom.go are
-// incremented alongside the in-memory MultiTierLimiterMetrics struct, so
-// operators can scrape /metrics and dashboards alert on rejection rate per
-// tier (ip / user / tenant). Per-tier counters fire only on the tier that
-// triggered the decision (reject: the rejecting tier; allow: the lowest-tier
-// that was actually evaluated — useful for distinguishing "anonymous user
-// allowed by IP" from "authenticated user allowed by tenant").
+// Observability (Sprint 22B.1 + Sprint 61): the Prometheus counters in
+// prom.go are incremented alongside the in-memory MultiTierLimiterMetrics
+// struct. Sprint 61 adds tenant_id label so ops can alert per-tenant.
+//
+// Per-tier counters fire only on the tier that triggered the decision
+// (reject: the rejecting tier; allow: the lowest-tier that was actually
+// evaluated — useful for distinguishing "anonymous user allowed by IP"
+// from "authenticated user allowed by tenant").
 func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,8 +91,9 @@ func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) 
 				return
 			}
 			allowed, tierName := m.Allow(r)
+			tenantID := extractPrincipalField(r, "tenant_id") // Sprint 61: per-tenant metric label
 			if !allowed {
-				IncRatelimitRejected(tierName)
+				IncRatelimitRejected(tierName, tenantID)
 				if metrics != nil {
 					metrics.RecordRejected(tierName)
 				}
@@ -100,7 +102,7 @@ func MultiTierMiddleware(m *MultiTierLimiter, metrics *MultiTierLimiterMetrics) 
 				httpx.Error(w, r, apperrors.ErrTooManyRequests)
 				return
 			}
-			IncRatelimitAllowed(tierName)
+			IncRatelimitAllowed(tierName, tenantID)
 			if metrics != nil {
 				metrics.RecordAllowed(tierName)
 			}
@@ -180,6 +182,28 @@ func NewTransferLimiterWithConfig(userBurst, userRps, tenantBurst, tenantRps flo
 	return NewMultiTierLimiter(
 		tier{"ip", ip, KeyByIP},
 		tier{"user", user, KeyByUser},
+		tier{"tenant", tenant, KeyByTenant},
+	)
+}
+
+// NewLoginLimiter returns a MultiTierLimiter configured for /v1/auth/login
+// (Sprint 61: tighter than global; per-IP + per-tenant to prevent
+// credential stuffing from one tenant blocking others).
+//   - Per-IP:    5 burst, 0.5 rps (Sprint 14 legacy)
+//   - Per-tenant: 20 burst, 2 rps (Sprint 61 new — shared pool)
+//
+// The login limiter is intentionally stricter than the global limiter
+// because account-enumeration attacks target /v1/auth/login specifically.
+func NewLoginLimiter() *MultiTierLimiter {
+	return NewLoginLimiterWithConfig(5, 0.5, 20, 2)
+}
+
+// NewLoginLimiterWithConfig is NewLoginLimiter with overridable params.
+func NewLoginLimiterWithConfig(ipBurst, ipRps, tenantBurst, tenantRps float64) *MultiTierLimiter {
+	ip := NewRateLimiter(ipBurst, ipRps)
+	tenant := NewRateLimiter(tenantBurst, tenantRps)
+	return NewMultiTierLimiter(
+		tier{"ip", ip, KeyByIP},
 		tier{"tenant", tenant, KeyByTenant},
 	)
 }

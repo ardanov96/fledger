@@ -1,5 +1,16 @@
 // Package middleware — Prometheus metric helpers for the multi-tier limiter
-// (Sprint 22B.1).
+// (Sprint 22B.1, enhanced Sprint 61).
+//
+// Sprint 61 adds a `tenant_id` label to the rate-limit counters so
+// operators can alert on per-tenant rate-limit hits (e.g., one noisy
+// tenant spamming an endpoint). Labels:
+//
+//   tier       - which limiter tier rejected/allowed (ip | user | tenant | global)
+//   tenant_id  - tenant UUID (or "anon" for unauthenticated requests)
+//
+// Higher cardinality tradeoff: tenant_id can be high (1000+ tenants in
+// production). Prometheus handles this fine; alert rules should use
+// `sum by (tenant_id)` to aggregate when needed.
 //
 // This file is intentionally separate from ratelimit_multi.go so the existing
 // limiter stays decoupled from Prometheus. Callers in cmd/api wire the
@@ -12,29 +23,31 @@ import (
 )
 
 // ratelimitAllowedTotal and ratelimitRejectedTotal are the two Prometheus
-// counters exposed at /metrics. The label `tier` tells operators which tier
-// (per-ip / per-user / per-tenant) is rejecting traffic — useful for
-// differentiating anonymous floods vs authenticated abuse vs noisy tenants.
+// counters exposed at /metrics. Labels:
 //
-// Both counters are registered against prometheus.DefaultRegisterer. Any other
-// metrics package that uses the same default registry will see them in the
-// same scrape output (without having to thread a *prometheus.Registry pointer
-// through main.go).
+//   tier       - which limiter tier rejected/allowed
+//   tenant_id  - tenant UUID (or "anon" for unauthenticated requests)
+//
+// Sprint 61: tenant_id label lets ops alert on per-tenant rate-limit hits
+// ("tenant XYZ is spamming endpoint") rather than only aggregate counts.
+// For the per-user tier, tenant_id is the tenant of the user (allows
+// per-tenant aggregation even when individual users within a tenant are
+// hitting their per-user cap).
 var (
 	ratelimitAllowedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "fmcg_ratelimit_allowed_total",
-			Help: "Total number of HTTP requests allowed by the multi-tier rate limiter, broken down by tier.",
+			Help: "Total HTTP requests allowed by the multi-tier rate limiter, broken down by tier and tenant.",
 		},
-		[]string{"tier"},
+		[]string{"tier", "tenant_id"},
 	)
 
 	ratelimitRejectedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "fmcg_ratelimit_rejected_total",
-			Help: "Total number of HTTP requests rejected by the multi-tier rate limiter, broken down by tier.",
+			Help: "Total HTTP requests rejected by the multi-tier rate limiter, broken down by tier and tenant.",
 		},
-		[]string{"tier"},
+		[]string{"tier", "tenant_id"},
 	)
 )
 
@@ -46,13 +59,29 @@ func init() {
 }
 
 // IncRatelimitAllowed bumps the allowed counter for the given tier
-// (ip | user | tenant | global). Safe to call from any goroutine.
-func IncRatelimitAllowed(tier string) {
-	ratelimitAllowedTotal.WithLabelValues(tier).Inc()
+// (ip | user | tenant | global) and tenant_id. tenant_id="anon" for
+// unauthenticated requests (no JWT principal).
+//
+// Safe to call from any goroutine.
+func IncRatelimitAllowed(tier, tenantID string) {
+	ratelimitAllowedTotal.WithLabelValues(tier, normalizeTenantLabel(tenantID)).Inc()
 }
 
-// IncRatelimitRejected bumps the rejected counter for the given tier.
+// IncRatelimitRejected bumps the rejected counter for the given tier
+// and tenant_id. Same normalization as IncRatelimitAllowed.
+//
 // Safe to call from any goroutine.
-func IncRatelimitRejected(tier string) {
-	ratelimitRejectedTotal.WithLabelValues(tier).Inc()
+func IncRatelimitRejected(tier, tenantID string) {
+	ratelimitRejectedTotal.WithLabelValues(tier, normalizeTenantLabel(tenantID)).Inc()
+}
+
+// normalizeTenantLabel returns "anon" for empty tenant IDs (so Prometheus
+// doesn't get a high-cardinality "" label which would also be filtered
+// out by many Grafana queries). Returns "anon" for the zero UUID
+// (used by service accounts).
+func normalizeTenantLabel(tenantID string) string {
+	if tenantID == "" || tenantID == "00000000-0000-0000-0000-000000000000" {
+		return "anon"
+	}
+	return tenantID
 }
