@@ -150,6 +150,17 @@ lint: ## Run golangci-lint (strict)
 test: ## Run all tests with race detector
 	go test -race -shuffle=on ./...
 
+.PHONY: test-integration
+test-integration: ## Run integration + E2E tests (requires TEST_DATABASE_URL)
+	@echo "Running integration tests (Sprint 17/29/31/37/40/42/51/58)..."
+	go test -tags=integration -race -count=1 ./...
+	@echo "Running E2E HTTP tests (Sprint 58)..."
+	go test -tags=integration -race -count=1 ./cmd/api/...
+
+.PHONY: test-e2e
+test-e2e: ## Run only the E2E HTTP tests (cmd/api)
+	go test -tags=integration -race -count=1 -v ./cmd/api/...
+
 .PHONY: test-cover
 test-cover: ## Run tests + open coverage report
 	go test -race -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
