@@ -25,6 +25,14 @@
     { "name": "notifications" }
   ],
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token from /v1/auth/login. Sent as Authorization: Bearer <token> header OR via httpOnly cookie 'access_token' (Sprint 57)."
+      }
+    },
     "schemas": {
       "Error": {
         "type": "object",
@@ -52,6 +60,16 @@
               "expires_at": { "type": "string", "format": "date-time" }
             }
           }
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "description": "Sprint 57: response of GET /v1/auth/me. Returns the current Principal (set by RequireAuth middleware). Used by the Next.js frontend via httpOnly JWT cookie.",
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "tenant_id": { "type": "string", "format": "uuid" },
+          "role": { "type": "string" },
+          "scopes": { "type": "array", "items": { "type": "string" } }
         }
       },
       "Account": {
@@ -146,6 +164,27 @@
         "responses": {
           "200": { "description": "OK" },
           "401": { "description": "Refresh token invalid" }
+        }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "Get current authenticated user (Sprint 57)",
+        "description": "Reads the httpOnly JWT cookie set by /v1/auth/login, returns the current Principal. Used by the Next.js frontend to populate user state on page load.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MeResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid cookie / token expired"
+          }
         }
       }
     },

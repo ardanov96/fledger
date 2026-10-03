@@ -165,3 +165,8 @@ export const listNotifications = (params: { unread?: boolean; limit?: number }) 
   if (params.limit) search.set('limit', String(params.limit));
   return request<{ data: Notification[] }>('GET', `/v1/notifications?${search}`);
 };
+
+// markNotificationRead (Sprint 55) flips status from 'unread' to 'read'.
+// Returns void on success; the handler doesn't return a body.
+export const markNotificationRead = (id: string) =>
+  request<{ status: 'read' }>('PATCH', `/v1/notifications/${id}/read`);

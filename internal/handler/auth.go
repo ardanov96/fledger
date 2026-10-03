@@ -121,6 +121,16 @@ type SessionResponseItem struct {
 	Status     string     `json:"status"`
 }
 
+// MeResponse — body of GET /v1/auth/me. Sprint 57: returns the current
+// authenticated Principal (set by RequireAuth middleware). Used by the
+// Next.js frontend (Sprint 49.1+) via httpOnly JWT cookie.
+type MeResponse struct {
+	UserID   string   `json:"user_id"`
+	TenantID string   `json:"tenant_id"`
+	Role     string   `json:"role"`
+	Scopes   []string `json:"scopes,omitempty"`
+}
+
 // =============================================================================
 // Handlers
 // =============================================================================
@@ -167,6 +177,23 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    time.Now().Add(15 * time.Minute), // matches default AccessTokenTTL
 		UserID:       res.UserID,
 		TenantID:     res.TenantID,
+	})
+}
+
+// Me handles GET /v1/auth/me. Sprint 57: returns the current Principal
+// (set by RequireAuth middleware). Used by the Next.js frontend to
+// populate user state from the httpOnly JWT cookie.
+func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
+	p := middleware.PrincipalFromContext(r.Context())
+	if p == nil {
+		httpx.Error(w, r, apperrors.ErrUnauthorized)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, MeResponse{
+		UserID:   p.UserID,
+		TenantID: p.TenantID,
+		Role:     p.Role,
+		Scopes:   p.Scopes,
 	})
 }
 

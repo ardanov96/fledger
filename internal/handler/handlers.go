@@ -96,6 +96,12 @@ func New(
 // RegisterRoutes mounts all routes on the given router.
 // Caller is responsible for prefixing (typically under /v1).
 func (h *Handlers) RegisterRoutes(r chi.Router) {
+	// Sprint 57: /v1/auth/me (protected, requires valid JWT cookie).
+	// Returns the current Principal (user_id + tenant_id + role + scopes)
+	// so the Next.js frontend (web-next/lib/auth-server.ts) can populate
+	// user state via the httpOnly JWT cookie set by /v1/auth/login.
+	r.Get("/auth/me", h.Me)
+
 	r.Post("/accounts", h.CreateAccount)
 	r.Get("/accounts", h.ListAccounts)
 	r.Get("/accounts/{id}", h.GetAccount)
