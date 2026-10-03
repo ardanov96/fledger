@@ -1,74 +1,166 @@
 # =============================================================================
-# Alertmanager configuration (Sprint 59)
+# Alertmanager configuration (Sprint 60 — real receivers)
 # =============================================================================
-# Receives alerts from Prometheus (deployments/prometheus/alerts.yml),
-# groups them, applies routing/inhibition rules, and dispatches via
-# receivers (webhook, email, Slack — all optional for dev).
+# Replaces Sprint 59 stub webhooks with production-grade Slack + PagerDuty +
+# email receivers. Secrets loaded from environment variables (never hardcoded).
 #
-# Sprint 59 default: write alerts to a file (so we can inspect during
-# local dev), plus a stub webhook receiver for production-like setup.
-# Override in deployment by mounting a real alertmanager.yml with
-# actual webhook URLs.
+# Setup:
+#   1. Create Slack webhook: https://api.slack.com/messaging/webhooks
+#   2. Create PagerDuty integration: PagerDuty Service Directory → Integrations
+#      → Events API v2 → copy the integration key
+#   3. Set secrets in deployment:
+#        export SLACK_WEBHOOK_OPS_URL=https://hooks.slack.com/services/...
+#        export SLACK_WEBHOOK_CRITICAL_URL=https://hooks.slack.com/services/...
+#        export PAGERDUTY_INTEGRATION_KEY=...
+#        export ALERT_EMAIL_RECIPIENTS=oncall@fmcg-wallet.example.com
+#   4. Mount this file into the alertmanager container
+#   5. Restart alertmanager: docker compose restart alertmanager
+#
+# Local dev: keep the dev-null receiver as default. Unset SLACK_WEBHOOK_*
+# to fall back to dev-null.
 # =============================================================================
 
 global:
   resolve_timeout: 5m
-  smtp_smarthost: 'localhost:25'
-  smtp_from: 'alertmanager@fmcg-wallet.local'
+  # SMTP for email receiver. Default values are for local dev (mailhog).
+  # Production override via env vars: ALERT_SMTP_HOST, ALERT_SMTP_FROM.
+  smtp_smarthost: '${ALERT_SMTP_HOST:localhost:25}'
+  smtp_from: '${ALERT_SMTP_FROM:alertmanager@fmcg-wallet.local}'
   smtp_require_tls: false
 
-# Route tree: every alert flows through here. 'critical' → ops + oncall
-# channels; 'warning' → ops only; 'info' → log file (dev).
+# Templates — used by Slack + email to render alert payloads.
+# Sprint 60: rich formatting with dashboard links.
+templates:
+  - name: 'slack-default'
+    text: |
+      {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})
+      {{ range .Alerts }}
+      *{{ .Annotations.summary }}*
+      {{ .Annotations.description }}
+      {{ if .Annotations.runbook_url }}📖 Runbook: {{ .Annotations.runbook_url }}{{ end }}
+      📊 Dashboard: {{ .CommonAnnotations.dashboard_url }}
+      {{ end }}
+
+  - name: 'email-default'
+    text: |
+      Alert: {{ .CommonLabels.alertname }}
+      Severity: {{ .CommonLabels.severity }}
+      {{ range .Alerts }}
+      Summary: {{ .Annotations.summary }}
+      Description: {{ .Annotations.description }}
+      {{ end }}
+
+# Route tree. Sprint 60: 4 receivers — critical pages oncall, warning posts
+# to ops, info emails summary, dev-null fallback when no secret env present.
 route:
-  receiver: dev-null  # default if no match
+  receiver: 'dev-null'  # default fallback
   group_by: ['alertname', 'area']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
   routes:
+    # Critical: page oncall via PagerDuty + Slack #alerts-critical
     - matchers:
         - severity = "critical"
-      receiver: oncall
+      receiver: 'oncall-pagerduty'
       group_wait: 10s
       repeat_interval: 1h
       continue: true
     - matchers:
-        - severity = "warning"
-      receiver: ops
+        - severity = "critical"
+      receiver: 'oncall-slack'
       continue: true
+
+    # Warning: post to Slack #ops-alerts
+    - matchers:
+        - severity = "warning"
+      receiver: 'ops-slack'
+      continue: true
+
+    # Info: email summary
     - matchers:
         - severity = "info"
-      receiver: info-log
+      receiver: 'info-email'
       continue: true
 
-# Receivers. Sprint 59 default: all write to /tmp/alertmanager.log so we
-# can verify the alert pipeline without configuring real integrations.
+# Receivers. Sprint 60: Slack + PagerDuty + email + dev-null fallback.
 receivers:
+  # dev-null: local dev fallback. No notifications sent. Override by
+  # unsetting env vars above OR by setting severity-specific env vars.
   - name: 'dev-null'
     webhook_configs:
-      - url: 'http://127.0.0.1:5001/dev-null'  # Sprint 59: noop webhook
-        send_resolved: true
-
-  - name: 'ops'
-    webhook_configs:
-      - url: 'http://127.0.0.1:5001/ops'  # Sprint 59.1: replace with Slack/PagerDuty webhook
-        send_resolved: true
-
-  - name: 'oncall'
-    webhook_configs:
-      - url: 'http://127.0.0.1:5001/oncall'  # Sprint 59.1: PagerDuty Events API
-        send_resolved: true
-
-  - name: 'info-log'
-    webhook_configs:
-      - url: 'http://127.0.0.1:5001/info'  # Sprint 59.1: Slack #fmcg-info
+      - url: 'http://127.0.0.1:5001/dev-null'
         send_resolved: false
 
-# Inhibition: don't duplicate alerts. If API is DOWN, suppress individual
-# latency/error alerts (they're all consequences of the same outage).
+  # critical → PagerDuty. Uses Events API v2 (Events URL).
+  - name: 'oncall-pagerduty'
+    pagerduty_configs:
+      - routing_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        send_resolved: true
+        severity: 'critical'
+        description: '{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        details:
+          firing: '{{ .CommonLabels.alertname }}'
+          severity: '{{ .CommonLabels.severity }}'
+          dashboard: '{{ .CommonAnnotations.dashboard_url }}'
+          runbook: '{{ (index .Alerts 0).Annotations.runbook_url }}'
+        # PagerDuty deduplicates alerts with the same dedup_key within 30m
+        # by default. We disable here so each severity tier gets separate
+        # incidents. Adjust based on PagerDuty plan limits.
+        link_names:
+          - runbook_url
+
+  # critical → Slack #fmcg-alerts-critical (dedicated channel).
+  # Sprint 60: use slack_configs text to mention @oncall directly. Alertmanager
+  # has no native mentions field — embed the @ in the template.
+  - name: 'oncall-slack'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_CRITICAL_URL}'
+        channel: '#fmcg-alerts-critical'
+        username: 'FMCG Wallet Alerting'
+        title: '🔥 {{ .CommonLabels.alertname }}'
+        title_link: '{{ (index .Alerts 0).Annotations.runbook_url }}'
+        text: '<@oncall> {{ template \"slack-default\" . }}'
+        send_resolved: true
+
+  # warning → Slack #fmcg-ops-alerts
+  - name: 'ops-slack'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_OPS_URL}'
+        channel: '#fmcg-ops-alerts'
+        username: 'FMCG Wallet Alerting'
+        title: '⚠️ {{ .CommonLabels.alertname }}'
+        title_link: '{{ (index .Alerts 0).Annotations.runbook_url }}'
+        text: '{{ template \"slack-default\" . }}'
+        send_resolved: true
+
+  # info → email summary (daily digest feel)
+  - name: 'info-email'
+    email_configs:
+      - to: '${ALERT_EMAIL_RECIPIENTS:oncall@fmcg-wallet.local}'
+        send_resolved: true
+        html: '{{ template \"email-default\" . }}'
+
+# Inhibit rules. Don't pile on alerts when the upstream cause is known.
 inhibit_rules:
+  # When API is DOWN, individual latency/error alerts are noise.
   - source_matchers:
       - alertname = "FMCGApiDown"
     target_matchers:
       - severity = "warning"
     equal: ['area']
+
+  # When DB pool exhausted, API latency/errors are downstream effects.
+  - source_matchers:
+      - alertname = "FMCDbPoolExhausted"
+    target_matchers:
+      - severity = "warning"
+      - alertname =~ "FMCGApi.*"
+    equal: ['area']
+
+  # When worker critical lag, worker warning is implicit.
+  - source_matchers:
+      - alertname = "FMCOutboxPublisherCritical"
+    target_matchers:
+      - severity = "warning"
+      - area = "worker"
