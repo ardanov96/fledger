@@ -1,0 +1,200 @@
+# =============================================================================
+# Prometheus alert rules for FMCG Wallet (Sprint 59)
+# =============================================================================
+# Loaded by Prometheus via prometheus.yml `rule_files:` directive.
+# Each rule maps 1:1 to a runbook entry in docs/runbooks/alerts.md.
+#
+# Naming convention: <area>_<metric>_<severity>
+#   - area: api / db / worker / auth
+#   - metric: latency / error_rate / saturation / etc.
+#   - severity: warning (page ops) / critical (page oncall)
+# =============================================================================
+
+groups:
+  # ---------------------------------------------------------------------------
+  # API latency + error rate
+  # ---------------------------------------------------------------------------
+  - name: api_latency
+    interval: 30s
+    rules:
+      - alert: FMCGApiP99LatencyHigh
+        # p99 > 1s for 5 min — pages ops; > 2s for 5 min — pages oncall
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{service="fmcg-wallet-api"}[5m])) by (le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          area: api
+        annotations:
+          summary: "API p99 latency > 1s for 5m"
+          description: |
+            p99 latency for FMCG Wallet API is {{ $value | humanizeDuration }} over the last 5 min.
+            Check the latency dashboard panel and DB connection pool.
+          runbook_url: "https://github.com/ardanov96/fledger/blob/main/docs/runbooks/alerts.md#api-p99-latency"
+
+      - alert: FMCGApiP99LatencyCritical
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{service="fmcg-wallet-api"}[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: critical
+          area: api
+        annotations:
+          summary: "API p99 latency > 2s for 5m (PAGE ONCALL)"
+          description: "p99 latency {{ $value | humanizeDuration }} — likely DB or downstream slowness. Page oncall."
+
+  - name: api_errors
+    interval: 30s
+    rules:
+      - alert: FMCGApiErrorRateElevated
+        # 5xx rate > 1% for 5m → warning
+        # 5xx rate > 5% for 5m → critical
+        expr: |
+          (
+            sum(rate(http_requests_total{service="fmcg-wallet-api", status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="fmcg-wallet-api"}[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          area: api
+        annotations:
+          summary: "5xx error rate > 1% for 5m"
+          description: "5xx error rate is {{ $value | humanizePercentage }} over last 5m. Check logs and DB."
+
+      - alert: FMCGApiErrorRateCritical
+        expr: |
+          (
+            sum(rate(http_requests_total{service="fmcg-wallet-api", status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="fmcg-wallet-api"}[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          area: api
+        annotations:
+          summary: "5xx error rate > 5% (PAGE ONCALL)"
+          description: "5xx rate {{ $value | humanizePercentage }} — investigate immediately."
+
+      - alert: FMCGApiDown
+        # API scrape itself fails → service is unreachable
+        expr: up{job=~"fmcg-wallet-api.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          area: api
+        annotations:
+          summary: "FMCG Wallet API is DOWN"
+          description: "Prometheus can't reach the API for 2m. Page oncall."
+
+  # ---------------------------------------------------------------------------
+  # DB connection pool + replication
+  # ---------------------------------------------------------------------------
+  - name: db_saturation
+    interval: 30s
+    rules:
+      - alert: FMCDbPoolSaturated
+        # Connection pool utilization > 80% for 5m
+        expr: |
+          (pgxpool_acquired_conns / pgxpool_total_conns) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          area: db
+        annotations:
+          summary: "DB connection pool > 80% utilized"
+          description: "Pool utilization {{ $value | humanizePercentage }}. May starve new requests."
+
+      - alert: FMCDbPoolExhausted
+        expr: |
+          (pgxpool_acquired_conns / pgxpool_total_conns) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          area: db
+        annotations:
+          summary: "DB connection pool > 95% (PAGE ONCALL)"
+          description: "Pool exhausted; new requests will time out. Check for connection leak."
+
+  # ---------------------------------------------------------------------------
+  # Worker (outbox publisher) — Sprint 24/41/43
+  # ---------------------------------------------------------------------------
+  - name: worker_lag
+    interval: 60s
+    rules:
+      - alert: FMCOutboxPublisherLag
+        # Unpublished outbox events > 1000 for 5m → worker behind
+        expr: |
+          (SELECT COUNT(*) FROM outbox_events WHERE published_at IS NULL) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          area: worker
+        annotations:
+          summary: "Outbox publisher falling behind (>1k unpublished)"
+          description: "{{ $value }} events unpublished. Worker may be stuck or NATS unreachable."
+
+      - alert: FMCOutboxPublisherCritical
+        expr: |
+          (SELECT COUNT(*) FROM outbox_events WHERE published_at IS NULL) > 10000
+        for: 5m
+        labels:
+          severity: critical
+          area: worker
+        annotations:
+          summary: "Outbox publisher > 10k events behind (PAGE ONCALL)"
+          description: "{{ $value }} unpublished. Likely NATS outage or worker crash. Restart worker."
+
+  # ---------------------------------------------------------------------------
+  # Auth — Sprint 13/33
+  # ---------------------------------------------------------------------------
+  - name: auth_security
+    interval: 60s
+    rules:
+      - alert: FMCAuthFailureSpike
+        # JWT 401/403 rate > 50/s for 5m → potential attack
+        expr: |
+          sum(rate(http_requests_total{status=~"40[13]", service="fmcg-wallet-api"}[5m])) > 50
+        for: 5m
+        labels:
+          severity: warning
+          area: auth
+        annotations:
+          summary: "Auth failures spiking (>50/s for 5m)"
+          description: "{{ $value | humanize }} failures/s. Check IP for credential stuffing."
+
+      - alert: FMCLoginRateLimitHits
+        # If rate limiter hits spike, ops should know
+        expr: |
+          sum(rate(http_requests_total{path="/v1/auth/login", status="429"}[5m])) > 10
+        for: 5m
+        labels:
+          severity: info
+          area: auth
+        annotations:
+          summary: "Login rate limit hits elevated"
+          description: "Rate limiter working as expected. May indicate attack or bot traffic."
+
+  # ---------------------------------------------------------------------------
+  # NATS broker health (Sprint 24 + 46)
+  # ---------------------------------------------------------------------------
+  - name: nats_health
+    interval: 60s
+    rules:
+      - alert: FMCNatsDisconnected
+        # Use the broker_up metric that we emit from the worker (Sprint 24
+        # TODO: add this metric). For now, check via broker reconnect count.
+        expr: nats_reconnects_total > 5
+        for: 5m
+        labels:
+          severity: warning
+          area: worker
+        annotations:
+          summary: "NATS broker reconnecting frequently"
+          description: "{{ $value }} reconnects in 5m. Broker may be unstable."

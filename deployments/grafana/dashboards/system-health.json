@@ -9,6 +9,24 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "_comment": "Sprint 59: Alertmanager annotations overlay on latency/error panels so oncall sees when alerts fired (red triangles) alongside metrics.",
+        "datasource": {"type": "alertmanager", "uid": "Alertmanager"},
+        "enable": true,
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "name": "Alertmanager (FMCG API)",
+        "tagMatchers": "area=api",
+        "type": "tags"
+      },
+      {
+        "_comment": "Sprint 59: same as above but filters to worker area.",
+        "datasource": {"type": "alertmanager", "uid": "Alertmanager"},
+        "enable": true,
+        "iconColor": "rgba(255, 193, 7, 1)",
+        "name": "Alertmanager (FMCG Worker)",
+        "tagMatchers": "area=worker",
+        "type": "tags"
       }
     ]
   },

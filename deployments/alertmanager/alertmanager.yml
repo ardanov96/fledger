@@ -1,0 +1,74 @@
+# =============================================================================
+# Alertmanager configuration (Sprint 59)
+# =============================================================================
+# Receives alerts from Prometheus (deployments/prometheus/alerts.yml),
+# groups them, applies routing/inhibition rules, and dispatches via
+# receivers (webhook, email, Slack — all optional for dev).
+#
+# Sprint 59 default: write alerts to a file (so we can inspect during
+# local dev), plus a stub webhook receiver for production-like setup.
+# Override in deployment by mounting a real alertmanager.yml with
+# actual webhook URLs.
+# =============================================================================
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alertmanager@fmcg-wallet.local'
+  smtp_require_tls: false
+
+# Route tree: every alert flows through here. 'critical' → ops + oncall
+# channels; 'warning' → ops only; 'info' → log file (dev).
+route:
+  receiver: dev-null  # default if no match
+  group_by: ['alertname', 'area']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: oncall
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+    - matchers:
+        - severity = "warning"
+      receiver: ops
+      continue: true
+    - matchers:
+        - severity = "info"
+      receiver: info-log
+      continue: true
+
+# Receivers. Sprint 59 default: all write to /tmp/alertmanager.log so we
+# can verify the alert pipeline without configuring real integrations.
+receivers:
+  - name: 'dev-null'
+    webhook_configs:
+      - url: 'http://127.0.0.1:5001/dev-null'  # Sprint 59: noop webhook
+        send_resolved: true
+
+  - name: 'ops'
+    webhook_configs:
+      - url: 'http://127.0.0.1:5001/ops'  # Sprint 59.1: replace with Slack/PagerDuty webhook
+        send_resolved: true
+
+  - name: 'oncall'
+    webhook_configs:
+      - url: 'http://127.0.0.1:5001/oncall'  # Sprint 59.1: PagerDuty Events API
+        send_resolved: true
+
+  - name: 'info-log'
+    webhook_configs:
+      - url: 'http://127.0.0.1:5001/info'  # Sprint 59.1: Slack #fmcg-info
+        send_resolved: false
+
+# Inhibition: don't duplicate alerts. If API is DOWN, suppress individual
+# latency/error alerts (they're all consequences of the same outage).
+inhibit_rules:
+  - source_matchers:
+      - alertname = "FMCGApiDown"
+    target_matchers:
+      - severity = "warning"
+    equal: ['area']

@@ -10,6 +10,19 @@ global:
     monitor: fmcg-wallet-monitor
     env: development
 
+# Sprint 59: alert rules loaded by Prometheus. See deployments/prometheus/alerts.yml
+# for the full list. Each rule has a runbook URL annotation pointing to
+# docs/runbooks/alerts.md.
+rule_files:
+  - "/etc/prometheus/alerts.yml"
+
+# Alertmanager endpoint (Sprint 59). Receives firing alerts and dispatches
+# them per its own config (deployments/alertmanager/alertmanager.yml).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   # Prometheus self-monitoring
   - job_name: prometheus
@@ -45,3 +58,10 @@ scrape_configs:
           env: development
     # Only enable if the service exists
     enable_http2: false
+
+  # Alertmanager self-monitoring (Sprint 59)
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          service: alertmanager

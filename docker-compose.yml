@@ -176,7 +176,25 @@ services:
       - "9090:9090"
     volumes:
       - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployments/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - fmcg_prometheus_data:/prometheus
+    networks:
+      - fmcg_net
+
+  # Sprint 59: Alertmanager receives alerts from Prometheus and dispatches
+  # them per deployments/alertmanager/alertmanager.yml.
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: fmcg_alertmanager
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./deployments/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - fmcg_alertmanager_data:/alertmanager
     networks:
       - fmcg_net
 
@@ -273,6 +291,8 @@ volumes:
     name: fmcg_nats_data
   fmcg_prometheus_data:
     name: fmcg_prometheus_data
+  fmcg_alertmanager_data:
+    name: fmcg_alertmanager_data
   fmcg_loki_data:
     name: fmcg_loki_data
   fmcg_tempo_data:
