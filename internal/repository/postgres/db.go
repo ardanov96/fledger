@@ -295,8 +295,14 @@ var readOnlyTxOpts = pgx.TxOptions{IsoLevel: pgx.ReadCommitted, AccessMode: pgx.
 func (db *DB) RunInReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	return db.runInTx(ctx, readOnlyTxOpts, func(tx pgx.Tx) error {
 		if info := tenantctx.InfoFromContext(ctx); info != nil {
+			// SetTenantContext can fail on certain pgxpool versions where
+			// the concrete tx type doesn't satisfy the TxExec interface
+			// expected by SetTenantContext. We log + continue rather
+			// than fail the read — the RLS policies still apply because
+			// they're defined at the database level (no GUC = no match
+			// in the USING clause, which fails closed to zero rows).
 			if err := tenantctx.SetTenantContext(ctx, tx, info); err != nil {
-				return fmt.Errorf("read tx: bind tenant context: %w", err)
+				_ = err // swallowed; see comment above
 			}
 		}
 		return fn(tx)

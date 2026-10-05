@@ -472,6 +472,30 @@ func buildRouter(
 		r.Method(http.MethodGet, cfg.Telemetry.MetricsPath, prometheusHandler())
 	}
 
+	// Root endpoint: friendly hello with service info + endpoint list.
+	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"service":     "fmcg-wallet",
+				"version":     "dev",
+				"go_version":  "go1.26.5",
+				"api_prefix":  "/v1",
+				"endpoints": map[string]string{
+					"healthz":   "GET /healthz — liveness",
+					"readyz":    "GET /readyz — readiness",
+					"version":   "GET /version — build info",
+					"metrics":   "GET /metrics — Prometheus (when enabled)",
+					"login":     "POST /v1/auth/login",
+					"refresh":   "POST /v1/auth/refresh",
+					"me":        "GET /v1/auth/me",
+					"accounts":  "GET/POST /v1/accounts",
+					"transfers": "POST /v1/transfers",
+					"invoices":  "GET/POST /v1/invoices",
+				},
+			},
+		})
+	})
+
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
 			httpx.JSON(w, http.StatusOK, map[string]string{"message": "pong"})
@@ -517,6 +541,8 @@ func buildRouter(
 			r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
 
 			// Period close workflow (Sprint 9).
+			// Sprint 57: /v1/auth/me route (returns Principal from JWT).
+			r.Get("/auth/me", h.Me)
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
 				rbac.ActionCreate, rbac.ObjectPeriodClose)).Post("/periods/{id}/close-requests", h.RequestPeriodClose)
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
@@ -591,7 +617,16 @@ func buildRouter(
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		httpx.Error(w, r, errors.New("not found"))
+		httpx.JSON(w, http.StatusNotFound, map[string]any{
+			"data": map[string]any{
+				"status":  "not_found",
+				"message": "Endpoint not found. See /version for build info, /healthz for liveness, /readyz for readiness.",
+			},
+			"meta": map[string]any{
+				"request_id": httpx.GetRequestID(r.Context()),
+				"path":       r.URL.Path,
+			},
+		})
 	})
 
 	return r
