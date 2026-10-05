@@ -540,6 +540,16 @@ func buildRouter(
 			r.Get("/customers/{id}/aging", h.GetCustomerAging)
 			r.Post("/customers/{id}/credit-limit", h.SetCreditLimit)
 
+			// Sprint 28: notification feed (Sprint 40 RLS-on-Pool fix). Routes
+			// were defined in handler.RegisterRoutes but never wired in
+			// main.go, causing 404. Re-added here as part of the live-test
+			// fix (this file's inline route block is the source of truth).
+			if h.Notifications != nil {
+				r.Get("/notifications", h.ListNotifications)
+				r.Get("/notifications/unread-count", h.UnreadCount)
+				r.Patch("/notifications/{id}/read", h.MarkNotificationRead)
+			}
+
 			// Period close workflow (Sprint 9).
 			// Sprint 57: /v1/auth/me route (returns Principal from JWT).
 			r.Get("/auth/me", h.Me)
