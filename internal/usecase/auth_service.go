@@ -439,12 +439,8 @@ func (s *AuthService) Refresh(ctx context.Context, in RefreshInput) (*RefreshRes
 	newID := uuid.New()
 
 	err = s.tx.RunInTxAuthDomain(ctx, func(tx auth.Tx) error {
-		// 1. Mark old as rotated.
-		if err := s.repo.MarkRefreshTokenRotated(ctx, tx, existing.ID, newID); err != nil {
-			return err
-		}
-		// 2. Create new.
-		return s.repo.CreateRefreshToken(ctx, tx, auth.RefreshToken{
+		// 1. Create new token first so newID exists in refresh_tokens table.
+		if err := s.repo.CreateRefreshToken(ctx, tx, auth.RefreshToken{
 			ID:         newID,
 			TenantID:   existing.TenantID,
 			UserID:     existing.UserID,
@@ -454,7 +450,11 @@ func (s *AuthService) Refresh(ctx context.Context, in RefreshInput) (*RefreshRes
 			ExpiresAt:  now.Add(s.cfg.RefreshTokenTTL),
 			UserAgent:  in.UserAgent,
 			IPAddress:  in.IPAddress,
-		})
+		}); err != nil {
+			return err
+		}
+		// 2. Mark old as rotated to new token.
+		return s.repo.MarkRefreshTokenRotated(ctx, tx, existing.ID, newID)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("refresh: persist new pair: %w", err)

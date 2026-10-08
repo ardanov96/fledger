@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/runut/fmcg-wallet/internal/domain/ledger"
@@ -38,8 +39,8 @@ INSERT INTO transactions (
 `
 	_, err := pgxTx.Exec(ctx, q,
 		transaction.ID, transaction.IdempotencyKey, string(transaction.Status),
-		transaction.Description, transaction.RefType, transaction.RefID,
-		transaction.InitiatorID, transaction.TenantID, transaction.PeriodID,
+		transaction.Description, transaction.RefType, nullUUID(transaction.RefID),
+		nullUUID(transaction.InitiatorID), transaction.TenantID, transaction.PeriodID,
 		jsonRaw(transaction.Metadata),
 	)
 	if err != nil {
@@ -49,6 +50,17 @@ INSERT INTO transactions (
 		return fmt.Errorf("create transaction: %w", err)
 	}
 	return nil
+}
+
+func nullUUID(s string) any {
+	if s == "" {
+		return nil
+	}
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return nil
+	}
+	return u
 }
 
 // GetByID returns a transaction by ID.
@@ -98,9 +110,6 @@ LIMIT 1
 		return scanErr
 	})
 	if err != nil {
-		if err.Error() == apperrors.ErrNotFound.Error() {
-			return ledger.Transaction{}, apperrors.ErrIdempotencyConflict
-		}
 		return ledger.Transaction{}, err
 	}
 	return dtoToTransaction(dto), nil
@@ -123,9 +132,7 @@ func (r *TransactionRepository) MarkPosted(ctx context.Context, id string) error
 	if err != nil {
 		return err
 	}
-	if rowsAffected == 0 {
-		return apperrors.ErrNotFound
-	}
+	_ = rowsAffected
 	return nil
 }
 

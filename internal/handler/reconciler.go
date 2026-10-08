@@ -176,6 +176,12 @@ func (h *Handlers) GetReconcilerRun(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListReconcilerRuns(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.URL.Query().Get("tenant_id")
 	if tenantID == "" {
+		tenantID = httpx.GetTenantID(r.Context())
+	}
+	if tenantID == "" {
+		tenantID = r.Header.Get("X-Tenant-ID")
+	}
+	if tenantID == "" {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, errors.New("tenant_id required")))
 		return
 	}

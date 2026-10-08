@@ -240,6 +240,12 @@ func (h *Handlers) ListFxRates(w http.ResponseWriter, r *http.Request) {
 	}
 	tenantIDStr := r.URL.Query().Get("tenant_id")
 	if tenantIDStr == "" {
+		tenantIDStr = httpx.GetTenantID(r.Context())
+	}
+	if tenantIDStr == "" {
+		tenantIDStr = r.Header.Get("X-Tenant-ID")
+	}
+	if tenantIDStr == "" {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, errors.New("tenant_id required")))
 		return
 	}
@@ -295,6 +301,12 @@ func (h *Handlers) GetLatestFxRateHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	tenantIDStr := r.URL.Query().Get("tenant_id")
+	if tenantIDStr == "" {
+		tenantIDStr = httpx.GetTenantID(r.Context())
+	}
+	if tenantIDStr == "" {
+		tenantIDStr = r.Header.Get("X-Tenant-ID")
+	}
 	if tenantIDStr == "" {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, errors.New("tenant_id required")))
 		return

@@ -217,7 +217,7 @@ func (r *AuditRepository) List(ctx context.Context, tenantID string, limit int) 
 	const q = `
 SELECT id, tenant_id, actor_id, actor_type, action,
        resource_type, resource_id, outcome,
-       request_id, ip_address, user_agent, metadata, occurred_at
+       request_id, host(ip_address), user_agent, metadata, occurred_at
 FROM audit_logs
 WHERE tenant_id = $1
 ORDER BY occurred_at DESC
@@ -258,7 +258,7 @@ func (r *AuditRepository) GetByID(ctx context.Context, id string) (audit.Entry, 
 	const q = `
 SELECT id, tenant_id, actor_id, actor_type, action,
        resource_type, resource_id, outcome,
-       request_id, ip_address, user_agent, metadata, occurred_at
+       request_id, host(ip_address), user_agent, metadata, occurred_at
 FROM audit_logs
 WHERE id = $1
 `
@@ -294,7 +294,7 @@ func (r *AuditRepository) ListByActor(ctx context.Context, tenantID, actorID str
 	const q = `
 SELECT id, tenant_id, actor_id, actor_type, action,
        resource_type, resource_id, outcome,
-       request_id, ip_address, user_agent, metadata, occurred_at
+       request_id, host(ip_address), user_agent, metadata, occurred_at
 FROM audit_logs
 WHERE tenant_id = $1 AND actor_id = $2
 ORDER BY occurred_at DESC

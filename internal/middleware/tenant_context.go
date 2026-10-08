@@ -41,6 +41,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/runut/fmcg-wallet/internal/platform/httpx"
 	"github.com/runut/fmcg-wallet/internal/platform/tenantctx"
 )
 
@@ -68,6 +69,10 @@ func TenantContextMiddleware() func(http.Handler) http.Handler {
 			}
 
 			ctx := tenantctx.WithInfo(r.Context(), info)
+			ctx = httpx.WithTenantID(ctx, info.TenantID.String())
+			if info.UserID != uuid.Nil {
+				ctx = httpx.WithUserID(ctx, info.UserID.String())
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

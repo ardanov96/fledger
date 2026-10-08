@@ -27,19 +27,25 @@
         <h2>🔐 Sign in</h2>
         <p class="muted">FMCG Wallet Dashboard</p>
         <form id="login-form" autocomplete="off">
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button type="button" class="btn-secondary" id="fill-admin-btn" style="flex:1;font-size:0.85rem;padding:6px 8px;">👑 Admin HQ</button>
+            <button type="button" class="btn-secondary" id="fill-sales-btn" style="flex:1;font-size:0.85rem;padding:6px 8px;">💼 Sales Joni</button>
+          </div>
           <label>Tenant ID
-            <input type="text" name="tenant_id" required
+            <input type="text" name="tenant_id" id="login-tenant" required
+                   value="00000000-0000-0000-0000-000000000001"
                    placeholder="00000000-0000-0000-0000-000000000001"
                    pattern="[0-9a-fA-F-]{36}">
           </label>
           <label>Username (user_id)
-            <input type="text" name="username" required
+            <input type="text" name="username" id="login-username" required
+                   value="33333333-3333-3333-3333-333333333333"
                    placeholder="33333333-3333-3333-3333-333333333333"
                    pattern="[0-9a-fA-F-]{36}">
           </label>
           <label>Password
             <div class="password-wrap">
-              <input type="password" name="password" id="password" required>
+              <input type="password" name="password" id="password" value="DemoTest1234!" required>
               <button type="button" class="btn-eye" id="toggle-pw" tabindex="-1">👁</button>
             </div>
           </label>
@@ -206,24 +212,101 @@
 
     <!-- ==================== RECONCILER ==================== -->
     <section id="view-reconciler" class="view" hidden>
-      <h2>🔍 Reconciler</h2>
-      <form id="reconciler-form" class="form-card">
-        <h3>Trigger Reconciliation</h3>
-        <div class="form-row">
-          <label>Period
-            <select name="period_id" id="reconciler-period-select" required></select>
-          </label>
-          <label><input type="checkbox" name="run_hash_check"> Include hash chain check (slower)</label>
+      <div class="view-header">
+        <div>
+          <h2>🔍 Rekonsiliasi Buku Besar (Reconciler)</h2>
+          <p class="muted">Validasi keseimbangan neraca saldo (Debit = Kredit) serta audit keutuhan kriptografi seluruh entri mutasi.</p>
         </div>
-        <button type="submit" class="btn-primary">Run Reconciliation</button>
-        <p id="reconciler-error" class="error" hidden></p>
-      </form>
-      <h3>Recent Runs</h3>
+      </div>
+
+      <div class="reconciler-layout">
+        <!-- TRIGGER CARD -->
+        <form id="reconciler-form" class="card reconciler-card">
+          <div class="reconciler-card-header">
+            <div class="reconciler-icon-badge">⚡</div>
+            <div>
+              <h3>Jalankan Rekonsiliasi Periode</h3>
+              <p class="text-sm muted">Pilih periode akuntansi untuk memverifikasi apakah seluruh transaksi seimbang (Imbalance = 0).</p>
+            </div>
+          </div>
+
+          <!-- FIELD: PERIOD SELECTION -->
+          <div class="form-group">
+            <label class="form-label" for="reconciler-period-select">
+              <span class="label-title">Periode Akuntansi</span>
+              <span class="label-req">*</span>
+            </label>
+            <div class="select-wrapper">
+              <select name="period_id" id="reconciler-period-select" class="form-control" required></select>
+            </div>
+            <span class="field-hint">💡 Transaksi dalam rentang tanggal periode ini yang akan dihitung dan direkonsiliasi.</span>
+          </div>
+
+          <!-- OPTION: HASH CHAIN AUDIT BOX -->
+          <div class="reconciler-audit-box">
+            <label class="audit-option-label" for="reconciler-hash-check">
+              <input type="checkbox" name="run_hash_check" id="reconciler-hash-check" class="custom-checkbox">
+              <div class="audit-option-body">
+                <div class="audit-option-title-row">
+                  <span class="audit-option-title">Sertakan Audit Kriptografi (SHA-256 Hash Chain)</span>
+                  <span class="audit-badge">Deep Integrity Audit</span>
+                </div>
+                <p class="audit-option-desc">
+                  <strong>Untuk apa opsi ini?</strong> Memverifikasi keutuhan rantai hash kriptografi SHA-256 pada setiap entri buku besar (<code>prev_hash</code> ➔ <code>entry_hash</code>).
+                  Berfungsi untuk membuktikan secara matematis bahwa tidak ada transaksi yang dimanipulasi, diselipkan, atau dihapus langsung di database.
+                </p>
+                <div class="audit-option-notice">
+                  <span class="notice-icon">⏱</span>
+                  <span><strong>Waktu proses lebih lama:</strong> Sistem akan menghitung dan memvalidasi hash kriptografi berantai pada seluruh mutasi periode ini.</span>
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <!-- SUBMIT ACTIONS -->
+          <div class="reconciler-actions">
+            <button type="submit" id="btn-reconciler-submit" class="btn-primary btn-run">
+              <span class="btn-icon">▶</span>
+              <span class="btn-text">Jalankan Rekonsiliasi</span>
+            </button>
+          </div>
+          <p id="reconciler-error" class="error" hidden></p>
+        </form>
+
+        <!-- INFO / EXPLAINER CARD -->
+        <div class="card reconciler-guide-card">
+          <h4>📖 Indikator & Status Rekonsiliasi</h4>
+          <div class="guide-item">
+            <div class="guide-badge badge-balanced">✅ BALANCED</div>
+            <p>Total Debit sama dengan Total Kredit (selisih = Rp 0). Buku besar sehat dan siap untuk tutup buku (Period Closing).</p>
+          </div>
+          <div class="guide-item">
+            <div class="guide-badge badge-imbalanced">⚠️ IMBALANCED</div>
+            <p>Ditemukan selisih (Imbalance ≠ 0). Terdapat jurnal tidak seimbang yang harus diinvestigasi sebelum periode ditutup.</p>
+          </div>
+          <div class="guide-item">
+            <div class="guide-badge badge-tampered">🚨 TAMPERED</div>
+            <p>Terdeteksi rantai hash kriptografi terputus atau tidak cocok. Menandakan data di database telah dimanipulasi langsung.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- RECENT RUNS TABLE -->
+      <div class="table-header-row">
+        <h3>Riwayat Rekonsiliasi Terakhir (Recent Runs)</h3>
+        <span class="text-sm muted">20 rekonsiliasi terbaru</span>
+      </div>
       <table id="runs-table" class="data-table">
         <thead><tr>
-          <th>Run ID</th><th>Period</th><th>Status</th>
-          <th class="num">Debit</th><th class="num">Credit</th><th class="num">Imbalance</th>
-          <th>Started</th><th>Duration</th>
+          <th>Run ID</th>
+          <th>Periode</th>
+          <th>Status</th>
+          <th class="num">Total Debit</th>
+          <th class="num">Total Credit</th>
+          <th class="num">Imbalance</th>
+          <th class="text-center">Hash Audit</th>
+          <th>Waktu Mulai</th>
+          <th>Durasi</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -231,31 +314,103 @@
 
     <!-- ==================== CURRENCIES ==================== -->
     <section id="view-currencies" class="view" hidden>
-      <h2>💱 Currencies & FX</h2>
-      <div class="grid-2col">
-        <div class="card">
-          <h3>Registered Currencies</h3>
+      <div class="view-header">
+        <div>
+          <h2>💱 Mata Uang & Kurs Valas (Currencies & FX)</h2>
+          <p class="muted">Master mata uang yang didukung dalam pembukuan serta simulator konversi nilai kurs valas (FX Rate) secara real-time.</p>
+        </div>
+      </div>
+
+      <div class="currencies-layout">
+        <!-- REGISTERED CURRENCIES CARD -->
+        <div class="card fx-card">
+          <div class="card-header-styled">
+            <div class="card-icon-badge">🌐</div>
+            <div>
+              <h3>Mata Uang Terdaftar</h3>
+              <p class="text-sm muted">Mata uang aktif yang digunakan untuk rekening kas, piutang, dan invoice.</p>
+            </div>
+          </div>
           <table id="currencies-table" class="data-table">
-            <thead><tr><th>Code</th><th>Name</th><th class="num">Decimal</th><th>Active</th></tr></thead>
+            <thead><tr>
+              <th>Kode</th>
+              <th>Nama Mata Uang</th>
+              <th class="num">Presisi Desimal</th>
+              <th class="text-center">Status</th>
+            </tr></thead>
             <tbody></tbody>
           </table>
+          <div class="card-footer-hint">
+            <span>💡 <strong>Mata Uang Utama:</strong> <code>IDR</code> (Rupiah) bertindak sebagai mata uang dasar pelaporan keuangan tenant.</span>
+          </div>
         </div>
-        <div class="card">
-          <h3>FX Converter</h3>
-          <form id="convert-form">
-            <div class="form-row">
-              <label>From
-                <select name="from_currency" id="convert-from" required></select>
-              </label>
-              <label>To
-                <select name="to_currency" id="convert-to" required></select>
-              </label>
+
+        <!-- FX CONVERTER CARD -->
+        <div class="card fx-card">
+          <div class="card-header-styled">
+            <div class="card-icon-badge">💱</div>
+            <div>
+              <h3>Kalkulator Kurs Valas (FX Converter)</h3>
+              <p class="text-sm muted">Simulasi konversi antar mata uang berdasarkan kurs valuta asing aktif di sistem.</p>
             </div>
-            <label>Amount
-              <input type="number" name="amount_minor" min="1" required value="10000">
-            </label>
-            <button type="submit" class="btn-primary">Convert</button>
-            <div id="convert-result" class="result-card"></div>
+          </div>
+
+          <form id="convert-form" class="standard-form">
+            <div class="fx-currency-row">
+              <div class="form-group flex-1">
+                <label class="form-label" for="convert-from">
+                  <span>Dari (From)</span>
+                  <span class="label-req">*</span>
+                </label>
+                <div class="select-wrapper">
+                  <select name="from_currency" id="convert-from" class="form-control" required></select>
+                </div>
+              </div>
+
+              <div class="swap-btn-container">
+                <button type="button" id="btn-swap-currency" class="btn-swap" title="Tukar Mata Uang">
+                  <span>⇄</span>
+                </button>
+              </div>
+
+              <div class="form-group flex-1">
+                <label class="form-label" for="convert-to">
+                  <span>Ke (To)</span>
+                  <span class="label-req">*</span>
+                </label>
+                <div class="select-wrapper">
+                  <select name="to_currency" id="convert-to" class="form-control" required></select>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="convert-amount">
+                <span>Jumlah Nominal</span>
+                <span class="label-req">*</span>
+              </label>
+              <div class="input-with-addon">
+                <span class="input-addon" id="convert-currency-addon">USD</span>
+                <input type="number" name="amount" id="convert-amount" class="form-control" min="1" step="any" required value="100" placeholder="100">
+              </div>
+              <div class="preset-chips">
+                <span class="preset-label">Pilihan cepat:</span>
+                <button type="button" class="chip-btn" data-preset="10">+10</button>
+                <button type="button" class="chip-btn" data-preset="50">+50</button>
+                <button type="button" class="chip-btn" data-preset="100">+100</button>
+                <button type="button" class="chip-btn" data-preset="1000">+1.000</button>
+              </div>
+              <span class="field-hint" id="convert-amount-hint">💡 Masukkan nominal dalam satuan mata uang utama (contoh: 100 USD akan dikonversi ke minor 10.000 sen).</span>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" id="btn-convert-submit" class="btn-primary btn-run">
+                <span class="btn-icon">🔄</span>
+                <span class="btn-text">Hitung Konversi Kurs</span>
+              </button>
+            </div>
+
+            <div id="convert-result" class="fx-result-container" hidden></div>
           </form>
         </div>
       </div>
@@ -308,6 +463,6 @@
   </div>
 
   <!-- All-in-one JS (api + auth + views + app) -->
-  <script src="/js/app.js?v=2"></script>
+  <script src="/js/app.js?v=5"></script>
 </body>
 </html>

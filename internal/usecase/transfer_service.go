@@ -353,7 +353,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 		txn := ledger.Transaction{
 			ID:             txID,
 			IdempotencyKey: input.IdempotencyKey,
-			Status:         ledger.TransactionStatusPending,
+			Status:         ledger.TransactionStatusPosted,
 			Description:    input.Description,
 			RefType:        input.RefType,
 			RefID:          input.RefID,
@@ -361,6 +361,7 @@ func (s *TransferService) Transfer(ctx context.Context, input ledger.TransferInp
 			TenantID:       src.TenantID,
 			PeriodID:       periodID,
 			Metadata:       input.Metadata,
+			PostedAt:       &now,
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}

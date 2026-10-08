@@ -16,16 +16,19 @@
   // Supports IDR (no decimals), USD (2 decimals), generic.
   const fmtMinor = (minor, currency) => {
     if (minor == null) return '—';
-    const m = typeof minor === 'string' ? BigInt(minor) : BigInt(minor);
+    const n = Number(minor);
+    if (isNaN(n)) return '—';
+    const m = BigInt(Math.round(n));
     const negative = m < 0n;
     const abs = negative ? -m : m;
     const code = (currency || 'IDR').toUpperCase();
-    const decimals = code === 'IDR' ? 0 : 2;
-    const factor = decimals === 0 ? 1n : 100n;
+    const factor = 100n; // all currencies in this system (IDR, USD, SGD) use 2 decimal places in minor units (cents/sen)
     const major = abs / factor;
-    const minor2 = decimals === 0 ? 0n : abs % factor;
+    const minor2 = abs % factor;
     const majorStr = major.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    const minorStr = decimals === 0 ? '' : ',' + minor2.toString().padStart(decimals, '0');
+    const minorStr = code === 'IDR'
+      ? (minor2 === 0n ? '' : ',' + minor2.toString().padStart(2, '0'))
+      : ',' + minor2.toString().padStart(2, '0');
     const prefix = code === 'IDR' ? 'Rp ' : code + ' ';
     return (negative ? '−' : '') + prefix + majorStr + minorStr;
   };
@@ -37,6 +40,13 @@
     const d = new Date(iso);
     if (isNaN(d)) return iso;
     return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: '2-digit' });
+  };
+
+  const fmtShortDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const fmtDateTime = (iso) => {
@@ -161,6 +171,31 @@
       const ct = res.headers.get('content-type') || '';
       const body = ct.includes('json') ? await res.json() : await res.text();
       if (!res.ok) {
+        if (res.status === 401 && !opts._retry && !opts.skipAuth && path !== '/v1/auth/login' && path !== '/v1/auth/refresh') {
+          const refreshToken = this.getRefresh();
+          if (refreshToken) {
+            try {
+              const refRes = await this.post('/v1/auth/refresh', { refresh_token: refreshToken }, { skipAuth: true, skipTenant: true, _retry: true });
+              if (refRes.data && refRes.data.access_token) {
+                this.setToken(refRes.data.access_token);
+                this.setRefresh(refRes.data.refresh_token);
+                return this.request(path, { ...opts, _retry: true });
+              }
+            } catch (refErr) {
+              this.setToken(null);
+              this.setRefresh(null);
+              this.setUser(null);
+              auth.showLogin();
+              toast('Sesi telah kedaluwarsa. Silakan sign in kembali.', 'warning');
+            }
+          } else {
+            this.setToken(null);
+            this.setRefresh(null);
+            this.setUser(null);
+            auth.showLogin();
+            toast('Sesi telah kedaluwarsa. Silakan sign in kembali.', 'warning');
+          }
+        }
         const err = new Error((body && body.error && body.error.message) || `HTTP ${res.status}`);
         err.status = res.status;
         err.code = body && body.error && body.error.code;
@@ -285,7 +320,10 @@
 
         const openList = openInv.data || [];
         const partialList = partialInv.data || [];
-        const openTotal = openList.reduce((s, i) => s + Number(i.amount_minor - i.paid_amount_minor), 0);
+        const openTotal = openList.reduce((s, i) => {
+          const out = i.outstanding_minor ?? (Number(i.amount_minor || 0) - Number(i.paid_minor || i.paid_amount_minor || 0));
+          return s + Number(out || 0);
+        }, 0);
         const overdueList = acctList.filter(a => a.status === 'frozen').length;
 
         cards.innerHTML = `
@@ -319,9 +357,9 @@
           <table class="data-table compact">
             <thead><tr><th>Code</th><th class="num">Amount</th><th class="num">Outstanding</th><th>Due</th></tr></thead>
             <tbody>${openList.map(inv => {
-              const out = inv.amount_minor - inv.paid_amount_minor;
+              const out = inv.outstanding_minor ?? (Number(inv.amount_minor || 0) - Number(inv.paid_minor || inv.paid_amount_minor || 0));
               return `<tr>
-                <td><code>${inv.code}</code></td>
+                <td><code>${escapeHTML(inv.code)}</code></td>
                 <td class="num">${fmtIDR(inv.amount_minor)}</td>
                 <td class="num">${fmtIDR(out)}</td>
                 <td>${fmtShortDate(inv.due_date)}</td>
@@ -329,7 +367,30 @@
             }).join('')}</tbody>
           </table>` : emptyState('📭', 'No open invoices', 'All invoices have been paid or partially paid.');
 
-        ag.innerHTML = emptyState('📅', 'Aging data', 'Select Aging tab to view per-customer breakdown.');
+        try {
+          const agingRes = await api.get('/v1/accounts?type=customer');
+          const customers = agingRes.data || [];
+          if (customers.length > 0) {
+            const firstCust = customers[0];
+            const custAging = await api.get(`/v1/customers/${firstCust.id}/aging`);
+            const buckets = custAging.data || [];
+            ag.innerHTML = `
+              <div style="font-size:0.85rem;margin-bottom:8px;color:var(--text-muted);">Customer: <strong style="color:var(--text);">${escapeHTML(firstCust.name)}</strong></div>
+              <table class="data-table compact">
+                <thead><tr><th>Bucket</th><th class="num">Count</th><th class="num">Outstanding</th></tr></thead>
+                <tbody>${buckets.map(b => `
+                  <tr>
+                    <td><code>${escapeHTML(b.bucket)}</code></td>
+                    <td class="num">${b.count}</td>
+                    <td class="num">${fmtIDR(b.outstanding_minor)}</td>
+                  </tr>`).join('')}</tbody>
+              </table>`;
+          } else {
+            ag.innerHTML = emptyState('📅', 'No aging data', 'No customer accounts found.');
+          }
+        } catch {
+          ag.innerHTML = emptyState('📅', 'Aging data', 'Select Aging tab to view per-customer breakdown.');
+        }
       } catch (e) {
         cards.innerHTML = `<p class="error">Failed: ${escapeHTML(e.message)}</p>`;
         oi.innerHTML = '';
@@ -377,8 +438,71 @@
       await this.loadAccountOptions();
       document.getElementById('transfer-success').hidden = true;
       document.getElementById('transfer-error').hidden = true;
+      await this.loadTransferHistory();
+    },
+
+    async loadTransferHistory() {
       const tbody = document.querySelector('#transfers-table tbody');
-      tbody.innerHTML = `<tr><td colspan="7">${emptyState('💸', 'Create your first transfer', 'Use the form above. Transfer history appears here after creation.')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7">${spinner()}</td></tr>`;
+      try {
+        const accRes = await api.get('/v1/accounts');
+        const accounts = accRes.data || [];
+        const accMap = new Map(accounts.map(a => [a.id, a]));
+        const cashAccounts = accounts.filter(a => a.type === 'cash');
+
+        const allEntries = [];
+        for (const acc of cashAccounts) {
+          try {
+            const entRes = await api.get(`/v1/accounts/${acc.id}/entries?limit=50`);
+            if (entRes.data && Array.isArray(entRes.data)) {
+              allEntries.push(...entRes.data);
+            }
+          } catch (e) { /* continue */ }
+        }
+
+        const txMap = new Map();
+        for (const e of allEntries) {
+          if (!txMap.has(e.transaction_id)) {
+            txMap.set(e.transaction_id, {
+              id: e.transaction_id,
+              created_at: e.created_at,
+              amount_minor: e.amount_minor,
+              status: 'posted',
+              currency: accMap.get(e.account_id)?.currency || 'IDR',
+              from: null,
+              to: null,
+              description: e.description,
+            });
+          }
+          const item = txMap.get(e.transaction_id);
+          if (e.type === 'debit') {
+            item.from = accMap.get(e.account_id);
+          } else if (e.type === 'credit') {
+            item.to = accMap.get(e.account_id);
+          }
+        }
+
+        const txList = Array.from(txMap.values())
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        if (txList.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7">${emptyState('💸', 'Create your first transfer', 'Use the form above. Transfer history appears here after creation.')}</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = txList.map(t => `
+          <tr>
+            <td><code>${escapeHTML(truncate(t.id, 8))}</code></td>
+            <td>${escapeHTML(t.from ? `${t.from.code} — ${t.from.name}` : '-')}</td>
+            <td>${escapeHTML(t.to ? `${t.to.code} — ${t.to.name}` : '-')}</td>
+            <td class="num">${fmtIDR(t.amount_minor)}</td>
+            <td>${escapeHTML(t.currency)}</td>
+            <td>${badge(t.status)}</td>
+            <td>${fmtAgo(t.created_at)}</td>
+          </tr>`).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('❌', 'Error loading transfers', err.message)}</td></tr>`;
+      }
     },
 
     async loadAccountOptions() {
@@ -426,6 +550,7 @@
         toast(`Transfer ${truncate(txId, 8)} created`, 'success');
         form.reset();
         await this.loadAccountOptions();
+        await this.loadTransferHistory();
       } catch (err) {
         const msg = err.details ? JSON.stringify(err.details) : err.message;
         errEl.textContent = `${err.code || 'ERROR'}: ${msg}`;
@@ -457,12 +582,13 @@
 
         tbody.innerHTML = list.map(inv => {
           const cust = acctMap[inv.customer_id];
-          const outstanding = Number(inv.amount_minor || 0) - Number(inv.paid_amount_minor || 0);
+          const paid = Number(inv.paid_minor ?? inv.paid_amount_minor ?? 0);
+          const outstanding = Number(inv.outstanding_minor ?? (Number(inv.amount_minor || 0) - paid));
           return `<tr>
             <td><code>${escapeHTML(inv.code)}</code></td>
             <td>${cust ? escapeHTML(cust.name) : '<span class="muted">' + truncate(inv.customer_id, 12) + '</span>'}</td>
             <td class="num">${fmtIDR(inv.amount_minor)}</td>
-            <td class="num">${fmtIDR(inv.paid_amount_minor)}</td>
+            <td class="num">${fmtIDR(paid)}</td>
             <td class="num">${fmtIDR(outstanding)}</td>
             <td>${badge(inv.status)}</td>
             <td>${fmtShortDate(inv.due_date)}</td>
@@ -559,6 +685,10 @@
           select.innerHTML = '<option value="">— Select customer —</option>' +
             this._customers.map(c => `<option value="${c.id}">${escapeHTML(c.code)} — ${escapeHTML(c.name)}</option>`).join('');
           select.onchange = () => this.loadAgingFor(select.value);
+          if (this._customers.length > 0 && !this._currentAgingCustomer) {
+            select.value = this._customers[0].id;
+            this._currentAgingCustomer = this._customers[0].id;
+          }
         } catch (e) {
           select.innerHTML = `<option>Error: ${e.message}</option>`;
         }
@@ -675,44 +805,87 @@
     async reconciler() {
       const tbody = document.querySelector('#runs-table tbody');
       const periodSelect = document.getElementById('reconciler-period-select');
-      tbody.innerHTML = `<tr><td colspan="8">${spinner()}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9">${spinner()}</td></tr>`;
       try {
         const [runsRes, periodsRes] = await Promise.all([
-          api.get('/v1/reconciler/runs?limit=20'),
+          api.get(`/v1/reconciler/runs?tenant_id=${encodeURIComponent(api.getUser()?.tenant_id || '')}&limit=20`),
           api.get('/v1/periods'),
         ]);
         const periods = periodsRes.data || [];
+        const periodMap = new Map(periods.map(p => [p.id, p]));
+
         periodSelect.innerHTML = periods.length
-          ? periods.map(p => `<option value="${p.id}">${truncate(p.id, 8)}… (${p.status})</option>`).join('')
-          : '<option value="">(no periods)</option>';
+          ? periods.map(p => {
+              const startStr = fmtShortDate(p.period_start || p.start_date);
+              const endStr = fmtShortDate(p.period_end || p.end_date);
+              const status = (p.status || 'open').toUpperCase();
+              const statusEmoji = p.status === 'open' ? '🟢' : (p.status === 'closing' ? '🟡' : '🔒');
+              return `<option value="${p.id}">${statusEmoji} Periode: ${startStr} s/d ${endStr} (${status})</option>`;
+            }).join('')
+          : '<option value="">(Belum ada periode akuntansi)</option>';
 
         const runs = runsRes.data || [];
         if (runs.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="8">${emptyState('🔍', 'No reconciliation runs yet', 'Trigger one using the form above.')}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="9">${emptyState('🔍', 'Belum ada riwayat rekonsiliasi', 'Jalankan rekonsiliasi pertama Anda menggunakan form di atas.')}</td></tr>`;
           return;
         }
         tbody.innerHTML = runs.map(r => {
-          const dur = r.duration_ms ? `${(r.duration_ms / 1000).toFixed(2)}s` : '—';
+          let dur = '—';
+          if (r.duration_ms) {
+            dur = `${(r.duration_ms / 1000).toFixed(2)}s`;
+          } else if (r.started_at && r.finished_at) {
+            const ms = Math.max(0, new Date(r.finished_at).getTime() - new Date(r.started_at).getTime());
+            dur = ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
+          }
+
           const imbalance = Number(r.imbalance_minor || 0);
-          const rowClass = imbalance !== 0 ? 'class="row-danger"' : '';
+          const isImbalanced = imbalance !== 0;
+          const isTampered = r.status === 'tampered';
+          const rowClass = (isImbalanced || isTampered) ? 'class="row-danger"' : '';
+
+          // Matched period date range
+          const matchedPeriod = periodMap.get(r.period_id);
+          const periodLabel = matchedPeriod
+            ? `${fmtShortDate(matchedPeriod.period_start)} – ${fmtShortDate(matchedPeriod.period_end)}`
+            : truncate(r.period_id, 8);
+
+          // Hash chain audit status
+          let hashBadge = '<span class="text-muted" style="font-size:12px;">— Dilewati</span>';
+          if (r.hash_chain_ok === true) {
+            hashBadge = '<span class="badge badge-balanced" title="Seluruh rantai hash kriptografi SHA-256 valid">✅ Valid</span>';
+          } else if (r.hash_chain_ok === false) {
+            hashBadge = `<span class="badge badge-tampered" title="Terdeteksi pelanggaran integritas data atau rantai hash terputus">🚨 ${r.hash_chain_errors || 0} Error</span>`;
+          }
+
           return `<tr ${rowClass}>
             <td><code>${truncate(r.id, 8)}</code></td>
-            <td><code>${truncate(r.period_id, 8)}</code></td>
+            <td><strong>${periodLabel}</strong></td>
             <td>${badge(r.status)}</td>
             <td class="num">${fmtIDR(r.total_debit_minor || 0)}</td>
             <td class="num">${fmtIDR(r.total_credit_minor || 0)}</td>
-            <td class="num">${fmtIDR(imbalance)}</td>
+            <td class="num" style="${isImbalanced ? 'color: var(--error); font-weight: 700;' : ''}">${fmtIDR(imbalance)}</td>
+            <td class="text-center">${hashBadge}</td>
             <td>${fmtAgo(r.started_at)}</td>
             <td>${dur}</td>
           </tr>`;
         }).join('');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="8">${emptyState('❌', 'Error', e.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9">${emptyState('❌', 'Error', e.message)}</td></tr>`;
       }
     },
 
     async submitReconciler(form) {
       const fd = new FormData(form);
+      const btn = form.querySelector('button[type="submit"]');
+      const errEl = document.getElementById('reconciler-error');
+      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+
+      const origBtnHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>⏳ Memproses Rekonsiliasi...</span>';
+      }
+
       const body = {
         tenant_id: api.getUser()?.tenant_id,
         period_id: fd.get('period_id'),
@@ -720,10 +893,26 @@
       };
       try {
         const res = await api.post('/v1/reconciler/run', body);
-        toast(`Reconciliation started: ${truncate(res.data?.run_id || '?', 8)}`, 'success');
+        const run = res.data;
+        if (run?.status === 'tampered') {
+          toast(`🚨 Rekonsiliasi selesai: Terdeteksi manipulasi data! (${run.hash_chain_errors || 0} hash rusak)`, 'error', 6000);
+        } else if (run?.status === 'imbalanced') {
+          toast(`⚠️ Rekonsiliasi selesai: Terdapat selisih Debit ≠ Kredit!`, 'warning', 5000);
+        } else {
+          toast(`✅ Rekonsiliasi selesai: Pembukuan seimbang (BALANCED)!`, 'success', 4000);
+        }
         await this.reconciler();
       } catch (e) {
+        if (errEl) {
+          errEl.textContent = `${e.code || 'Error'}: ${e.message}`;
+          errEl.hidden = false;
+        }
         toast(`${e.code || 'Error'}: ${e.message}`, 'error', 6000);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origBtnHtml;
+        }
       }
     },
 
@@ -738,46 +927,125 @@
         const res = await api.get('/v1/currencies');
         this._currencies = res.data || [];
         if (this._currencies.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4">${emptyState('💱', 'No currencies', 'Seed demo data first.')}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="4">${emptyState('💱', 'Belum ada mata uang', 'Seed data demo terlebih dahulu.')}</td></tr>`;
           return;
         }
         tbody.innerHTML = this._currencies.map(c => `
           <tr>
-            <td><code>${escapeHTML(c.code)}</code></td>
-            <td>${escapeHTML(c.name)}</td>
-            <td class="num">${c.decimal_places ?? '—'}</td>
-            <td>${c.is_active ? '✅' : '❌'}</td>
+            <td><span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700;">${escapeHTML(c.code)}</span></td>
+            <td><strong>${escapeHTML(c.name)}</strong></td>
+            <td class="num">${c.decimal_places != null ? `${c.decimal_places} desimal` : '—'}</td>
+            <td class="text-center"><span class="badge ${c.is_active ? 'active' : 'closed'}">${c.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
           </tr>`).join('');
         const opts = this._currencies.map(c => `<option value="${escapeHTML(c.code)}">${escapeHTML(c.code)} — ${escapeHTML(c.name)}</option>`).join('');
         fromSel.innerHTML = opts;
         toSel.innerHTML = opts;
-        if (!fromSel.value) fromSel.value = 'USD';
-        if (!toSel.value)   toSel.value = 'IDR';
+        if (!fromSel.value || fromSel.value === 'IDR') fromSel.value = 'USD';
+        if (!toSel.value) toSel.value = 'IDR';
+        this.updateConvertAddon();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="4">${emptyState('❌', 'Error', e.message)}</td></tr>`;
       }
     },
 
+    updateConvertAddon() {
+      const fromSel = document.getElementById('convert-from');
+      const addon = document.getElementById('convert-currency-addon');
+      const hint = document.getElementById('convert-amount-hint');
+      if (!fromSel || !addon) return;
+      const code = fromSel.value || 'USD';
+      addon.textContent = code;
+      if (hint) {
+        hint.textContent = `💡 Masukkan nominal dalam satuan mata uang ${code} (contoh: ${code === 'IDR' ? '100000 untuk Rp 100.000' : '100 untuk ' + code + ' 100.00'}).`;
+      }
+    },
+
     async submitConvert(form) {
       const fd = new FormData(form);
+      const fromCurr = fd.get('from_currency');
+      const toCurr = fd.get('to_currency');
+      const rawAmount = parseFloat(fd.get('amount') || fd.get('amount_minor') || '0');
+      if (isNaN(rawAmount) || rawAmount <= 0) {
+        toast('Masukkan jumlah nominal yang valid lebih dari 0', 'warning');
+        return;
+      }
+
+      // Convert standard amount to minor units based on from_currency decimals
+      const currObj = this._currencies.find(c => c.code === fromCurr);
+      const decimals = currObj?.decimal_places ?? 2;
+      const amountMinor = Math.round(rawAmount * Math.pow(10, decimals));
+
       const body = {
         tenant_id: api.getUser()?.tenant_id,
-        from_currency: fd.get('from_currency'),
-        to_currency: fd.get('to_currency'),
-        amount_minor: parseInt(fd.get('amount_minor'), 10),
+        from_currency: fromCurr,
+        to_currency: toCurr,
+        amount_minor: amountMinor,
       };
+
       const out = document.getElementById('convert-result');
-      out.innerHTML = spinner('Converting…');
+      out.hidden = false;
+      out.innerHTML = spinner('Menghitung kurs konversi...');
+
+      const btn = form.querySelector('button[type="submit"]');
+      const origBtn = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>⏳ Mengonversi...</span>';
+      }
+
       try {
         const res = await api.post('/v1/currencies/convert', body);
         const r = res.data || res;
+        const fromMinor = r.from_minor ?? amountMinor;
+        const toMinor = r.to_minor ?? r.converted_amount_minor ?? 0;
+        const rateStr = r.rate ? Number(r.rate).toLocaleString('id-ID', { maximumFractionDigits: 6 }) : '—';
+        const rateId = r.rate_id || r.fx_rate_id;
+        const timeStr = r.at ? fmtDateTime(r.at) : 'Baru saja';
+
         out.innerHTML = `
-          <div class="result-row"><span>From:</span><strong>${body.amount_minor.toLocaleString()} ${escapeHTML(body.from_currency)}</strong></div>
-          <div class="result-row"><span>To:</span><strong>${r.converted_amount_minor?.toLocaleString() || '?'} ${escapeHTML(body.to_currency)}</strong></div>
-          <div class="result-row"><span>Rate:</span><strong>${r.rate || '?'}</strong></div>
-          <div class="result-row"><span>FX Rate ID:</span><code>${truncate(r.fx_rate_id, 12)}</code></div>`;
+          <div class="fx-result-card">
+            <div class="fx-result-header">
+              <span class="fx-result-badge">⚡ Hasil Konversi Kurs Real-time</span>
+              <span class="badge badge-active">Live FX Rate</span>
+            </div>
+            <div class="fx-result-main">
+              <div class="fx-result-col">
+                <span class="fx-result-sublabel">Nominal Awal</span>
+                <span class="fx-result-from">${fmtMinor(fromMinor, r.from_currency || fromCurr)}</span>
+              </div>
+              <div class="fx-result-equals">➔</div>
+              <div class="fx-result-col">
+                <span class="fx-result-sublabel">Hasil Konversi</span>
+                <span class="fx-result-to">${fmtMinor(toMinor, r.to_currency || toCurr)}</span>
+              </div>
+            </div>
+            <div class="fx-result-details">
+              <div class="fx-detail-item">
+                <span class="fx-detail-label">Nilai Kurs Acuan:</span>
+                <span class="fx-detail-value"><strong>1 ${escapeHTML(fromCurr)} = ${rateStr} ${escapeHTML(toCurr)}</strong></span>
+              </div>
+              <div class="fx-detail-item">
+                <span class="fx-detail-label">Waktu Penetapan:</span>
+                <span class="fx-detail-value">${timeStr}</span>
+              </div>
+              ${rateId ? `
+              <div class="fx-detail-item">
+                <span class="fx-detail-label">ID Kurs (FX Rate ID):</span>
+                <span class="fx-detail-value"><code>${truncate(rateId, 16)}</code></span>
+              </div>` : ''}
+            </div>
+          </div>`;
       } catch (e) {
-        out.innerHTML = `<p class="error">${escapeHTML(e.message)}</p>`;
+        out.innerHTML = `
+          <div class="result-error-card">
+            <p class="error">❌ ${escapeHTML(e.message || 'Gagal menghitung konversi kurs')}</p>
+          </div>`;
+        toast(`${e.code || 'Error'}: ${e.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origBtn;
+        }
       }
     },
 
@@ -833,10 +1101,61 @@
       await updateStatus();
       setInterval(updateStatus, 30_000);
 
+      // Quick fill credentials buttons
+      const fillAdmin = document.getElementById('fill-admin-btn');
+      const fillSales = document.getElementById('fill-sales-btn');
+      if (fillAdmin) {
+        fillAdmin.addEventListener('click', () => {
+          document.getElementById('login-tenant').value = '00000000-0000-0000-0000-000000000001';
+          document.getElementById('login-username').value = '33333333-3333-3333-3333-333333333333';
+          document.getElementById('password').value = 'DemoTest1234!';
+          toast('Kredensial Admin HQ diisikan. Klik "Sign in".', 'info');
+        });
+      }
+      if (fillSales) {
+        fillSales.addEventListener('click', () => {
+          document.getElementById('login-tenant').value = '00000000-0000-0000-0000-000000000001';
+          document.getElementById('login-username').value = '44444444-4444-4444-4444-444444444444';
+          document.getElementById('password').value = 'DemoTest1234!';
+          toast('Kredensial Sales Joni diisikan. Klik "Sign in".', 'info');
+        });
+      }
+
       // Check existing session
       const token = api.getToken();
       const user = api.getUser();
       if (token && user && user.tenant_id) {
+        let isExpired = false;
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+          if (payload.exp && (Date.now() / 1000) >= payload.exp) {
+            isExpired = true;
+          }
+        } catch { isExpired = true; }
+
+        if (isExpired) {
+          const refresh = api.getRefresh();
+          let refreshed = false;
+          if (refresh) {
+            try {
+              const res = await api.post('/v1/auth/refresh', { refresh_token: refresh }, { skipAuth: true, skipTenant: true });
+              if (res.data && res.data.access_token) {
+                api.setToken(res.data.access_token);
+                api.setRefresh(res.data.refresh_token);
+                refreshed = true;
+              }
+            } catch (e) {
+              console.warn('Auto refresh on boot failed:', e);
+            }
+          }
+          if (!refreshed) {
+            await api.logout();
+            auth.showLogin();
+            toast('Sesi Anda sebelumnya telah kedaluwarsa. Silakan sign in kembali.', 'warning');
+            return;
+          }
+        }
+
         auth.showApp(user);
         this.showView('dashboard');
       } else {
@@ -894,6 +1213,31 @@
         await views.submitConvert(e.target);
       });
 
+      // Currency dropdown change
+      document.getElementById('convert-from')?.addEventListener('change', () => views.updateConvertAddon());
+
+      // Currency swap button
+      document.getElementById('btn-swap-currency')?.addEventListener('click', () => {
+        const fromSel = document.getElementById('convert-from');
+        const toSel = document.getElementById('convert-to');
+        if (!fromSel || !toSel) return;
+        const temp = fromSel.value;
+        fromSel.value = toSel.value;
+        toSel.value = temp;
+        views.updateConvertAddon();
+      });
+
+      // Preset chips
+      document.querySelectorAll('.preset-chips .chip-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const input = document.getElementById('convert-amount');
+          if (input) {
+            input.value = btn.dataset.preset;
+            input.focus();
+          }
+        });
+      });
+
       // New Account button
       document.getElementById('new-account-btn').addEventListener('click', () => showNewAccountModal());
 
@@ -947,12 +1291,6 @@
   };
 
   // ----- Helpers -----
-  const fmtShortDate = (iso) => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (isNaN(d)) return iso;
-    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
   const debounce = (fn, ms) => {
     let t;
     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };

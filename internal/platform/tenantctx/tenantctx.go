@@ -30,6 +30,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/google/uuid"
 )
@@ -81,6 +82,39 @@ func withRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, ContextKey{}, requestID)
 }
 
+func execSQL(ctx context.Context, tx any, sql string, args ...any) error {
+	if exec, ok := tx.(TxExec); ok {
+		_, err := exec.Exec(ctx, sql, args...)
+		return err
+	}
+	val := reflect.ValueOf(tx)
+	if !val.IsValid() {
+		return ErrTxMismatch
+	}
+	method := val.MethodByName("Exec")
+	if !method.IsValid() {
+		return fmt.Errorf("tenantctx: tx %T does not satisfy TxExec (need Exec method)", tx)
+	}
+
+	in := make([]reflect.Value, 2+len(args))
+	in[0] = reflect.ValueOf(ctx)
+	in[1] = reflect.ValueOf(sql)
+	for i, a := range args {
+		in[2+i] = reflect.ValueOf(a)
+	}
+
+	out := method.Call(in)
+	if len(out) > 0 {
+		lastOut := out[len(out)-1]
+		if !lastOut.IsNil() {
+			if err, ok := lastOut.Interface().(error); ok {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // SetTenantContext issues SELECT set_config(...) to bind GUC variables
 // for the current transaction. All three GUC settings use is_local=true
 // so they auto-revert on COMMIT/ROLLBACK.
@@ -103,31 +137,26 @@ func SetTenantContext(ctx context.Context, tx any, info *Info) error {
 	if info == nil {
 		return nil
 	}
-	exec, ok := tx.(TxExec)
-	if !ok {
-		return fmt.Errorf("tenantctx: tx %T does not satisfy TxExec (need Exec method)", tx)
-	}
 
 	salesRep := "false"
 	if info.IsSalesRep {
 		salesRep = "true"
 	}
 
-	if _, err := exec.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", info.TenantID.String()); err != nil {
+	if err := execSQL(ctx, tx, "SELECT set_config('app.current_tenant_id', $1, true)", info.TenantID.String()); err != nil {
 		return fmt.Errorf("tenantctx: set tenant_id: %w", err)
 	}
-	if _, err := exec.Exec(ctx, "SELECT set_config('app.current_user_id', $1, true)", info.UserID.String()); err != nil {
+	if err := execSQL(ctx, tx, "SELECT set_config('app.current_user_id', $1, true)", info.UserID.String()); err != nil {
 		return fmt.Errorf("tenantctx: set user_id: %w", err)
 	}
-	if _, err := exec.Exec(ctx, "SELECT set_config('app.is_sales_rep', $1, true)", salesRep); err != nil {
+	if err := execSQL(ctx, tx, "SELECT set_config('app.is_sales_rep', $1, true)", salesRep); err != nil {
 		return fmt.Errorf("tenantctx: set is_sales_rep: %w", err)
 	}
 
 	// Sprint 23 (22B.5) audit INSERT — failure non-fatal.
 	requestID := GetRequestID(ctx)
-	if _, err := exec.Exec(ctx,
-		`INSERT INTO guc_bind_audit (tenant_id, user_id, is_sales_rep, request_id)
-		 VALUES ($1, $2, $3, NULLIF($4, ''))`,
+	if err := execSQL(ctx, tx,
+		`SELECT record_guc_bind_audit($1, $2, $3, $4)`,
 		info.TenantID, info.UserID, info.IsSalesRep, requestID,
 	); err != nil {
 		// Log but don't fail the tx — audit is best-effort, not a precondition
