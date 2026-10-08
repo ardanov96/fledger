@@ -31,7 +31,7 @@ import (
 // In-memory fakes
 // =============================================================================
 
-type fakeEntry struct {
+type fakeRecEntry struct {
 	ID        string
 	PeriodID  string
 	AccountID string
@@ -45,7 +45,7 @@ type recRepo struct {
 	acctResults map[string][]*reconciler.ReconcilerAccountResult     // run_id → results
 	periods     map[string]*reconciler.PeriodRef                     // id → ref
 	tenants     map[string]bool                                     // distinct tenants
-	entries     []fakeEntry                                          // ledger entries
+	entries     []fakeRecEntry                                      // ledger entries
 }
 
 func newRecRepo() *recRepo {
@@ -194,7 +194,7 @@ type recTx struct {
 }
 
 func (t *recTx) Exec(_ context.Context, _ string, _ ...any) (reconciler.CommandTag, error) {
-	return fakeTag{rows: 1}, nil
+	return fakeRecTag{rows: 1}, nil
 }
 func (t *recTx) Query(_ context.Context, _ string, _ ...any) (reconciler.Rows, error) {
 	return &fakeRecRows{}, nil
@@ -203,9 +203,9 @@ func (t *recTx) QueryRow(_ context.Context, _ string, _ ...any) reconciler.Row {
 	return &fakeRecRow{}
 }
 
-type fakeTag struct{ rows int64 }
+type fakeRecTag struct{ rows int64 }
 
-func (f fakeTag) RowsAffected() int64 { return f.rows }
+func (f fakeRecTag) RowsAffected() int64 { return f.rows }
 
 type fakeRecRows struct{}
 
@@ -336,15 +336,15 @@ func newReconcilerSvc(t *testing.T) (*ReconcilerService, *recRepo, *fakeHashChai
 
 func seedBalanced(recRepo *recRepo) {
 	recRepo.entries = append(recRepo.entries,
-		fakeEntry{ID: "e1", PeriodID: recPeriod1, AccountID: recAccountHQ, Type: "debit", Amount: 10000},
-		fakeEntry{ID: "e2", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "credit", Amount: 10000},
+		fakeRecEntry{ID: "e1", PeriodID: recPeriod1, AccountID: recAccountHQ, Type: "debit", Amount: 10000},
+		fakeRecEntry{ID: "e2", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "credit", Amount: 10000},
 	)
 }
 
 func seedImbalanced(recRepo *recRepo) {
 	recRepo.entries = append(recRepo.entries,
-		fakeEntry{ID: "e1", PeriodID: recPeriod1, AccountID: recAccountHQ, Type: "debit", Amount: 10000},
-		fakeEntry{ID: "e2", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "credit", Amount: 5000},
+		fakeRecEntry{ID: "e1", PeriodID: recPeriod1, AccountID: recAccountHQ, Type: "debit", Amount: 10000},
+		fakeRecEntry{ID: "e2", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "credit", Amount: 5000},
 	)
 }
 
@@ -354,10 +354,10 @@ func seedMultiAccount(recRepo *recRepo) {
 	// Transfer outlet1 → outlet2 (3000): debit outlet1 3000, credit outlet2 3000
 	// Total: debit 13000, credit 13000 — balanced
 	recRepo.entries = append(recRepo.entries,
-		fakeEntry{ID: "e1", PeriodID: recPeriod1, AccountID: recAccountHQ, Type: "debit", Amount: 10000},
-		fakeEntry{ID: "e2", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "credit", Amount: 10000},
-		fakeEntry{ID: "e3", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "debit", Amount: 3000},
-		fakeEntry{ID: "e4", PeriodID: recPeriod1, AccountID: "44444444-4444-4444-4444-444444444444", Type: "credit", Amount: 3000},
+		fakeRecEntry{ID: "e1", PeriodID: recPeriod1, AccountID: recAccountHQ, Type: "debit", Amount: 10000},
+		fakeRecEntry{ID: "e2", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "credit", Amount: 10000},
+		fakeRecEntry{ID: "e3", PeriodID: recPeriod1, AccountID: "33333333-3333-3333-3333-333333333333", Type: "debit", Amount: 3000},
+		fakeRecEntry{ID: "e4", PeriodID: recPeriod1, AccountID: "44444444-4444-4444-4444-444444444444", Type: "credit", Amount: 3000},
 	)
 }
 
@@ -546,8 +546,8 @@ func TestReconcilerService_RunAllForTenant_IteratesOpenPeriods(t *testing.T) {
 	// Period1 has balanced entries; period2 has imbalanced.
 	seedBalanced(repo)
 	repo.entries = append(repo.entries,
-		fakeEntry{ID: "e3", PeriodID: period2, AccountID: "a", Type: "debit", Amount: 1000},
-		fakeEntry{ID: "e4", PeriodID: period2, AccountID: "b", Type: "credit", Amount: 999},
+		fakeRecEntry{ID: "e3", PeriodID: period2, AccountID: "a", Type: "debit", Amount: 1000},
+		fakeRecEntry{ID: "e4", PeriodID: period2, AccountID: "b", Type: "credit", Amount: 999},
 	)
 
 	runIDs, err := svc.RunAllForTenant(context.Background(), recTenant1, false)

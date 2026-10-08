@@ -113,7 +113,6 @@ func TestProperty_FIFOAllocationRespectsDueDate(t *testing.T) {
 			return true
 		}
 		// Build outstanding invoices with random due_date offsets.
-		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		type inv struct {
 			id      string
 			amount  int64

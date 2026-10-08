@@ -25,6 +25,11 @@ type Claims struct {
 	jwtv5.RegisteredClaims
 }
 
+// NewNumericDate wraps jwtv5.NewNumericDate for convenience in tests and callers.
+func NewNumericDate(t time.Time) *jwtv5.NumericDate {
+	return jwtv5.NewNumericDate(t)
+}
+
 // Issuer / Audience constants (also enforced in Validate).
 const (
 	Issuer   = "fmcg-wallet"

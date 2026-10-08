@@ -32,7 +32,3 @@ func stubVerifierFor(t *testing.T) Verifier {
 	t.Helper()
 	return stubVerifier{}
 }
-</content><task_progress>- [x] All Sprint 9A files (incl. test_helpers.go)
-- [ ] Wire to main.go (cmd/api/main.go + add JWT verifier + Casbin enforcer setup)
-- [ ] Verify build
-- [ ] Commit Sprint 9A + push</task_progress></task_progress>

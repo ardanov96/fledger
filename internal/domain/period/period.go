@@ -59,6 +59,7 @@ type Period struct {
 	PeriodStart time.Time
 	PeriodEnd   time.Time
 	Status      PeriodStatus
+	CreatedAt   time.Time
 }
 
 // CloseRequest is one close workflow event for one period.
@@ -158,6 +159,9 @@ type Repository interface {
 	// the caller is responsible for retrying on unique-violation if a concurrent
 	// insert lands first. Returns ErrAlreadyExists on (tenant, range) collision.
 	InsertPeriod(ctx context.Context, p Period) error
+
+	// ListPeriodsByTenant returns all accounting periods for a tenant.
+	ListPeriodsByTenant(ctx context.Context, tenantID string) ([]Period, error)
 }
 
 // AccountRef is a minimal reference to an account (used when generating snapshots).

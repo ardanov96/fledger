@@ -30,6 +30,7 @@ type PeriodDTO struct {
 	PeriodStart time.Time
 	PeriodEnd   time.Time
 	Status      string
+	CreatedAt   time.Time
 }
 
 type CloseRequestDTO struct {
@@ -497,6 +498,36 @@ INSERT INTO accounting_periods (
 	return nil
 }
 
+// ListPeriodsByTenant returns all accounting periods for a tenant, newest first.
+func (r *PeriodRepository) ListPeriodsByTenant(ctx context.Context, tenantID string) ([]period.Period, error) {
+	const q = `
+SELECT id, tenant_id, period_start, period_end, status, created_at
+FROM accounting_periods
+WHERE tenant_id = $1
+ORDER BY period_start DESC
+`
+	var out []period.Period
+	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, tenantID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var dto PeriodDTO
+			if err := rows.Scan(&dto.ID, &dto.TenantID, &dto.PeriodStart, &dto.PeriodEnd, &dto.Status, &dto.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, dtoToPeriod(dto))
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list periods: %w", err)
+	}
+	return out, nil
+}
+
 // =============================================================================
 // DTO helpers
 // =============================================================================
@@ -524,6 +555,7 @@ func dtoToPeriod(dto PeriodDTO) period.Period {
 		PeriodStart: dto.PeriodStart,
 		PeriodEnd:   dto.PeriodEnd,
 		Status:      period.PeriodStatus(dto.Status),
+		CreatedAt:   dto.CreatedAt,
 	}
 }
 

@@ -272,10 +272,10 @@
 
       try {
         const [accounts, openInv, partialInv, periods] = await Promise.all([
-          api.get('/v1/accounts'),
-          api.get('/v1/invoices?status=open&limit=10'),
-          api.get('/v1/invoices?status=partial&limit=10'),
-          api.get('/v1/periods'),
+          api.get('/v1/accounts').catch(err => { console.warn('accounts fetch failed:', err); return { data: [] }; }),
+          api.get('/v1/invoices?status=open&limit=10').catch(err => { console.warn('open invoices fetch failed:', err); return { data: [] }; }),
+          api.get('/v1/invoices?status=partial&limit=10').catch(err => { console.warn('partial invoices fetch failed:', err); return { data: [] }; }),
+          api.get('/v1/periods').catch(err => { console.warn('periods fetch failed:', err); return { data: [] }; }),
         ]);
 
         const acctList = accounts.data || [];

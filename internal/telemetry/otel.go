@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -127,10 +128,10 @@ func stripScheme(endpoint string) string {
 		httpScheme  = "http://"
 		httpsScheme = "https://"
 	)
-	if len(endpoint) > len(httpScheme) && endpoint[:len(httpScheme)] == httpScheme {
+	if strings.HasPrefix(endpoint, httpScheme) {
 		return endpoint[len(httpScheme):]
 	}
-	if len(endpoint) > len(httpsScheme) && endpoint[:len(httpsScheme)] == httpsScheme {
+	if strings.HasPrefix(endpoint, httpsScheme) {
 		return endpoint[len(httpsScheme):]
 	}
 	return endpoint

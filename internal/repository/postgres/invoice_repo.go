@@ -152,7 +152,7 @@ FROM invoices
 WHERE ($1::uuid IS NULL OR tenant_id = $1)
   AND ($2::uuid IS NULL OR customer_id = $2)
   AND ($3::text IS NULL OR status = $3)
-  AND ($4::text IS NULL OR id < $4)
+  AND ($4::uuid IS NULL OR id < $4)
 ORDER BY id DESC
 LIMIT $5
 `
@@ -178,31 +178,39 @@ LIMIT $5
 		status = &s
 	}
 
-	var rows pgx.Rows
+	var out []invoice.Invoice
 	err := r.db.RunInReadTx(ctx, func(tx pgx.Tx) error {
-		var qErr error
-		rows, qErr = tx.Query(ctx, q, tenantID, customerID, status, nullStr(filter.Cursor), limit)
-		return qErr
+		var cursorID *uuid.UUID
+		if filter.Cursor != "" {
+			if cid, err := uuid.Parse(filter.Cursor); err == nil {
+				cursorID = &cid
+			}
+		}
+		rows, err := tx.Query(ctx, q, tenantID, customerID, status, cursorID, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		out = make([]invoice.Invoice, 0, limit)
+		for rows.Next() {
+			var dto InvoiceDTO
+			if err := rows.Scan(
+				&dto.ID, &dto.TenantID, &dto.CustomerID, &dto.Code,
+				&dto.Amount, &dto.PaidAmount, &dto.DueDate, &dto.Status,
+				&dto.IssuedAt, &dto.PeriodID, &dto.Description, &dto.Metadata,
+				&dto.CreatedAt, &dto.UpdatedAt,
+			); err != nil {
+				return fmt.Errorf("scan invoice: %w", err)
+			}
+			out = append(out, dtoToInvoice(dto))
+		}
+		return rows.Err()
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list invoices: %w", err)
 	}
-	defer rows.Close()
-
-	out := make([]invoice.Invoice, 0, limit)
-	for rows.Next() {
-		var dto InvoiceDTO
-		if err := rows.Scan(
-			&dto.ID, &dto.TenantID, &dto.CustomerID, &dto.Code,
-			&dto.Amount, &dto.PaidAmount, &dto.DueDate, &dto.Status,
-			&dto.IssuedAt, &dto.PeriodID, &dto.Description, &dto.Metadata,
-			&dto.CreatedAt, &dto.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan invoice: %w", err)
-		}
-		out = append(out, dtoToInvoice(dto))
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *InvoiceRepository) ListOutstandingByCustomer(ctx context.Context, tx invoice.Tx, customerID string) ([]invoice.Invoice, error) {

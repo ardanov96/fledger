@@ -373,10 +373,23 @@ func run() error {
 		}
 	}
 
+	// Listen address: APP_PORT env var OR -addr flag OR default 8080.
+	// Sprint 62-live: for local live testing, override via env or flag
+	// (e.g. `APP_PORT=18080 ./api.exe` or `./api.exe -addr=:18080`).
+	listenAddr := fmt.Sprintf(":%d", cfg.App.Port)
+	for i, arg := range os.Args {
+		if arg == "-addr" && i+1 < len(os.Args) {
+			listenAddr = os.Args[i+1]
+		}
+	}
+	if envPort := os.Getenv("APP_PORT"); envPort != "" {
+		listenAddr = ":" + envPort
+	}
+
 	router := buildRouter(cfg, log, pool, h, auditHandlers, *verifier, rbacEnforcer, authLimiter, globalLimiter, transferLimiter, natsClient)
 
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
+		Addr:              listenAddr,
 		Handler:           router,
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -553,6 +566,8 @@ func buildRouter(
 			// Period close workflow (Sprint 9).
 			// Sprint 57: /v1/auth/me route (returns Principal from JWT).
 			r.Get("/auth/me", h.Me)
+			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
+				rbac.ActionRead, rbac.ObjectPeriodClose)).Get("/periods", h.ListPeriods)
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,
 				rbac.ActionCreate, rbac.ObjectPeriodClose)).Post("/periods/{id}/close-requests", h.RequestPeriodClose)
 			r.With(middleware.RequirePermission(verifier, rbacEnforcer,

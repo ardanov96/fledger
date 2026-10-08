@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 // Package usecase - chaos engineering tests for worker processes (Sprint 36).
 //
 // These tests don't use external chaos tools (toxiproxy, chaos-mesh, etc.)
@@ -75,14 +78,15 @@ func TestIntegration_OutboxPublisher_RecoveryFromInterruption(t *testing.T) {
 			Subject:       "fmcg.transfer.posted",
 			Payload:       map[string]any{"i": i},
 		}
-		require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-			for _, e := range events {
-				if err := repo.Create(ctx, tx, e); err != nil {
-					return err
-				}
+	}
+	require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
+		for _, e := range events {
+			if err := repo.Insert(ctx, tx, e); err != nil {
+				return err
 			}
-			return nil
-		}))
+		}
+		return nil
+	}))
 
 	// Simulate interruption: try to fetch + publish, then cancel before
 	// we can mark anything published. We can't actually publish to NATS
@@ -162,10 +166,10 @@ func TestIntegration_OutboxPublisher_DuplicateInsertIsIdempotent(t *testing.T) {
 	}
 	// Insert twice (simulating retry)
 	require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-		return repo.Create(ctx, tx, event)
+		return repo.Insert(ctx, tx, event)
 	}))
 	require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-		return repo.Create(ctx, tx, event) // second insert with same ID
+		return repo.Insert(ctx, tx, event) // second insert with same ID
 	}))
 
 	// FetchUnpublished returns BOTH (since they have the same ID but

@@ -122,7 +122,7 @@ func TestFraudScanner_LargeAmount_CreatesFlag_AndCriticalNotification(t *testing
 		Broker:        &fakeFraudBroker{},
 		Subjects:      []string{"fmcg.transfer.posted"},
 		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
-			fraud.LargeAmountRule{ThresholdMinor: 50_000_000},
+			return []fraud.Rule{fraud.LargeAmountRule{ThresholdMinor: 50_000_000}}
 		},
 		Logger: slog.Default(),
 	})
@@ -163,11 +163,13 @@ func TestFraudScanner_InfoSeverity_NoNotification(t *testing.T) {
 		Broker:        &fakeFraudBroker{},
 		Subjects:      []string{"fmcg.transfer.posted"},
 		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
-			fraud.FirstTimeRecipientRule{
-				HasHistory: func(_ context.Context, _, _, _ uuid.UUID) (bool, error) {
-					return false, nil // always first-time
+			return []fraud.Rule{
+				fraud.FirstTimeRecipientRule{
+					HasHistory: func(_ context.Context, _, _, _ uuid.UUID) (bool, error) {
+						return false, nil // always first-time
+					},
 				},
-			},
+			}
 		},
 		Logger: slog.Default(),
 	})
@@ -199,7 +201,7 @@ func TestFraudScanner_NoMatchingRules_NoFlags(t *testing.T) {
 		Broker:        &fakeFraudBroker{},
 		Subjects:      []string{"fmcg.transfer.posted"},
 		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
-			fraud.LargeAmountRule{ThresholdMinor: 1_000_000_000}, // 1B IDR — too high
+			return []fraud.Rule{fraud.LargeAmountRule{ThresholdMinor: 1_000_000_000}} // 1B IDR — too high
 		},
 		Logger: slog.Default(),
 	})
@@ -257,10 +259,12 @@ func TestFraudScanner_MultipleRulesMatching_CreatesMultipleFlags(t *testing.T) {
 		Repo: repo, NotifNotifier: notif, Broker: &fakeFraudBroker{},
 		Subjects: []string{"fmcg.transfer.posted"},
 		Rules: func(_ context.Context, _ uuid.UUID) []fraud.Rule {
-			fraud.LargeAmountRule{ThresholdMinor: 1},
-			fraud.FirstTimeRecipientRule{
-				HasHistory: func(_ context.Context, _, _, _ uuid.UUID) (bool, error) { return false, nil },
-			},
+			return []fraud.Rule{
+				fraud.LargeAmountRule{ThresholdMinor: 1},
+				fraud.FirstTimeRecipientRule{
+					HasHistory: func(_ context.Context, _, _, _ uuid.UUID) (bool, error) { return false, nil },
+				},
+			}
 		},
 		Logger: slog.Default(),
 	})

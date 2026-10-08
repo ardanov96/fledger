@@ -222,7 +222,7 @@ func assertErrorCode(t *testing.T, body []byte, expected string) {
 
 func setupRouter(t *testing.T, transfers TransferAPI, accounts AccountAPI) http.Handler {
 	t.Helper()
-	h := New(transfers, accounts)
+	h := New(transfers, accounts, nil, nil, nil, nil, nil, nil, nil, nil)
 	r := chi.NewRouter()
 	r.Use(httpx.RequestIDMiddleware)
 	r.Route("/v1", func(r chi.Router) {

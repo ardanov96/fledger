@@ -109,6 +109,17 @@ func (r *invoiceRepo) GetByID(_ context.Context, id string) (invoice.Invoice, er
 	return invoiceRowToDomain(row), nil
 }
 
+func (r *invoiceRepo) GetByCode(_ context.Context, code string) (invoice.Invoice, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, row := range r.invoices {
+		if row.Code == code {
+			return invoiceRowToDomain(row), nil
+		}
+	}
+	return invoice.Invoice{}, apperrors.ErrInvoiceNotFound
+}
+
 func (r *invoiceRepo) List(_ context.Context, f invoice.InvoiceFilter) ([]invoice.Invoice, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -299,7 +310,21 @@ func (r *invoiceRepo) DecrementUsed(_ context.Context, _ invoice.Tx, customerID 
 // TxRunner (captures the closure and runs it against a fake Tx)
 // =============================================================================
 
+type fakeInvoiceTag struct{ rows int64 }
+
+func (f fakeInvoiceTag) RowsAffected() int64 { return f.rows }
+
 type fakeTx struct{}
+
+func (t fakeTx) Exec(_ context.Context, _ string, _ ...any) (invoice.CommandTag, error) {
+	return fakeInvoiceTag{rows: 1}, nil
+}
+func (t fakeTx) Query(_ context.Context, _ string, _ ...any) (invoice.Rows, error) {
+	return nil, errors.New("not used")
+}
+func (t fakeTx) QueryRow(_ context.Context, _ string, _ ...any) invoice.Row {
+	return nil
+}
 
 type fakeTxRunner struct {
 	mu     sync.Mutex
@@ -375,7 +400,7 @@ func TestInvoiceService_CreateInvoice_NoLimit_Succeeds(t *testing.T) {
 func TestInvoiceService_CreateInvoice_WithinLimit_Succeeds(t *testing.T) {
 	t.Parallel()
 	svc, repo, _ := newSvc(t)
-	require.NoError(t, repo.limits["cust-2"].CustomerID == "" && true) // empty
+	assert.Empty(t, repo.limits["cust-2"].CustomerID) // empty
 	require.NoError(t, svc.SetCreditLimit(context.Background(), invoice.CreditLimit{
 		TenantID: testTenant, CustomerID: "cust-2",
 		LimitAmount: money.NewFromMinor(1000000),

@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 // Package usecase - extended chaos tests for worker resilience (Sprint 41).
 //
 // Sprint 36 added basic outbox recovery tests. Sprint 41 adds coverage for:
@@ -53,7 +56,7 @@ func TestIntegration_OutboxPublisher_GracefulShutdown(t *testing.T) {
 			Payload:       map[string]any{"i": i},
 		}
 		require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-			return repo.Create(ctx, tx, ev)
+			return repo.Insert(ctx, tx, ev)
 		}))
 	}
 
@@ -111,7 +114,7 @@ func TestIntegration_OutboxPublisher_ConcurrentSafety(t *testing.T) {
 			Payload:       map[string]any{"i": i},
 		}
 		require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-			return repo.Create(ctx, tx, ev)
+			return repo.Insert(ctx, tx, ev)
 		}))
 	}
 
@@ -186,7 +189,7 @@ func TestIntegration_OutboxPublisher_FetchUnpublishedLocked_SkipLocked(t *testin
 			Payload:       map[string]any{"i": i},
 		}
 		require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-			return repo.Create(ctx, tx, ev)
+			return repo.Insert(ctx, tx, ev)
 		}))
 	}
 
@@ -237,7 +240,7 @@ func TestIntegration_OutboxPublisher_PaginationLimit(t *testing.T) {
 			Payload:       map[string]any{"i": i},
 		}
 		require.NoError(t, env.DB.RunInTxOutboxDomain(txCtx, func(tx outbox.Tx) error {
-			return repo.Create(ctx, tx, ev)
+			return repo.Insert(ctx, tx, ev)
 		}))
 	}
 

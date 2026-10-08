@@ -82,6 +82,10 @@ func (a *periodAPIAdapter) ListSnapshotsByPeriod(ctx context.Context, periodID s
 	return a.svc.ListSnapshotsByPeriod(ctx, periodID)
 }
 
+func (a *periodAPIAdapter) ListPeriods(ctx context.Context, tenantID string) ([]period.Period, error) {
+	return a.svc.ListPeriods(ctx, tenantID)
+}
+
 // Compile-time guard: ensure periodAPIAdapter satisfies handler.PeriodAPI.
 var _ handler.PeriodAPI = (*periodAPIAdapter)(nil)
 

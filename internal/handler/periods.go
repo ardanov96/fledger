@@ -68,6 +68,7 @@ type PeriodAPI interface {
 	Reopen(ctx context.Context, in PeriodReopenInput) (period.Period, error)
 	GetRequest(ctx context.Context, id string) (period.CloseRequest, error)
 	ListSnapshotsByPeriod(ctx context.Context, periodID string) ([]period.PeriodSnapshot, error)
+	ListPeriods(ctx context.Context, tenantID string) ([]period.Period, error)
 }
 
 // =============================================================================
@@ -250,6 +251,28 @@ func (h *Handlers) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	out := make([]PeriodSnapshotResponse, 0, len(snaps))
 	for _, s := range snaps {
 		out = append(out, ToPeriodSnapshotResponse(s))
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+// ListPeriods handles GET /v1/periods.
+func (h *Handlers) ListPeriods(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-ID")
+	if tenantID == "" {
+		tenantID = httpx.GetTenantID(r.Context())
+	}
+	if tenantID == "" {
+		tenantID = "00000000-0000-0000-0000-000000000001"
+	}
+
+	periods, err := h.Periods.ListPeriods(r.Context(), tenantID)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	out := make([]PeriodResponse, 0, len(periods))
+	for _, p := range periods {
+		out = append(out, ToPeriodResponse(p))
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }

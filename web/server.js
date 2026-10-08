@@ -21,7 +21,7 @@ const path = require('path');
 const url = require('url');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8081';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const MIME_TYPES = {

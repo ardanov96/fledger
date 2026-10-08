@@ -41,6 +41,7 @@ type PeriodResponse struct {
 	PeriodStart string `json:"period_start"`
 	PeriodEnd   string `json:"period_end"`
 	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at,omitempty"`
 }
 
 // PeriodSnapshotResponse is the public representation of one frozen snapshot row.
@@ -83,13 +84,17 @@ func ToCloseRequestResponse(r period.CloseRequest) CloseRequestResponse {
 
 // ToPeriodResponse converts a domain Period to its HTTP response DTO.
 func ToPeriodResponse(p period.Period) PeriodResponse {
-	return PeriodResponse{
+	resp := PeriodResponse{
 		ID:          p.ID,
 		TenantID:    p.TenantID,
 		PeriodStart: p.PeriodStart.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		PeriodEnd:   p.PeriodEnd.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		Status:      string(p.Status),
 	}
+	if !p.CreatedAt.IsZero() {
+		resp.CreatedAt = p.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	return resp
 }
 
 // ToPeriodSnapshotResponse converts a domain PeriodSnapshot to its HTTP response DTO.

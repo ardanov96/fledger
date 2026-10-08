@@ -18,7 +18,7 @@
 param(
     [switch]$ApiOnly,
     [switch]$WebOnly,
-    [int]$ApiPort = 8080,
+    [int]$ApiPort = 8081,
     [int]$WebPort = 3000
 )
 
@@ -49,9 +49,12 @@ if (-not (Test-Path $envPath)) {
 
 # Read .env into $env vars (for the spawned processes)
 Get-Content $envPath | ForEach-Object {
-    if ($_ -match "^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.+?)\s*$" -and $_ -notmatch "^#") {
+    if ($_ -match "^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.+?)\s*$" -and $_ -notmatch "^\s*#") {
         $key = $Matches[1]
-        $val = $Matches[2]
+        $val = $Matches[2].Trim()
+        if ($val -match '^([^#]+)#') {
+            $val = $Matches[1].Trim()
+        }
         # Strip optional surrounding quotes
         $val = $val.Trim('"', "'")
         Set-Item -Path "Env:$key" -Value $val
@@ -68,7 +71,13 @@ if (-not $WebOnly) {
     $apiLog = Join-Path $env:TEMP "fmcg-api.log"
     $apiErr = Join-Path $env:TEMP "fmcg-api.err"
     $env:APP_PORT = $ApiPort
-    $apiProc = Start-Process -FilePath "go" -ArgumentList "run", "$RepoRoot\cmd\api" -WorkingDirectory $RepoRoot -RedirectStandardOutput $apiLog -RedirectStandardError $apiErr -WindowStyle Hidden -PassThru
+    $binApi = Join-Path $RepoRoot "bin\api.exe"
+    if (Test-Path $binApi) {
+        $apiProc = Start-Process -FilePath $binApi -WorkingDirectory $RepoRoot -RedirectStandardOutput $apiLog -RedirectStandardError $apiErr -WindowStyle Hidden -PassThru
+    } else {
+        $env:GOTMPDIR = Join-Path $RepoRoot "bin"
+        $apiProc = Start-Process -FilePath "go" -ArgumentList "run", "$RepoRoot\cmd\api" -WorkingDirectory $RepoRoot -RedirectStandardOutput $apiLog -RedirectStandardError $apiErr -WindowStyle Hidden -PassThru
+    }
     Out-Line "  PID: $($apiProc.Id), log: $apiLog" "Gray"
 }
 

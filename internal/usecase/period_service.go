@@ -542,6 +542,14 @@ func (s *PeriodService) ListRequestsByPeriod(ctx context.Context, periodID strin
 	return s.repo.ListRequestsByPeriod(ctx, periodID)
 }
 
+// ListPeriods returns all accounting periods for a tenant.
+func (s *PeriodService) ListPeriods(ctx context.Context, tenantID string) ([]period.Period, error) {
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant_id", apperrors.ErrInvalidInput)
+	}
+	return s.repo.ListPeriodsByTenant(ctx, tenantID)
+}
+
 // Compile-time guard: ensure PeriodTxRunner interface is satisfied by common adapters.
 var _ PeriodTxRunner = (*periodTxRunnerAdapter)(nil)
 

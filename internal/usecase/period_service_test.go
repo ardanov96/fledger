@@ -37,7 +37,7 @@ type fakeAccount struct {
 	EntryCounts  int   // entries posted to this account in the period
 }
 
-type fakeEntry struct {
+type fakePeriodEntry struct {
 	ID        string
 	PeriodID  string
 	AccountID string
@@ -51,7 +51,7 @@ type periodRepo struct {
 	requests  map[string]*period.CloseRequest            // id → request
 	snapshots map[string][]*period.PeriodSnapshot        // period_id → snapshots
 	accounts  map[string]*fakeAccount                    // id → account
-	entries   []fakeEntry                                // append-only ledger entries
+	entries   []fakePeriodEntry                          // append-only ledger entries
 }
 
 func newPeriodRepo() *periodRepo {
@@ -277,6 +277,41 @@ func (r *periodRepo) ComputeAccountBalanceAtPeriod(_ context.Context, tx period.
 	return bal, cnt, nil
 }
 
+func (r *periodRepo) ListPeriodsByTenant(_ context.Context, tenantID string) ([]period.Period, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []period.Period
+	for _, p := range r.periods {
+		if p.TenantID == tenantID {
+			out = append(out, *p)
+		}
+	}
+	return out, nil
+}
+
+func (r *periodRepo) GetCurrentOpenPeriod(_ context.Context, tenantID string, now time.Time) (period.Period, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.periods {
+		if p.TenantID == tenantID && p.Status == period.PeriodStatusOpen &&
+			!now.Before(p.PeriodStart) && !now.After(p.PeriodEnd) {
+			return *p, nil
+		}
+	}
+	return period.Period{}, apperrors.ErrNotFound
+}
+
+func (r *periodRepo) InsertPeriod(_ context.Context, p period.Period) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.periods[p.ID]; ok {
+		return apperrors.ErrAlreadyExists
+	}
+	cp := p
+	r.periods[p.ID] = &cp
+	return nil
+}
+
 // =============================================================================
 // period.Tx fake + TxRunner
 // =============================================================================
@@ -284,7 +319,7 @@ func (r *periodRepo) ComputeAccountBalanceAtPeriod(_ context.Context, tx period.
 type periodTx struct{ repo *periodRepo }
 
 func (t *periodTx) Exec(_ context.Context, _ string, _ ...any) (period.CommandTag, error) {
-	return fakeTag{rows: 1}, nil
+	return fakePeriodTag{rows: 1}, nil
 }
 func (t *periodTx) Query(_ context.Context, _ string, _ ...any) (period.Rows, error) {
 	return nil, errors.New("not used")
@@ -293,13 +328,13 @@ func (t *periodTx) QueryRow(_ context.Context, _ string, _ ...any) period.Row {
 	return nil
 }
 
-type fakeTag struct{ rows int64 }
+type fakePeriodTag struct{ rows int64 }
 
-func (f fakeTag) RowsAffected() int64 { return f.rows }
+func (f fakePeriodTag) RowsAffected() int64 { return f.rows }
 
-type fakeTxRunner struct{ tx period.Tx }
+type fakePeriodTxRunner struct{ tx period.Tx }
 
-func (r *fakeTxRunner) ExecuteTx(_ context.Context, fn func(period.Tx) error) error {
+func (r *fakePeriodTxRunner) ExecuteTx(_ context.Context, fn func(period.Tx) error) error {
 	return fn(r.tx)
 }
 
@@ -307,24 +342,24 @@ func (r *fakeTxRunner) ExecuteTx(_ context.Context, fn func(period.Tx) error) er
 // Test fixtures
 // =============================================================================
 
-const testTenant = "00000000-0000-0000-0000-000000000001"
+const periodTenant = "00000000-0000-0000-0000-000000000001"
 const testPeriod1 = "11111111-1111-1111-1111-111111111111"
 
-func newSvc(t *testing.T) (*PeriodService, *periodRepo) {
+func newPeriodSvc(t *testing.T) (*PeriodService, *periodRepo) {
 	t.Helper()
 	repo := newPeriodRepo()
 	// Default: an "open" period
 	repo.periods[testPeriod1] = &period.Period{
 		ID:          testPeriod1,
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodStart: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:   time.Date(2026, 7, 31, 23, 59, 59, 0, time.UTC),
 		Status:      period.PeriodStatusOpen,
 	}
 	// Two accounts for tenant
-	repo.accounts["acct-hq"] = &fakeAccount{ID: "acct-hq", TenantID: testTenant, Currency: "IDR"}
-	repo.accounts["acct-outlet"] = &fakeAccount{ID: "acct-outlet", TenantID: testTenant, Currency: "IDR"}
-	txr := &fakeTxRunner{tx: &periodTx{repo: repo}}
+	repo.accounts["acct-hq"] = &fakeAccount{ID: "acct-hq", TenantID: periodTenant, Currency: "IDR"}
+	repo.accounts["acct-outlet"] = &fakeAccount{ID: "acct-outlet", TenantID: periodTenant, Currency: "IDR"}
+	txr := &fakePeriodTxRunner{tx: &periodTx{repo: repo}}
 	svc := NewPeriodService(PeriodServiceDeps{
 		Repo:   repo,
 		DB:     txr,
@@ -337,16 +372,16 @@ func newSvc(t *testing.T) (*PeriodService, *periodRepo) {
 // debit acct-hq 10000, credit acct-outlet 10000.
 func seedBalancedEntries(repo *periodRepo) {
 	repo.entries = append(repo.entries,
-		fakeEntry{ID: "e1", PeriodID: testPeriod1, AccountID: "acct-hq", Type: "debit", Amount: 10000},
-		fakeEntry{ID: "e2", PeriodID: testPeriod1, AccountID: "acct-outlet", Type: "credit", Amount: 10000},
+		fakePeriodEntry{ID: "e1", PeriodID: testPeriod1, AccountID: "acct-hq", Type: "debit", Amount: 10000},
+		fakePeriodEntry{ID: "e2", PeriodID: testPeriod1, AccountID: "acct-outlet", Type: "credit", Amount: 10000},
 	)
 }
 
 // seedImbalancedEntries posts unbalanced entries: debit 10000, credit 5000.
 func seedImbalancedEntries(repo *periodRepo) {
 	repo.entries = append(repo.entries,
-		fakeEntry{ID: "e1", PeriodID: testPeriod1, AccountID: "acct-hq", Type: "debit", Amount: 10000},
-		fakeEntry{ID: "e2", PeriodID: testPeriod1, AccountID: "acct-outlet", Type: "credit", Amount: 5000},
+		fakePeriodEntry{ID: "e1", PeriodID: testPeriod1, AccountID: "acct-hq", Type: "debit", Amount: 10000},
+		fakePeriodEntry{ID: "e2", PeriodID: testPeriod1, AccountID: "acct-outlet", Type: "credit", Amount: 5000},
 	)
 }
 
@@ -359,10 +394,10 @@ const testApprover = "00000000-0000-0000-0000-000000000bbb"
 
 func TestPeriodService_RequestClose_Success(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 
 	req, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -373,11 +408,11 @@ func TestPeriodService_RequestClose_Success(t *testing.T) {
 
 func TestPeriodService_RequestClose_PeriodNotOpen_Fails(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 	repo.periods[testPeriod1].Status = period.PeriodStatusClosed
 
 	_, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -389,16 +424,16 @@ func TestPeriodService_RequestClose_PeriodNotOpen_Fails(t *testing.T) {
 
 func TestPeriodService_RequestClose_DuplicatePending_Fails(t *testing.T) {
 	t.Parallel()
-	svc, _ := newSvc(t)
+	svc, _ := newPeriodSvc(t)
 	_, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
 	require.NoError(t, err)
 
 	_, err = svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -412,12 +447,12 @@ func TestPeriodService_RequestClose_DuplicatePending_Fails(t *testing.T) {
 
 func TestPeriodService_ApproveClose_TrialBalanceOK_ClosesWithSnapshots(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 	seedBalancedEntries(repo)
 
 	// Step 1: request close.
 	req, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -458,11 +493,11 @@ func TestPeriodService_ApproveClose_TrialBalanceOK_ClosesWithSnapshots(t *testin
 
 func TestPeriodService_ApproveClose_TrialBalanceImbalanced_Rejected(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 	seedImbalancedEntries(repo)
 
 	req, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -492,7 +527,7 @@ func TestPeriodService_ApproveClose_TrialBalanceImbalanced_Rejected(t *testing.T
 
 func TestPeriodService_ApproveClose_NotPending_Fails(t *testing.T) {
 	t.Parallel()
-	svc, _ := newSvc(t)
+	svc, _ := newPeriodSvc(t)
 
 	_, err := svc.ApproveClose(context.Background(), ApproveCloseInput{
 		RequestID:  "00000000-0000-0000-0000-000000000ccc",
@@ -508,10 +543,10 @@ func TestPeriodService_ApproveClose_NotPending_Fails(t *testing.T) {
 
 func TestPeriodService_RejectClose_ReopensPeriod(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 
 	req, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -532,10 +567,10 @@ func TestPeriodService_RejectClose_ReopensPeriod(t *testing.T) {
 
 func TestPeriodService_RejectClose_EmptyReason_Fails(t *testing.T) {
 	t.Parallel()
-	svc, _ := newSvc(t)
+	svc, _ := newPeriodSvc(t)
 
 	req, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -556,11 +591,11 @@ func TestPeriodService_RejectClose_EmptyReason_Fails(t *testing.T) {
 
 func TestPeriodService_Reopen_ClosedPeriod_Success(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 	seedBalancedEntries(repo)
 
 	req, err := svc.RequestClose(context.Background(), RequestCloseInput{
-		TenantID:    testTenant,
+		TenantID:    periodTenant,
 		PeriodID:    testPeriod1,
 		RequesterID: testRequester,
 	})
@@ -592,7 +627,7 @@ func TestPeriodService_Reopen_ClosedPeriod_Success(t *testing.T) {
 
 func TestPeriodService_Reopen_OpenPeriod_Fails(t *testing.T) {
 	t.Parallel()
-	svc, _ := newSvc(t)
+	svc, _ := newPeriodSvc(t)
 	_, err := svc.Reopen(context.Background(), ReopenInput{
 		PeriodID: testPeriod1,
 		AdminID:  testApprover,
@@ -604,7 +639,7 @@ func TestPeriodService_Reopen_OpenPeriod_Fails(t *testing.T) {
 
 func TestPeriodService_Reopen_EmptyReason_Fails(t *testing.T) {
 	t.Parallel()
-	svc, repo := newSvc(t)
+	svc, repo := newPeriodSvc(t)
 	repo.periods[testPeriod1].Status = period.PeriodStatusClosed
 
 	_, err := svc.Reopen(context.Background(), ReopenInput{

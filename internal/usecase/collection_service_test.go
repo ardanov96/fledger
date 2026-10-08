@@ -447,7 +447,7 @@ func TestCollectionService_PlanRoute_AutoPopulate(t *testing.T) {
 	}}
 	svc, _ := newCollectionSvc(t, lookup)
 
-	route, stops, err := svc.PlanRoute(context.Background(), collection.PlanRouteInput{
+	_, stops, err := svc.PlanRoute(context.Background(), collection.PlanRouteInput{
 		TenantID:    colTenant1,
 		SalesRepID:  colSalesRep,
 		RouteDate:   time.Date(2026, 8, 13, 0, 0, 0, 0, time.UTC),

@@ -6,6 +6,7 @@
 package middleware
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
@@ -167,10 +168,8 @@ func TestMultiTierLimiter_Metrics(t *testing.T) {
 }
 
 // noopHandler is a passthrough http.Handler for tests.
-func noopHandler() interface {
-	ServeHTTP(http.ResponseWriter, *httptest.ResponseRecorder)
-} {
-	return nil
+func noopHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 }
 
 // helper to silence "declared and not used" for `sync` import in some build configs.

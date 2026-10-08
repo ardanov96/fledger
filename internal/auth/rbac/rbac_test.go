@@ -138,6 +138,3 @@ func TestRBAC_Source(t *testing.T) {
 }
 
 // TestRBAC_ModelString omitted (ModelString method removed in rbac.go).
-<task_progress>- [x] All Sprint 9A files
-- [x] Fix rbac.go + rbac_test.go (removed ModelString)
-- [ ] Verify build (go build ./...)

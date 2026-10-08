@@ -8,7 +8,7 @@
 
 [CmdletBinding()]
 param(
-    [int]$ApiPort = 8080,
+    [int]$ApiPort = 8081,
     [int]$WebPort = 3000,
     [switch]$Force
 )

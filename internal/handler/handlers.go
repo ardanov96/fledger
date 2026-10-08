@@ -1,4 +1,4 @@
-﻿// Handlers â€” REST endpoints for the ledger.
+// Handlers â€” REST endpoints for the ledger.
 //
 // Routes (mounted under /v1):
 //   POST   /accounts                  â€” create account
@@ -118,6 +118,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	}
 
 	if h.Periods != nil {
+		r.Get("/periods", h.ListPeriods)
 		r.Post("/periods/{id}/close-requests", h.RequestPeriodClose)
 		r.Get("/close-requests/{id}", h.GetCloseRequest)
 		r.Post("/close-requests/{id}/approve", h.ApproveCloseRequest)
@@ -235,7 +236,12 @@ func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-ID")
+	if tenantID == "" {
+		tenantID = httpx.GetTenantID(r.Context())
+	}
 	filter := ledger.AccountFilter{
+		TenantID: tenantID,
 		Type:   ledger.AccountType(r.URL.Query().Get("type")),
 		Status: ledger.AccountStatus(r.URL.Query().Get("status")),
 	}
