@@ -1,45 +1,59 @@
-# --- Binaries ---
-/bin/
-/dist/
-/*.exe
-/*.exe~
-/*.dll
-/*.so
-/*.dylib
+# --- Binaries & Build Artifacts ---
+bin/
+**/bin/
+dist/
+**/dist/
+*.exe
+**/*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
 # --- Go test & coverage ---
 *.test
+**/*.test
 *.out
+**/*.out
 coverage.txt
 coverage.html
 *.coverprofile
 
-# --- Local environment ---
+# --- Local Environment & Secrets ---
 .env
+**/.env
 .env.local
+**/.env.local
 .env.*.local
+**/.env.*.local
 *.local
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
 
-# --- IDE ---
+# --- IDE & Editors ---
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# --- OS ---
+# --- OS Artifacts ---
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# --- Frontend ---
-web/.next/
-web/out/
-web/node_modules/
-web/.turbo/
-web/coverage/
-web/build/
-web/.env*.local
+# --- Frontend & Node Dependencies ---
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+.turbo/
+**/coverage/
 
 # --- Database dumps & local data ---
 *.sql.gz
@@ -47,19 +61,12 @@ web/.env*.local
 /data/
 /backups/
 
-# --- Secrets ---
-secrets/
-*.key
-*.pem
-*.crt
-*.p12
-
 # --- Logs ---
 *.log
+**/*.log
 logs/
+**/logs/
 
 # --- Generated docs ---
 docs/api/openapi.json
 docs/api/swagger/
-
-# --- Sprint tracker is committed (see docs/SPRINTS.md) ---
