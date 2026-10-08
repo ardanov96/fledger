@@ -141,6 +141,10 @@ TEST_DATABASE_URL=postgres://postgres:test@localhost:5432/postgres?sslmode=disab
 
 <div class="grid cards" markdown>
 
+-   :material-view-dashboard: **[Panduan Modul](modules/README.md)**
+
+    Penjelasan lengkap fungsi bisnis, alur kerja, dan relasi data 9 modul dashboard
+
 -   :material-architecture: **[Architecture](architecture/overview.md)**
 
     C4 diagrams, sequence flows, tech stack rationale
