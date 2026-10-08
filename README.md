@@ -54,18 +54,18 @@ Sistem FMCG Wallet mencakup **9 modul terpadu** yang saling terhubung untuk menj
 
 ---
 
-## 🧩 Kesiapan Microservices (Modular Monolith ➔ Microservices)
+## 🧩 Ekosistem & Roadmap Microservices (FLEDGER OS)
 
-Project ini dibangun dengan arsitektur **Clean Architecture & Domain-Driven Design (DDD)** yang memiliki *bounded contexts* terisolasi, menjadikannya sangat siap diadopsi dalam arsitektur microservices:
+Sistem ini merupakan fondasi inti (**Fledger Core**) dari ekosistem **FLEDGER OS** (*The Ledger-First Operating System for Distribution & Supply Chain*). Dibangun dengan Clean Architecture & Domain-Driven Design (DDD), Fledger OS memisahkan tanggung jawab operasional menjadi layanan-layanan mikro (*bounded contexts*):
 
-- **Peran Fledger**: Berfungsi sebagai **Core Financial Ledger & Settlement Engine** (Single Source of Truth untuk saldo, mutasi kas, dan pembukuan resmi).
-- **Service Pendukung di Sekitarnya**:
-  - **OMS (Order Management Service)**: Memvalidasi *credit limit* toko dan menerbitkan faktur tagihan (`Invoices`).
-  - **Field Force / SFA Service**: Aplikasi mobile salesman untuk rute kunjungan harian dan pencatatan uang setoran outlet.
-  - **Payment Gateway Adapter**: Menangani webhook perbankan (BCA VA, Mandiri, BRI, QRIS) dan memicu settlement transfer.
-  - **WMS (Warehouse Management)**: Mengirimkan perintah *Credit Note* pemotongan invoice jika ada retur barang.
-  - **Central IAM / SSO**: Mengelola autentikasi pengguna secara terpusat (OAuth2/OIDC).
-  - **Notification Service**: Mengonsumsi event NATS (seperti `invoice.overdue`) untuk mengirim pesan WhatsApp/Email otomatis.
+- **🟢 Fledger Core** *(Repo Ini)*: Core Financial Ledger, Double-Entry Engine, AR Aging Schedule, SHA-256 Hash Chains, dan Settlement Vault.
+- **🚚 Fledger Fleet**: Manajemen logistik, dispatching armada pengiriman, Surat Jalan (DO), dan Proof of Delivery (POD) digital via driver foto/tanda tangan (terhubung ke [`ekspedisi-dashboard`](file:///c:/Dev/ekspedisi-dashboard)).
+- **📱 Fledger Force (SFA)**: Aplikasi mobile salesman/motoris untuk kunjungan outlet (*beat plan*), order taking, dan penerimaan kas di toko (*mobile cash collection*).
+- **💳 Fledger Pay**: B2B Payment Gateway Adapter untuk integrasi Virtual Account (BCA, Mandiri, BRI) & QRIS Dinamis B2B dengan auto-reconciliation webhook.
+- **📦 Fledger Order (OMS)**: B2B Order Management, katalog grosir, alokasi stok gudang, dan penegakan batas kredit (*Hard Credit Limit Gate*).
+- **🔔 Fledger Dunning**: Otomasi pengingat piutang jatuh tempo via WhatsApp & Email terintegrasi.
+
+> 🗺️ **Dokumentasi lengkap arsitektur microservices, solusi 5 masalah industri FMCG, kontrak integrasi NATS/REST, dan strategi deployment live demo 100% gratis dapat dibaca di [Roadmap Microservices Fledger OS](docs/architecture/roadmap-microservices.md).**
 
 ---
 

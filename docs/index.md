@@ -145,6 +145,10 @@ TEST_DATABASE_URL=postgres://postgres:test@localhost:5432/postgres?sslmode=disab
 
     Penjelasan lengkap fungsi bisnis, alur kerja, dan relasi data 9 modul dashboard
 
+-   :material-map-legend: **[Roadmap Microservices](architecture/roadmap-microservices.md)**
+
+    Fledger OS: Ekosistem microservices, solusi 5 masalah industri FMCG, & zero-cost demo stack
+
 -   :material-architecture: **[Architecture](architecture/overview.md)**
 
     C4 diagrams, sequence flows, tech stack rationale
