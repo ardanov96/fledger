@@ -291,6 +291,7 @@ gantt
 ---
 
 > 🔗 **Tautan Terkait**:
+> - 🤖 **[AI Agent Execution Brief: Fledger Fleet Service](next-project-fleet-agent-brief.md)** *(Spesifikasi teknis siap eksekusi untuk AI coding agent)*
 > - [Panduan 9 Modul Fledger Core](../modules/README.md)
 > - [Arsitektur Tingkat Tinggi & C4 Model](overview.md)
 > - [C4 Container & Component Diagrams](c4-diagrams.md)

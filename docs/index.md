@@ -149,6 +149,10 @@ TEST_DATABASE_URL=postgres://postgres:test@localhost:5432/postgres?sslmode=disab
 
     Fledger OS: Ekosistem microservices, solusi 5 masalah industri FMCG, & zero-cost demo stack
 
+-   :material-robot: **[AI Agent Execution Brief (Next Project)](architecture/next-project-fleet-agent-brief.md)**
+
+    Spesifikasi teknis & blueprint implementasi Fledger Fleet untuk dieksekusi autonomous AI coding agent
+
 -   :material-architecture: **[Architecture](architecture/overview.md)**
 
     C4 diagrams, sequence flows, tech stack rationale
