@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fledger Pay — Simulator Pembayaran</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <h1>Fledger Pay — Payment Simulator</h1>
+      <p class="subtitle">B2B Payment Gateway &amp; Auto-Settlement Sandbox</p>
+      <p class="env"><span id="base-url">http://localhost:8083</span></p>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- STEP 1: Create payment request -->
+    <section class="card">
+      <h2>1. Buat Permintaan Pembayaran</h2>
+      <form id="create-form">
+        <div class="grid">
+          <label>
+            Fledger Invoice ID
+            <input type="text" id="fledger_invoice_id" required>
+          </label>
+          <label>
+            Customer ID (UUID)
+            <input type="text" id="customer_id" required>
+          </label>
+          <label>
+            Nama Toko
+            <input type="text" id="customer_name" value="Toko Sumber Rezeki" required>
+          </label>
+          <label>
+            No HP (untuk VA)
+            <input type="text" id="customer_phone" value="081298765432">
+          </label>
+          <label>
+            Nominal (Rp)
+            <input type="number" id="amount" value="4000000" required>
+          </label>
+          <label>
+            Expiry (menit)
+            <input type="number" id="expiry_minutes" value="1440">
+          </label>
+          <label class="span2">
+            Bank
+            <select id="enabled_banks" multiple size="3">
+              <option value="BCA" selected>BCA</option>
+              <option value="MANDIRI">MANDIRI</option>
+              <option value="BRI">BRI</option>
+            </select>
+            <small>(Ctrl+klik untuk multi-select. Kosongkan untuk default: BCA)</small>
+          </label>
+          <label class="cb">
+            <input type="checkbox" id="enable_qris" checked> Aktifkan QRIS Dinamis
+          </label>
+        </div>
+        <button type="submit" class="primary">Buat Payment Request</button>
+        <div id="create-status" class="status"></div>
+      </form>
+    </section>
+
+    <!-- STEP 2: Show VA + QRIS -->
+    <section class="card" id="detail-card" hidden>
+      <h2>2. Detail Pembayaran</h2>
+      <div class="kv">
+        <div><strong>Request Number:</strong> <span id="d_request_number">-</span></div>
+        <div><strong>Status:</strong> <span id="d_status">-</span></div>
+        <div><strong>Nominal:</strong> <span id="d_amount">-</span></div>
+        <div><strong>Expired:</strong> <span id="d_expires">-</span></div>
+      </div>
+
+      <h3>Virtual Account</h3>
+      <table class="va-table" id="va-table">
+        <thead><tr><th>Bank</th><th>Nomor VA</th><th>Nama</th><th>Salin</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>QRIS Dinamis</h3>
+      <pre class="qr-string" id="qr-string"></pre>
+
+      <h3>3. Simulasi Pembayaran (Sandbox)</h3>
+      <form id="settle-form">
+        <div class="grid">
+          <label>
+            Channel
+            <select id="settle_channel">
+              <option value="VA_BCA">VA BCA</option>
+              <option value="VA_MANDIRI">VA MANDIRI</option>
+              <option value="VA_BRI">VA BRI</option>
+              <option value="QRIS">QRIS</option>
+              <option value="MANUAL_TRANSFER">MANUAL_TRANSFER</option>
+            </select>
+          </label>
+          <label>
+            Nominal Bayar (Rp)
+            <input type="number" id="settle_amount" value="4000000" required>
+          </label>
+          <label class="span2">
+            Nama Pembayar (opsional)
+            <input type="text" id="settle_payer" value="Ibu Siti Fatimah">
+          </label>
+        </div>
+        <button type="submit" class="primary">⚡ Bayar Sekarang (Sandbox)</button>
+        <div id="settle-status" class="status"></div>
+      </form>
+    </section>
+
+    <!-- STEP 3: Outbox counts -->
+    <section class="card">
+      <h2>4. Outbox Settlement → Fledger Core</h2>
+      <div id="outbox-counts">Memuat...</div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Fledger Pay — Demo &amp; E2E Sandbox. Tidak ada transfer uang riil.</small>
+  </footer>
+
+  <script src="/web/pay-client.js"></script>
+  <script src="/web/app.js"></script>
+</body>
+</html>

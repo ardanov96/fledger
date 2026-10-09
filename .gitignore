@@ -74,3 +74,5 @@ docs/api/swagger/
 # --- Go build / cache artifacts (per-service scratch dirs) ---
 .gocache/
 .gobuild/
+*.test.exe
+**/*.test.exe
