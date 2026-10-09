@@ -24,13 +24,20 @@ fledger/
 │
 ├── fledger-fleet/                 <-- Layanan Logistik, Dispatching & Digital Proof of Delivery (POD)
 │   ├── docs/                      <-- Dokumen spesifikasi eksekusi AI Agent & skema database
-│   │   ├── AGENT-EXECUTION-BRIEF.md  <-- Blueprint siap eksekusi untuk AI Coding Agent
-│   │   ├── DATABASE-SCHEMA.sql       <-- Skrip DDL PostgreSQL 16
-│   │   ├── API-SPECIFICATION.md      <-- Spesifikasi REST API & Fledger Core client
-│   │   └── ROADMAP-FLEET.md          <-- Sprint roadmap & Definition of Done
-│   ├── src/                       <-- Tempat source code backend Fledger Fleet
+│   ├── src/                       <-- Source code backend Fledger Fleet (Go Chi, :8082)
+│   ├── web/                       <-- Web Portal Mode Supir POD & Dispatcher Hub
 │   ├── .env.example               <-- Template konfigurasi lingkungan
 │   └── README.md                  <-- Onboarding guide Fledger Fleet
+│
+├── fledger-pay/                   <-- Layanan B2B Payment Gateway & Auto-Settlement Engine
+│   ├── docs/                      <-- Blueprint eksekusi AI Agent, skema DB & spesifikasi API
+│   │   ├── AGENT-EXECUTION-BRIEF.md  <-- Blueprint siap eksekusi untuk AI Coding Agent
+│   │   ├── DATABASE-SCHEMA.sql       <-- Skrip DDL PostgreSQL 16
+│   │   ├── API-SPECIFICATION.md      <-- Spesifikasi REST API & Webhook contracts
+│   │   ├── ROADMAP-PAY.md            <-- Sprint roadmap & Definition of Done
+│   │   └── SIMULATOR-AND-SETTLEMENT-GUIDE.md <-- Panduan sandbox & settlement
+│   ├── .env.example               <-- Template konfigurasi lingkungan
+│   └── README.md                  <-- Onboarding guide Fledger Pay
 │
 └── README.md                      <-- Berkas ini (Monorepo Master Guide)
 ```
@@ -54,16 +61,29 @@ fledger/
 ---
 
 ### 2. 🚚 `fledger-fleet` (Fleet Logistics & Proof of Delivery Engine)
-* **Status**: **Tahap Pengembangan / Siap Dieksekusi oleh AI Agent**
-* **Teknologi**: Node/Go Backend + PostgreSQL 16
+* **Status**: **Production-Ready** (Sprint 1–5 Selesai & Web Portal Live)
+* **Teknologi**: Go 1.25, Chi Router, PostgreSQL 16, HTML5 Touch Canvas POD
 * **Tanggung Jawab**:
   - Manajemen armada (*vehicles*) dan supir (*drivers*).
   - Perencanaan rute jalan harian (*Trip Dispatching*).
   - Penerbitan Surat Jalan (*Delivery Order / DO*).
   - **Digital Proof of Delivery (POD)**: Tangkap foto barang rusak/retur dan tanda tangan digital penerima di toko.
   - **Auto-Invoicing Bridge**: Otomatis memicu penerbitan faktur bersih di `fledger-core` (`POST /v1/invoices`) setelah pengiriman selesai.
-* 👉 **[Buka Blueprint Eksekusi AI Agent](fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md)**
+  - Standalone repositori: [ardanov96/fledger-fleet](https://github.com/ardanov96/fledger-fleet)
 * 👉 **[Buka Panduan fledger-fleet](fledger-fleet/README.md)**
+
+---
+
+### 3. 💳 `fledger-pay` (B2B Payment Gateway & Auto-Settlement Engine)
+* **Status**: **Siap Dieksekusi oleh AI Agent**
+* **Teknologi**: Go 1.23+, PostgreSQL 16, Bank Sandbox Simulator
+* **Tanggung Jawab**:
+  - Multi-bank Virtual Account (BCA, Mandiri, BRI, BNI) & Dynamic B2B QRIS.
+  - Webhook callback ingestion dengan validasi tanda tangan HMAC SHA-256 & anti double-crediting.
+  - Auto-settlement bridge ke `fledger-core` (`POST /v1/transfers` & `POST /v1/invoices/:id/pay`).
+  - Interactive payment sandbox simulator UI.
+* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-pay](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md)**
+* 👉 **[Buka Panduan fledger-pay](fledger-pay/README.md)**
 
 ---
 
@@ -72,12 +92,12 @@ fledger/
 Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di repositori ini:
 
 1. **Fokus Ruang Kerja**:
-   - Jika mengerjakan fitur akuntansi atau core wallet: buka dan kerjakan di dalam folder [`fledger-core/`](fledger-core/).
-   - Jika mengerjakan fitur armada, pengiriman, dan digital POD: buka dan kerjakan di dalam folder [`fledger-fleet/`](fledger-fleet/).
-2. **Pedoman Teknis Fleet**:
-   - Baca seluruh spesifikasi di [`fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md`](fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md).
-   - Terapkan skema database dari [`fledger-fleet/docs/DATABASE-SCHEMA.sql`](fledger-fleet/docs/DATABASE-SCHEMA.sql).
-   - Pastikan setiap request ke `fledger-core` menggunakan `Idempotency-Key` bernilai UUID unik Surat Jalan.
+   - Fitur akuntansi atau core wallet: buka dan kerjakan di dalam folder [`fledger-core/`](fledger-core/).
+   - Fitur logistik armada atau POD: buka dan kerjakan di dalam folder [`fledger-fleet/`](fledger-fleet/).
+   - Fitur payment gateway atau auto-settlement: buka dan kerjakan di dalam folder [`fledger-pay/`](fledger-pay/).
+2. **Pedoman Teknis Layanan**:
+   - **Fledger Pay**: Baca spesifikasi di [`fledger-pay/docs/AGENT-EXECUTION-BRIEF.md`](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-pay/docs/DATABASE-SCHEMA.sql`](fledger-pay/docs/DATABASE-SCHEMA.sql).
+   - **Fledger Fleet**: Baca spesifikasi di [`fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md`](fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-fleet/docs/DATABASE-SCHEMA.sql`](fledger-fleet/docs/DATABASE-SCHEMA.sql).
 3. **Peta Roadmap Global**:
    - Pelajari visi makro dan 5 masalah industri FMCG Indonesia di [`fledger-core/docs/architecture/roadmap-microservices.md`](fledger-core/docs/architecture/roadmap-microservices.md).
 
