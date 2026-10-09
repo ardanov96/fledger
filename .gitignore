@@ -70,3 +70,7 @@ logs/
 # --- Generated docs ---
 docs/api/openapi.json
 docs/api/swagger/
+
+# --- Go build / cache artifacts (per-service scratch dirs) ---
+.gocache/
+.gobuild/
