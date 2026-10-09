@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fledger Fleet — Dispatcher & Digital POD Portal</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">🚚</div>
+        <div>
+          <h1>FLEDGER FLEET</h1>
+          <p class="tagline">The Ledger-First Logistics, Dispatching & Digital POD Engine</p>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <div class="status-indicator" id="coreHealthIndicator">
+          <span class="dot online"></span>
+          <span class="label">Fleet API :8082</span>
+        </div>
+        <button id="btnQuickLogin" class="btn btn-secondary">
+          <span class="icon">⚡</span> Dev Token Auto-Login
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="driver-tab">
+        <span class="icon">📱</span> Mode Supir (Digital POD)
+      </button>
+      <button class="nav-tab" data-tab="dispatcher-tab">
+        <span class="icon">🗺️</span> Dispatcher & Trip Hub
+      </button>
+      <button class="nav-tab" data-tab="master-tab">
+        <span class="icon">🚛</span> Master Data & DO
+      </button>
+    </nav>
+
+    <!-- Content Sections -->
+    <main class="main-content">
+      
+      <!-- ==================== TAB 1: DRIVER POD MODE ==================== -->
+      <section id="driver-tab" class="tab-pane active">
+        <div class="grid-layout driver-layout">
+          
+          <!-- Left: Assigned DOs -->
+          <div class="card trip-sidebar">
+            <div class="card-header">
+              <h2>Surat Jalan Hari Ini</h2>
+              <button id="btnRefreshDriver" class="btn btn-sm btn-outline">🔄 Muat Ulang</button>
+            </div>
+            <div class="trip-info-box" id="activeTripBox">
+              <span class="badge badge-info">Memuat data trip...</span>
+            </div>
+            <div class="do-list" id="driverDOList">
+              <!-- DO items populated by JS -->
+            </div>
+          </div>
+
+          <!-- Right: Digital POD Form -->
+          <div class="card pod-workspace">
+            <div class="card-header">
+              <h2>Serah Terima Barang & Bukti Digital (POD)</h2>
+              <span class="badge" id="selectedDOBadge">Pilih DO dari sebelah kiri</span>
+            </div>
+
+            <div id="noDOSelectedState" class="empty-state">
+              <div class="empty-icon">📦</div>
+              <h3>Belum ada Surat Jalan yang dipilih</h3>
+              <p>Pilih salah satu Surat Jalan dari daftar tugas di sebelah kiri untuk mengisi bukti serah terima digital.</p>
+            </div>
+
+            <form id="podForm" class="pod-form hidden">
+              <div class="outlet-summary-card">
+                <div class="outlet-name" id="podCustomerName">Toko Sumber Rezeki</div>
+                <div class="outlet-address" id="podCustomerAddress">Jl. Raya Daan Mogot No. 45</div>
+                <div class="outlet-meta">
+                  <span>Nomor DO: <strong id="podDONumber">DO-202610-0089</strong></span>
+                  <span>Total Pesanan: <strong id="podNominalOrdered">Rp 0</strong></span>
+                </div>
+              </div>
+
+              <!-- Item Checking Table -->
+              <div class="form-section">
+                <h3>1. Verifikasi Fisik SKU & Retur Lapangan</h3>
+                <div class="table-container">
+                  <table class="items-table" id="podItemsTable">
+                    <thead>
+                      <tr>
+                        <th>Produk</th>
+                        <th>Dipesan</th>
+                        <th>Diterima (Bagus)</th>
+                        <th>Ditolak (Rusak)</th>
+                        <th>Alasan Retur</th>
+                      </tr>
+                    </thead>
+                    <tbody id="podItemsTbody">
+                      <!-- Rendered by JS -->
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Clean nominal summary banner -->
+                <div class="clean-nominal-banner">
+                  <div>
+                    <span>Total Nominal Bersih Terkirim:</span>
+                    <strong class="clean-nominal-amount" id="podCleanNominal">Rp 0</strong>
+                  </div>
+                  <div class="settlement-note">
+                    *Nominal ini yang akan otomatis diterbitkan sebagai faktur bersih di <strong>Fledger Core</strong> tanpa sengketa.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Photo Evidence -->
+              <div class="form-section" id="photoSection">
+                <h3>2. Foto Bukti Kerusakan / Retur (Wajib jika ada barang ditolak)</h3>
+                <div class="input-group">
+                  <input type="url" id="podPhotoUrl" class="form-control" placeholder="https://storage.fledger.io/evidence/damage-sample.jpg">
+                  <button type="button" id="btnFillSamplePhoto" class="btn btn-sm btn-outline">Gunakan Foto Demo</button>
+                </div>
+                <div id="photoPreviewBox" class="photo-preview hidden">
+                  <img id="photoPreviewImg" alt="Bukti Rusak">
+                </div>
+              </div>
+
+              <!-- Digital Signature Canvas -->
+              <div class="form-section">
+                <div class="signature-header">
+                  <h3>3. Tanda Tangan Digital Penerima Toko</h3>
+                  <button type="button" id="btnClearSignature" class="btn btn-sm btn-outline">Hapus Goresan</button>
+                </div>
+                <div class="canvas-container">
+                  <canvas id="signatureCanvas" width="500" height="180"></canvas>
+                  <div class="canvas-hint">Tanda tangani di area ini (mendukung layar sentuh & mouse)</div>
+                </div>
+                <div class="grid-2col mt-2">
+                  <div>
+                    <label>Nama Lengkap Penerima *</label>
+                    <input type="text" id="podRecipientName" class="form-control" placeholder="Ibu Siti Fatimah" required>
+                  </div>
+                  <div>
+                    <label>Nomor HP Penerima</label>
+                    <input type="tel" id="podRecipientPhone" class="form-control" placeholder="081298765432">
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <label>Catatan Supir di Lapangan</label>
+                  <input type="text" id="podDriverNotes" class="form-control" placeholder="Contoh: 2 karton bocor akibat guncangan jalan">
+                </div>
+              </div>
+
+              <!-- Submit Button -->
+              <div class="form-actions">
+                <button type="submit" id="btnSubmitPOD" class="btn btn-primary btn-lg">
+                  <span class="icon">⚡</span> Submit POD & Terbitkan Faktur ke Fledger Core
+                </button>
+              </div>
+            </form>
+
+            <!-- POD Result Success Card -->
+            <div id="podSuccessCard" class="success-card hidden">
+              <div class="success-icon">✅</div>
+              <h3>Proof of Delivery Berhasil Diserahkan!</h3>
+              <p id="podSuccessMsg">Status DO telah diperbarui dan faktur bersih berhasil diterbitkan.</p>
+              <div class="invoice-box">
+                <div>Status: <span class="badge badge-success" id="resStatus">DELIVERED</span></div>
+                <div>Nominal Faktur: <strong id="resNominal">Rp 0</strong></div>
+                <div>Fledger Core Invoice ID: <code id="resInvoiceId">-</code></div>
+              </div>
+              <button id="btnBackToDOList" class="btn btn-secondary mt-3">Selesaikan DO Berikutnya</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: DISPATCHER HUB ==================== -->
+      <section id="dispatcher-tab" class="tab-pane">
+        <div class="grid-layout dispatcher-layout">
+          
+          <!-- Dispatch Form -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Buat & Berangkatkan Trip Perjalanan Baru</h2>
+            </div>
+            <form id="tripForm" class="trip-form">
+              <div class="grid-2col">
+                <div>
+                  <label>Nomor Surat Tugas (Trip Number) *</label>
+                  <input type="text" id="tripNumber" class="form-control" required placeholder="TRIP-202610-001">
+                </div>
+                <div>
+                  <label>Pilih Armada Kendaraan *</label>
+                  <select id="tripVehicleSelect" class="form-control" required></select>
+                </div>
+              </div>
+
+              <div class="grid-2col mt-2">
+                <div>
+                  <label>Pilih Supir Ekspedisi *</label>
+                  <select id="tripDriverSelect" class="form-control" required></select>
+                </div>
+                <div>
+                  <label>Catatan Rute / Wilayah</label>
+                  <input type="text" id="tripNotes" class="form-control" placeholder="Rute Pengantaran Jakarta Barat">
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <label>Pilih Surat Jalan (DO) yang Akan Dimuat: *</label>
+                <div class="checkbox-container" id="tripDOCheckboxes">
+                  <!-- DO Checkboxes populated by JS -->
+                </div>
+              </div>
+
+              <!-- Weight Meter -->
+              <div class="capacity-meter-box mt-3">
+                <div class="capacity-labels">
+                  <span>Estimasi Muatan: <strong id="estWeightKg">0</strong> kg</span>
+                  <span>Kapasitas Truk: <strong id="maxCapacityKg">0</strong> kg</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" id="weightProgressFill" style="width: 0%"></div>
+                </div>
+                <div id="capacityWarning" class="capacity-warning hidden">
+                  ⚠️ Muatan melebihi kapasitas kendaraan! Kurangi jumlah DO.
+                </div>
+              </div>
+
+              <div class="form-actions mt-3">
+                <button type="submit" id="btnCreateTrip" class="btn btn-primary">
+                  ➕ Buat Trip (DRAFT)
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Active Trips List -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Daftar Trip Pengiriman Berjalan</h2>
+              <button id="btnRefreshTrips" class="btn btn-sm btn-outline">🔄 Refresh</button>
+            </div>
+            <div class="trip-table-container">
+              <table class="table" id="tripsTable">
+                <thead>
+                  <tr>
+                    <th>Trip Number</th>
+                    <th>Truk / Supir</th>
+                    <th>Status</th>
+                    <th>Stops</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="tripsTbody">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Outbox Worker Queue Monitor -->
+            <div class="outbox-monitor mt-3">
+              <h3>Status Antrean Outbox (Retry ke Core)</h3>
+              <div class="stats-row">
+                <div class="stat-pill"><span class="stat-num" id="outboxPending">0</span> Pending</div>
+                <div class="stat-pill"><span class="stat-num" id="outboxSent">0</span> Terkirim</div>
+                <div class="stat-pill"><span class="stat-num" id="outboxFailed">0</span> Gagal</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3: MASTER DATA ==================== -->
+      <section id="master-tab" class="tab-pane">
+        <div class="grid-layout master-layout">
+          
+          <!-- Quick Creation Forms -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Registrasi Cepat Data Master</h2>
+            </div>
+            
+            <!-- Vehicle Sub-Form -->
+            <div class="sub-section">
+              <h3>Tambah Armada Truk</h3>
+              <form id="vehicleForm" class="inline-form">
+                <input type="text" id="vPlate" class="form-control" placeholder="Plat: B 9999 FMC" required>
+                <select id="vType" class="form-control" required>
+                  <option value="CDE_BOX">CDE Box (1,500 kg)</option>
+                  <option value="CDD_BOX">CDD Box (4,000 kg)</option>
+                  <option value="BLIND_VAN">Blind Van (800 kg)</option>
+                  <option value="MOTOR_CARGO">Motor Cargo (200 kg)</option>
+                </select>
+                <input type="number" id="vCapacity" class="form-control" placeholder="Kapasitas KG" value="1500" required>
+                <button type="submit" class="btn btn-sm btn-primary">Simpan Truk</button>
+              </form>
+            </div>
+
+            <!-- Driver Sub-Form -->
+            <div class="sub-section mt-3">
+              <h3>Tambah Supir Ekspedisi</h3>
+              <form id="driverForm" class="inline-form">
+                <input type="text" id="dName" class="form-control" placeholder="Nama Lengkap" required>
+                <input type="tel" id="dPhone" class="form-control" placeholder="No HP: 0812..." required>
+                <input type="text" id="dSim" class="form-control" placeholder="SIM: SIM-B1-..." required>
+                <button type="submit" class="btn btn-sm btn-primary">Simpan Supir</button>
+              </form>
+            </div>
+
+            <!-- Quick Demo DO Generator -->
+            <div class="sub-section mt-3">
+              <h3>Penerbitan Surat Jalan Demo (Quick DO)</h3>
+              <button id="btnGenerateDemoDO" class="btn btn-secondary w-full">
+                📦 Terbitkan 1 Surat Jalan Demo (Minyak Goreng & Mie Instan)
+              </button>
+            </div>
+          </div>
+
+          <!-- Master Lists Overview -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Overview Surat Jalan & Kendaraan</h2>
+            </div>
+            <div class="tabs-subnav">
+              <button class="subtab-btn active" data-subtab="subtab-dos">Surat Jalan (DO)</button>
+              <button class="subtab-btn" data-subtab="subtab-vehicles">Armada Truk</button>
+              <button class="subtab-btn" data-subtab="subtab-drivers">Supir</button>
+            </div>
+
+            <div id="subtab-dos" class="subtab-content active">
+              <div class="table-container">
+                <table class="table" id="masterDOTable">
+                  <thead>
+                    <tr>
+                      <th>No DO</th>
+                      <th>Toko Tujuan</th>
+                      <th>Total Item</th>
+                      <th>Nominal</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="masterDOTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="subtab-vehicles" class="subtab-content">
+              <div class="table-container">
+                <table class="table" id="masterVehiclesTable">
+                  <thead>
+                    <tr>
+                      <th>Plat Nomor</th>
+                      <th>Tipe</th>
+                      <th>Kapasitas</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="masterVehiclesTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="subtab-drivers" class="subtab-content">
+              <div class="table-container">
+                <table class="table" id="masterDriversTable">
+                  <thead>
+                    <tr>
+                      <th>Nama Supir</th>
+                      <th>No HP</th>
+                      <th>No SIM</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="masterDriversTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="fleet-client.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

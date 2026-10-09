@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -106,9 +107,58 @@ func run() error {
 	r.Use(chimw.Recoverer)
 	r.Use(httpx.Logger(logger))
 
+	// CORS middleware for Web Portal & external apps (e.g. ekspedisi-dashboard)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-Tenant-ID")
+			w.Header().Set("Access-Control-Expose-Headers", "Link")
+			w.Header().Set("Access-Control-Max-Age", "300")
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.JSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
+
+	// Web Portal static files
+	webDirs := []string{
+		os.Getenv("WEB_DIR"),
+		"web",
+		"../web",
+		"../../web",
+		"fledger-fleet/web",
+	}
+	for _, dir := range webDirs {
+		if dir == "" {
+			continue
+		}
+		if stat, err := os.Stat(filepath.Join(dir, "index.html")); err == nil && !stat.IsDir() {
+			fs := http.FileServer(http.Dir(dir))
+			r.Handle("/web/*", http.StripPrefix("/web", fs))
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+			})
+			r.Get("/style.css", func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, filepath.Join(dir, "style.css"))
+			})
+			r.Get("/fleet-client.js", func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, filepath.Join(dir, "fleet-client.js"))
+			})
+			r.Get("/app.js", func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, filepath.Join(dir, "app.js"))
+			})
+			logger.Info("serving web portal", "dir", dir)
+			break
+		}
+	}
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/ping", handlers.Ping)
