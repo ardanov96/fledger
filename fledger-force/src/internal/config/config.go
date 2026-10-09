@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,6 +30,7 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	loadDotEnv()
 	c := &Config{
 		AppEnv:                getEnv("APP_ENV", "development"),
 		Port:                  getEnvInt("PORT", 8084),
@@ -94,4 +96,29 @@ func getEnvDuration(k string, def time.Duration) time.Duration {
 		}
 	}
 	return def
+}
+
+func loadDotEnv() {
+	for _, p := range []string{".env", "../.env", "../../.env"} {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.TrimSpace(parts[1])
+				v = strings.Trim(v, `"'`)
+				if os.Getenv(k) == "" {
+					_ = os.Setenv(k, v)
+				}
+			}
+		}
+		break
+	}
 }

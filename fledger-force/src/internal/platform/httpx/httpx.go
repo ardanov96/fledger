@@ -42,6 +42,7 @@ func Error(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, apperrors.ErrGeofenceFailed):
 		writeAppErr(w, apperrors.ErrGeofenceOutOfRange)
 	default:
+		slog.Error("unhandled error", "err", err.Error(), "path", r.URL.Path)
 		writeAppErr(w, apperrors.ErrInternalDefault)
 	}
 }

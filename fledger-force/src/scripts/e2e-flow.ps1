@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop"
 $BaseUrl = if ($env:FLEDGER_FORCE_URL) { $env:FLEDGER_FORCE_URL } else { "http://localhost:8084" }
+$env:PGPASSWORD = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { "fmcg_dev_password" }
 
 function Step($msg) { Write-Host ""; Write-Host "==> $msg" }
 function OkMsg($msg)  { Write-Host "  [OK]   $msg" }
@@ -26,8 +27,9 @@ OkMsg "readyz: $($h2.status)"
 
 # 3. Setup: create rep + store + beat plan
 Step "Setup master data"
+$suffix = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $repBody = @{
-    employee_code = "SLS-DEMO-001"
+    employee_code = "SLS-DEMO-$suffix"
     name = "Budi Santoso"
     phone = "081234567890"
     role = "CANVASSER"
@@ -36,10 +38,10 @@ $repBody = @{
 }
 $rep = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/force/sales-reps" -Headers ($authHdr + $jsonHdr) -Body ($repBody | ConvertTo-Json -Depth 5 -Compress)
 $repId = $rep.id
-OkMsg "rep created: $repId"
+OkMsg "rep created: $repId ($($rep.employee_code))"
 
 $storeBody = @{
-    store_code = "TKO-DEMO-001"
+    store_code = "TKO-DEMO-$suffix"
     name = "Toko Sumber Rezeki"
     owner_name = "Ibu Siti"
     phone = "081298765432"
@@ -52,7 +54,7 @@ $storeBody = @{
 }
 $store = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/force/stores" -Headers ($authHdr + $jsonHdr) -Body ($storeBody | ConvertTo-Json -Depth 5 -Compress)
 $storeId = $store.id
-OkMsg "store created: $storeId"
+OkMsg "store created: $storeId ($($store.store_code))"
 
 $today = Get-Date -Format "yyyy-MM-dd"
 $planBody = @{

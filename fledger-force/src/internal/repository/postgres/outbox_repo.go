@@ -59,6 +59,25 @@ func (r *OutboxRepo) Append(ctx context.Context, e outbox.Event) (outbox.Event, 
 	return scanOB(row)
 }
 
+// AppendTx inserts a PENDING outbox row within an existing transaction.
+func (r *OutboxRepo) AppendTx(ctx context.Context, tx pgx.Tx, e outbox.Event) (outbox.Event, error) {
+	if len(e.Payload) == 0 {
+		e.Payload = map[string]any{}
+	}
+	raw, _ := json.Marshal(e.Payload)
+	if e.MaxRetries <= 0 {
+		e.MaxRetries = 10
+	}
+	row := tx.QueryRow(ctx, `
+		INSERT INTO force_settlement_outbox
+		  (tenant_id, event_type, aggregate_id, payload, status, max_retries, next_retry_at)
+		VALUES ($1, $2, $3, $4, 'PENDING', $5, NOW())
+		RETURNING `+obColumns,
+		e.TenantID, string(e.EventType), e.AggregateID, raw, e.MaxRetries,
+	)
+	return scanOB(row)
+}
+
 // FetchDue selects the next batch of due rows (FOR UPDATE SKIP LOCKED) and
 // marks them PROCESSING in the same tx.
 func (r *OutboxRepo) FetchDue(ctx context.Context, limit int) ([]outbox.Event, error) {

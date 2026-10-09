@@ -117,12 +117,50 @@ func (r *RepRepo) IncrementCashHeld(ctx context.Context, tenantID, id string, de
 	return rep, nil
 }
 
+// IncrementCashHeldTx atomically adds delta to the rep's current_cash_held within an existing transaction.
+func (r *RepRepo) IncrementCashHeldTx(ctx context.Context, tx pgx.Tx, tenantID, id string, delta int64) (salesrep.Rep, error) {
+	row := tx.QueryRow(ctx, `
+		UPDATE force_sales_reps
+		   SET current_cash_held = current_cash_held + $3,
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2
+		 RETURNING `+repColumns, tenantID, id, delta)
+	rep, err := scanRep(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return salesrep.Rep{}, fmt.Errorf("%w: rep %s", apperrors.ErrNotFound, id)
+		}
+		return salesrep.Rep{}, err
+	}
+	return rep, nil
+}
+
 // SetStatus moves a rep to a new status (e.g. SETTLEMENT_LOCKED after EOD mismatch).
 func (r *RepRepo) SetStatus(ctx context.Context, tenantID, id string, status salesrep.Status) (salesrep.Rep, error) {
 	if !status.Valid() {
 		return salesrep.Rep{}, fmt.Errorf("%w: invalid status %q", apperrors.ErrInvalidInput, status)
 	}
 	row := r.pool.QueryRow(ctx, `
+		UPDATE force_sales_reps
+		   SET status = $3, updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2
+		 RETURNING `+repColumns, tenantID, id, string(status))
+	rep, err := scanRep(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return salesrep.Rep{}, fmt.Errorf("%w: rep %s", apperrors.ErrNotFound, id)
+		}
+		return salesrep.Rep{}, err
+	}
+	return rep, nil
+}
+
+// SetStatusTx moves a rep to a new status within an existing transaction.
+func (r *RepRepo) SetStatusTx(ctx context.Context, tx pgx.Tx, tenantID, id string, status salesrep.Status) (salesrep.Rep, error) {
+	if !status.Valid() {
+		return salesrep.Rep{}, fmt.Errorf("%w: invalid status %q", apperrors.ErrInvalidInput, status)
+	}
+	row := tx.QueryRow(ctx, `
 		UPDATE force_sales_reps
 		   SET status = $3, updated_at = NOW()
 		 WHERE tenant_id = $1 AND id = $2

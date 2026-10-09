@@ -18,6 +18,7 @@ import (
 	"github.com/fledger/fledger-force/internal/domain/salesrep"
 	"github.com/fledger/fledger-force/internal/domain/store"
 	"github.com/fledger/fledger-force/internal/domain/visit"
+	"github.com/fledger/fledger-force/internal/middleware"
 	apperrors "github.com/fledger/fledger-force/internal/platform/errors"
 	"github.com/fledger/fledger-force/internal/platform/httpx"
 	"github.com/fledger/fledger-force/internal/usecase"
@@ -239,7 +240,11 @@ func (h *Handlers) CreateBeatPlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) TodayBeatPlans(w http.ResponseWriter, r *http.Request) {
-	repID := r.URL.Query().Get("sales_rep_id")
+	repID := resolveSalesRepID(r, "")
+	if repID == "" {
+		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required query param or token subject"}))
+		return
+	}
 	plans, err := h.Visit.TodayBeatPlans(r.Context(), tenantFrom(r), repID)
 	if err != nil {
 		httpx.Error(w, r, err)
@@ -253,6 +258,7 @@ func (h *Handlers) TodayBeatPlans(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 type CheckInRequest struct {
+	SalesRepID string  `json:"sales_rep_id" validate:"omitempty,uuid"`
 	BeatPlanID string  `json:"beat_plan_id" validate:"required,uuid"`
 	StoreID    string  `json:"store_id"     validate:"required,uuid"`
 	Latitude   float64 `json:"latitude"     validate:"required,gte=-90,lte=90"`
@@ -270,9 +276,9 @@ func (h *Handlers) CheckIn(w http.ResponseWriter, r *http.Request) {
 		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": err.Error()})
 		return
 	}
-	salesRepID := r.URL.Query().Get("sales_rep_id")
+	salesRepID := resolveSalesRepID(r, req.SalesRepID)
 	if salesRepID == "" {
-		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required query param"}))
+		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required in body, query param, or token subject"}))
 		return
 	}
 	res, err := h.Visit.CheckIn(r.Context(), usecase.CheckInInput{
@@ -312,6 +318,7 @@ func (h *Handlers) CompleteVisit(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 type CollectRequest struct {
+	SalesRepID       string `json:"sales_rep_id"       validate:"omitempty,uuid"`
 	VisitID          string `json:"visit_id"           validate:"omitempty,uuid"`
 	StoreID          string `json:"store_id"           validate:"required,uuid"`
 	FledgerInvoiceID string `json:"fledger_invoice_id" validate:"required,uuid"`
@@ -330,9 +337,9 @@ func (h *Handlers) Collect(w http.ResponseWriter, r *http.Request) {
 		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": err.Error()})
 		return
 	}
-	salesRepID := r.URL.Query().Get("sales_rep_id")
+	salesRepID := resolveSalesRepID(r, req.SalesRepID)
 	if salesRepID == "" {
-		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required query param"}))
+		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required in body, query param, or token subject"}))
 		return
 	}
 	res, err := h.Collection.Collect(r.Context(), usecase.CollectInput{
@@ -355,9 +362,9 @@ func (h *Handlers) Collect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ListCollectionsToday(w http.ResponseWriter, r *http.Request) {
-	repID := r.URL.Query().Get("sales_rep_id")
+	repID := resolveSalesRepID(r, "")
 	if repID == "" {
-		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required query param"}))
+		httpx.Error(w, r, apperrors.ErrInvalidInputBadRequest.WithDetail(map[string]any{"sales_rep_id": "required query param or token subject"}))
 		return
 	}
 	out, err := h.Collection.ListByRep(r.Context(), repID, r.URL.Query().Get("status"))
@@ -430,18 +437,41 @@ func (h *Handlers) OutboxCounts(w http.ResponseWriter, r *http.Request) {
 // Helpers
 // =============================================================================
 
+func resolveSalesRepID(r *http.Request, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if q := r.URL.Query().Get("sales_rep_id"); q != "" {
+		return q
+	}
+	if p := middleware.PrincipalFromContext(r.Context()); p != nil && p.UserID != "" {
+		if _, err := uuid.Parse(p.UserID); err == nil {
+			return p.UserID
+		}
+	}
+	return ""
+}
+
 func tenantFrom(r *http.Request) string {
 	if h := r.Header.Get("X-Tenant-ID"); h != "" {
 		return h
 	}
+	if p := middleware.PrincipalFromContext(r.Context()); p != nil && p.TenantID != "" {
+		return p.TenantID
+	}
 	return ""
 }
+
 func actorIDFrom(r *http.Request) string {
 	if h := r.Header.Get("X-Actor-Id"); h != "" {
 		return h
 	}
+	if p := middleware.PrincipalFromContext(r.Context()); p != nil && p.UserID != "" {
+		return p.UserID
+	}
 	return ""
 }
+
 func clientIP(r *http.Request) string {
 	if h := r.Header.Get("X-Forwarded-For"); h != "" {
 		return strings.SplitN(h, ",", 2)[0]

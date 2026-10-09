@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	apperrors "github.com/fledger/fledger-force/internal/platform/errors"
 	"github.com/fledger/fledger-force/internal/domain/audit"
@@ -23,6 +24,7 @@ import (
 
 // CollectionService handles cash collections + EOD settlements.
 type CollectionService struct {
+	pool        *pgxpool.Pool
 	collections *postgres.CollectionRepo
 	settlements *postgres.SettlementRepo
 	reps        *postgres.RepRepo
@@ -35,11 +37,13 @@ type CollectionService struct {
 }
 
 func NewCollectionService(
+	pool *pgxpool.Pool,
 	colls *postgres.CollectionRepo, settles *postgres.SettlementRepo,
 	reps *postgres.RepRepo, stores *postgres.StoreRepo, visits *postgres.VisitRepo,
 	ob *postgres.OutboxRepo, a *postgres.AuditRepo, c *coreclient.Client,
 ) *CollectionService {
 	return &CollectionService{
+		pool:        pool,
 		collections: colls, settlements: settles,
 		reps: reps, stores: stores, visits: visits,
 		outbox: ob, audit: a, core: c,
@@ -137,65 +141,134 @@ func (s *CollectionService) Collect(ctx context.Context, in CollectInput) (*Coll
 		}
 	}
 
-	tx, err := s.collections.Insert(ctx, col)
-	if err != nil {
-		return nil, err
-	}
+	var (
+		collTx collection.Collection
+		updatedRep salesrep.Rep
+		ob outbox.Event
+	)
+	if s.pool != nil {
+		dbtx, err := s.pool.Begin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin collect tx: %w", err)
+		}
+		defer dbtx.Rollback(ctx)
 
-	updated, err := s.reps.IncrementCashHeld(ctx, in.TenantID, rep.ID, in.Amount)
-	if err != nil {
-		return nil, err
-	}
+		c, err := s.collections.InsertTx(ctx, dbtx, col)
+		if err != nil {
+			return nil, err
+		}
+		collTx = c
 
-	// Enqueue outbox.
-	ob, err := s.outbox.Append(ctx, outbox.Event{
-		TenantID:    in.TenantID,
-		EventType:   outbox.EventCashCollected,
-		AggregateID: tx.ID,
-		Payload: map[string]any{
-			"collection_id":     tx.ID,
-			"receipt_number":    tx.ReceiptNumber,
-			"fledger_invoice_id": tx.FledgerInvoiceID,
-			"customer_id":       store.ID, // store id is treated as the customer AR account
-			"from_account_id":   "ACC_CUSTOMER_AR",
-			"to_account_id":     rep.FledgerWalletAccountID,
-			"amount_minor":      tx.Amount,
-			"currency":          "IDR",
-			"channel":           "CASH_COLLECTION",
-			"collected_at":      tx.CollectedAt.UTC().Format(time.RFC3339),
-			"description":       fmt.Sprintf("Pembayaran kas lapangan %s (RCP-%s)", store.Name, receiptNumber),
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
+		u, err := s.reps.IncrementCashHeldTx(ctx, dbtx, in.TenantID, rep.ID, in.Amount)
+		if err != nil {
+			return nil, err
+		}
+		updatedRep = u
 
-	_ = s.audit.Append(ctx, audit.Log{
-		TenantID:     in.TenantID,
-		ActorID:      in.ActorID,
-		ActorRole:    "salesman",
-		Action:       audit.ActionCashCollected,
-		ResourceType: "cash_collection",
-		ResourceID:   tx.ID,
-		Details: map[string]any{
-			"receipt_number": tx.ReceiptNumber,
-			"amount":         tx.Amount,
-			"outbox_id":      ob.ID,
-		},
-		IPAddress: in.IPAddress,
-	})
+		ev, err := s.outbox.AppendTx(ctx, dbtx, outbox.Event{
+			TenantID:    in.TenantID,
+			EventType:   outbox.EventCashCollected,
+			AggregateID: collTx.ID,
+			Payload: map[string]any{
+				"collection_id":     collTx.ID,
+				"receipt_number":    collTx.ReceiptNumber,
+				"fledger_invoice_id": collTx.FledgerInvoiceID,
+				"customer_id":       store.ID, // store id is treated as the customer AR account
+				"from_account_id":   "ACC_CUSTOMER_AR",
+				"to_account_id":     rep.FledgerWalletAccountID,
+				"amount_minor":      collTx.Amount,
+				"currency":          "IDR",
+				"channel":           "CASH_COLLECTION",
+				"collected_at":      collTx.CollectedAt.UTC().Format(time.RFC3339),
+				"description":       fmt.Sprintf("Pembayaran kas lapangan %s (RCP-%s)", store.Name, receiptNumber),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		ob = ev
+
+		_ = s.audit.AppendTx(ctx, dbtx, audit.Log{
+			TenantID:     in.TenantID,
+			ActorID:      in.ActorID,
+			ActorRole:    "salesman",
+			Action:       audit.ActionCashCollected,
+			ResourceType: "cash_collection",
+			ResourceID:   collTx.ID,
+			Details: map[string]any{
+				"receipt_number": collTx.ReceiptNumber,
+				"amount":         collTx.Amount,
+				"outbox_id":      ob.ID,
+			},
+			IPAddress: in.IPAddress,
+		})
+
+		if err := dbtx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit collect tx: %w", err)
+		}
+	} else {
+		c, err := s.collections.Insert(ctx, col)
+		if err != nil {
+			return nil, err
+		}
+		collTx = c
+
+		u, err := s.reps.IncrementCashHeld(ctx, in.TenantID, rep.ID, in.Amount)
+		if err != nil {
+			return nil, err
+		}
+		updatedRep = u
+
+		ev, err := s.outbox.Append(ctx, outbox.Event{
+			TenantID:    in.TenantID,
+			EventType:   outbox.EventCashCollected,
+			AggregateID: collTx.ID,
+			Payload: map[string]any{
+				"collection_id":     collTx.ID,
+				"receipt_number":    collTx.ReceiptNumber,
+				"fledger_invoice_id": collTx.FledgerInvoiceID,
+				"customer_id":       store.ID,
+				"from_account_id":   "ACC_CUSTOMER_AR",
+				"to_account_id":     rep.FledgerWalletAccountID,
+				"amount_minor":      collTx.Amount,
+				"currency":          "IDR",
+				"channel":           "CASH_COLLECTION",
+				"collected_at":      collTx.CollectedAt.UTC().Format(time.RFC3339),
+				"description":       fmt.Sprintf("Pembayaran kas lapangan %s (RCP-%s)", store.Name, receiptNumber),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		ob = ev
+
+		_ = s.audit.Append(ctx, audit.Log{
+			TenantID:     in.TenantID,
+			ActorID:      in.ActorID,
+			ActorRole:    "salesman",
+			Action:       audit.ActionCashCollected,
+			ResourceType: "cash_collection",
+			ResourceID:   collTx.ID,
+			Details: map[string]any{
+				"receipt_number": collTx.ReceiptNumber,
+				"amount":         collTx.Amount,
+				"outbox_id":      ob.ID,
+			},
+			IPAddress: in.IPAddress,
+		})
+	}
 
 	wa := BuildWAResceiptPayload(
-		store.Name, in.PayerName, tx.ReceiptNumber, tx.FledgerInvoiceID,
-		rep.EmployeeCode, rep.Name, tx.Amount,
+		store.Name, in.PayerName, collTx.ReceiptNumber, collTx.FledgerInvoiceID,
+		rep.EmployeeCode, rep.Name, collTx.Amount,
 	)
 	if store.Phone != "" {
 		wa.To = store.Phone
 	}
 
 	return &CollectResult{
-		Collection:          tx,
-		SalesRepCurrentCash: updated.CurrentCashHeld,
+		Collection:          collTx,
+		SalesRepCurrentCash: updatedRep.CurrentCashHeld,
 		WAResceipt:          wa,
 	}, nil
 }
@@ -304,12 +377,8 @@ func (s *CollectionService) Settle(ctx context.Context, in SettleInput) (*Settle
 		CashierNotes:       in.CashierNotes,
 		SettledAt:          time.Now().UTC(),
 	}
-	saved, err := s.settlements.Insert(ctx, set)
-	if err != nil {
-		return nil, err
-	}
 
-	// Mark all HELD_BY_SALES collections as SETTLED_TO_HQ and reset rep cash.
+	// Fetch all HELD_BY_SALES collections for this rep.
 	held, err := s.collections.ListByRep(ctx, rep.ID, string(collection.StatusHeldBySales))
 	if err != nil {
 		return nil, err
@@ -318,24 +387,9 @@ func (s *CollectionService) Settle(ctx context.Context, in SettleInput) (*Settle
 	for _, c := range held {
 		ids = append(ids, c.ID)
 	}
-	if err := s.collections.MarkSettledToHQ(ctx, saved.ID, ids); err != nil {
-		return nil, err
-	}
 
-	// Reset rep cash to 0 (the discrepancy still hangs as personal debt).
-	if _, err := s.reps.IncrementCashHeld(ctx, in.TenantID, rep.ID, -systemCash); err != nil {
-		return nil, err
-	}
-	updated, err := s.reps.SetStatus(ctx, in.TenantID, rep.ID, repNewStatus)
-	if err != nil {
-		return nil, err
-	}
-
-	// Outbox event (HQ cash receives the physical cash; salesman wallet settles
-	// the system balance; on discrepancy the salesman keeps the delta as
-	// remaining wallet debt).
 	obPayload := map[string]any{
-		"settlement_id":       saved.ID,
+		"settlement_id":       "", // will be set after insert
 		"fledger_invoice_id":  nil,
 		"from_account_id":     rep.FledgerWalletAccountID,
 		"to_account_id":       "ACC_HQ_PHYSICAL_CASH",
@@ -347,36 +401,131 @@ func (s *CollectionService) Settle(ctx context.Context, in SettleInput) (*Settle
 		"discrepancy_amount":  discrepancy,
 		"description":         fmt.Sprintf("Setoran kas fisik EOD oleh %s (EOD-%s)", rep.Name, settleNumber),
 	}
-	ob, err := s.outbox.Append(ctx, outbox.Event{
-		TenantID:    in.TenantID,
-		EventType:   outbox.EventEODSettled,
-		AggregateID: saved.ID,
-		Payload:     obPayload,
-	})
-	if err != nil {
-		return nil, err
-	}
 
-	action := audit.ActionEODSettled
-	if status == settlement.StatusDiscrepancy {
-		action = audit.ActionDiscrepancyFlagged
+	var (
+		saved settlement.Settlement
+		updated salesrep.Rep
+		ob outbox.Event
+	)
+	if s.pool != nil {
+		dbtx, err := s.pool.Begin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin settle tx: %w", err)
+		}
+		defer dbtx.Rollback(ctx)
+
+		st, err := s.settlements.InsertTx(ctx, dbtx, set)
+		if err != nil {
+			return nil, err
+		}
+		saved = st
+		obPayload["settlement_id"] = saved.ID
+
+		if len(ids) > 0 {
+			if err := s.collections.MarkSettledToHQTx(ctx, dbtx, saved.ID, ids); err != nil {
+				return nil, err
+			}
+		}
+
+		if _, err := s.reps.IncrementCashHeldTx(ctx, dbtx, in.TenantID, rep.ID, -systemCash); err != nil {
+			return nil, err
+		}
+		u, err := s.reps.SetStatusTx(ctx, dbtx, in.TenantID, rep.ID, repNewStatus)
+		if err != nil {
+			return nil, err
+		}
+		updated = u
+
+		ev, err := s.outbox.AppendTx(ctx, dbtx, outbox.Event{
+			TenantID:    in.TenantID,
+			EventType:   outbox.EventEODSettled,
+			AggregateID: saved.ID,
+			Payload:     obPayload,
+		})
+		if err != nil {
+			return nil, err
+		}
+		ob = ev
+
+		action := audit.ActionEODSettled
+		if status == settlement.StatusDiscrepancy {
+			action = audit.ActionDiscrepancyFlagged
+		}
+		_ = s.audit.AppendTx(ctx, dbtx, audit.Log{
+			TenantID:     in.TenantID,
+			ActorID:      in.ActorID,
+			ActorRole:    "cashier",
+			Action:       action,
+			ResourceType: "eod_settlement",
+			ResourceID:   saved.ID,
+			Details: map[string]any{
+				"settlement_number": saved.SettlementNumber,
+				"system_cash":       systemCash,
+				"physical_cash":     in.PhysicalCashReceived,
+				"discrepancy":       discrepancy,
+				"outbox_id":         ob.ID,
+			},
+			IPAddress: in.IPAddress,
+		})
+
+		if err := dbtx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit settle tx: %w", err)
+		}
+	} else {
+		st, err := s.settlements.Insert(ctx, set)
+		if err != nil {
+			return nil, err
+		}
+		saved = st
+		obPayload["settlement_id"] = saved.ID
+
+		if len(ids) > 0 {
+			if err := s.collections.MarkSettledToHQ(ctx, saved.ID, ids); err != nil {
+				return nil, err
+			}
+		}
+
+		if _, err := s.reps.IncrementCashHeld(ctx, in.TenantID, rep.ID, -systemCash); err != nil {
+			return nil, err
+		}
+		u, err := s.reps.SetStatus(ctx, in.TenantID, rep.ID, repNewStatus)
+		if err != nil {
+			return nil, err
+		}
+		updated = u
+
+		ev, err := s.outbox.Append(ctx, outbox.Event{
+			TenantID:    in.TenantID,
+			EventType:   outbox.EventEODSettled,
+			AggregateID: saved.ID,
+			Payload:     obPayload,
+		})
+		if err != nil {
+			return nil, err
+		}
+		ob = ev
+
+		action := audit.ActionEODSettled
+		if status == settlement.StatusDiscrepancy {
+			action = audit.ActionDiscrepancyFlagged
+		}
+		_ = s.audit.Append(ctx, audit.Log{
+			TenantID:     in.TenantID,
+			ActorID:      in.ActorID,
+			ActorRole:    "cashier",
+			Action:       action,
+			ResourceType: "eod_settlement",
+			ResourceID:   saved.ID,
+			Details: map[string]any{
+				"settlement_number": saved.SettlementNumber,
+				"system_cash":       systemCash,
+				"physical_cash":     in.PhysicalCashReceived,
+				"discrepancy":       discrepancy,
+				"outbox_id":         ob.ID,
+			},
+			IPAddress: in.IPAddress,
+		})
 	}
-	_ = s.audit.Append(ctx, audit.Log{
-		TenantID:     in.TenantID,
-		ActorID:      in.ActorID,
-		ActorRole:    "cashier",
-		Action:       action,
-		ResourceType: "eod_settlement",
-		ResourceID:   saved.ID,
-		Details: map[string]any{
-			"settlement_number": saved.SettlementNumber,
-			"system_cash":       systemCash,
-			"physical_cash":     in.PhysicalCashReceived,
-			"discrepancy":       discrepancy,
-			"outbox_id":         ob.ID,
-		},
-		IPAddress: in.IPAddress,
-	})
 
 	return &SettleResult{
 		Settlement:          saved,

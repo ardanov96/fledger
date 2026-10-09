@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1d4ed8">
+  <title>Fledger Force — PWA Salesman & Kasir</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🛵</span>
+      <div>
+        <h1>Fledger Force</h1>
+        <small id="who">SFA &amp; Anti-Cash Kitting</small>
+      </div>
+    </div>
+    <nav class="mode">
+      <button class="mode-btn active" data-mode="salesman">Salesman</button>
+      <button class="mode-btn" data-mode="cashier">Kasir</button>
+    </nav>
+  </header>
+
+  <main class="content">
+    <!-- ============================================================ -->
+    <!-- SALESMAN MODE                                                -->
+    <!-- ============================================================ -->
+    <section id="mode-salesman" class="mode-pane active">
+      <div class="card">
+        <h2>1. Cek Rute Hari Ini</h2>
+        <button id="load-today" class="primary">Muat Rute (Today)</button>
+        <div id="beat-list" class="list"></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Check-In Toko (GPS Geofence)</h2>
+        <form id="checkin-form" class="grid">
+          <label>
+            Beat Plan ID
+            <input type="text" id="beat_plan_id" required>
+          </label>
+          <label>
+            Store ID
+            <input type="text" id="store_id" required>
+          </label>
+          <label>
+            Latitude
+            <input type="number" step="any" id="latitude" required>
+          </label>
+          <label>
+            Longitude
+            <input type="number" step="any" id="longitude" required>
+          </label>
+          <label class="span2">
+            <button type="button" class="secondary" id="gps-btn">📍 Ambil GPS HP (Mock)</button>
+            <small>Demo: klik untuk isi lat/lng otomatis. Pada produksi: navigator.geolocation</small>
+          </label>
+          <button type="submit" class="primary span2">Check-In Sekarang</button>
+        </form>
+        <div id="checkin-status" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>3. Terima Pembayaran Tunai</h2>
+        <form id="collect-form" class="grid">
+          <label>
+            Visit ID (opsional)
+            <input type="text" id="collect_visit_id">
+          </label>
+          <label>
+            Store ID
+            <input type="text" id="collect_store_id" required>
+          </label>
+          <label>
+            Fledger Invoice ID
+            <input type="text" id="collect_invoice_id" required>
+          </label>
+          <label>
+            Nominal (Rp)
+            <input type="number" id="collect_amount" value="2500000" required>
+          </label>
+          <label>
+            Nama Pembayar
+            <input type="text" id="collect_payer" value="Ibu Siti Fatimah">
+          </label>
+          <label>
+            No HP Pembayar
+            <input type="text" id="collect_payer_phone" value="081298765432">
+          </label>
+          <button type="submit" class="primary span2">⚡ Terima Kas &amp; Terbitkan Kwitansi</button>
+        </form>
+        <div id="collect-status" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>4. Kas yang Saya Bawa Hari Ini</h2>
+        <div id="rep-cash">Memuat...</div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CASHIER MODE                                                 -->
+    <!-- ============================================================ -->
+    <section id="mode-cashier" class="mode-pane">
+      <div class="card">
+        <h2>Inquiry Setoran (Salesman)</h2>
+        <form id="inquiry-form" class="grid">
+          <label class="span2">
+            Salesman ID (UUID)
+            <input type="text" id="inquiry_rep_id" required>
+          </label>
+          <button type="submit" class="primary span2">Cek Saldo Wajib Setor</button>
+        </form>
+        <div id="inquiry-result" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>Konfirmasi Setoran EOD</h2>
+        <form id="settle-form" class="grid">
+          <label class="span2">
+            Salesman ID (UUID)
+            <input type="text" id="settle_rep_id" required>
+          </label>
+          <label>
+            Uang Fisik Diterima (Rp)
+            <input type="number" id="settle_physical" required>
+          </label>
+          <label>
+            Catatan Kasir
+            <input type="text" id="settle_notes" value="Uang fisik pas">
+          </label>
+          <button type="submit" class="primary span2">✅ Konfirmasi Setoran EOD</button>
+        </form>
+        <div id="settle-status" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>Outbox → Fledger Core</h2>
+        <div id="outbox-counts">Memuat...</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Fledger Force — PWA Sandbox (mode development).</small>
+  </footer>
+
+  <script src="/force-client.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

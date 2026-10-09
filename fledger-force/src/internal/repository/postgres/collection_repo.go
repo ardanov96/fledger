@@ -69,6 +69,30 @@ func (r *CollectionRepo) Insert(ctx context.Context, c collection.Collection) (c
 	return out, nil
 }
 
+// InsertTx creates a new cash collection row within an existing transaction.
+func (r *CollectionRepo) InsertTx(ctx context.Context, tx pgx.Tx, c collection.Collection) (collection.Collection, error) {
+	row := tx.QueryRow(ctx, `
+		INSERT INTO force_cash_collections
+		  (tenant_id, visit_id, sales_rep_id, store_id, fledger_invoice_id,
+		   receipt_number, amount, collected_at, payer_name, payer_phone,
+		   wa_receipt_sent, status)
+		VALUES ($1, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8, $9, NULLIF($10,''),
+		        $11, $12)
+		RETURNING `+collColumns,
+		c.TenantID, c.VisitID, c.SalesRepID, c.StoreID, c.FledgerInvoiceID,
+		c.ReceiptNumber, c.Amount, c.CollectedAt, c.PayerName, c.PayerPhone,
+		c.WAReceiptSent, string(c.Status),
+	)
+	out, err := scanCollection(row)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return collection.Collection{}, fmt.Errorf("%w: receipt_number already exists", apperrors.ErrConflict)
+		}
+		return collection.Collection{}, fmt.Errorf("insert collection tx: %w", err)
+	}
+	return out, nil
+}
+
 // ListByRep returns the rep's collections (optionally filtered by status).
 func (r *CollectionRepo) ListByRep(ctx context.Context, repID, status string) ([]collection.Collection, error) {
 	var (
@@ -122,6 +146,20 @@ func (r *CollectionRepo) MarkSettledToHQ(ctx context.Context, settlementID strin
 	return err
 }
 
+// MarkSettledToHQTx flips status to SETTLED_TO_HQ within an existing transaction.
+func (r *CollectionRepo) MarkSettledToHQTx(ctx context.Context, tx pgx.Tx, settlementID string, collectionIDs []string) error {
+	if len(collectionIDs) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		UPDATE force_cash_collections
+		   SET status = 'SETTLED_TO_HQ',
+		       settlement_id = $1::uuid
+		 WHERE id = ANY($2::uuid[])`,
+		settlementID, collectionIDs)
+	return err
+}
+
 // SettlementRepo handles EOD settlements.
 type SettlementRepo struct {
 	pool *pgxpool.Pool
@@ -166,6 +204,29 @@ func (r *SettlementRepo) Insert(ctx context.Context, s settlement.Settlement) (s
 			return settlement.Settlement{}, fmt.Errorf("%w: settlement_number already exists", apperrors.ErrConflict)
 		}
 		return settlement.Settlement{}, fmt.Errorf("insert settlement: %w", err)
+	}
+	return out, nil
+}
+
+// InsertTx writes a new settlement row within an existing transaction.
+func (r *SettlementRepo) InsertTx(ctx context.Context, tx pgx.Tx, s settlement.Settlement) (settlement.Settlement, error) {
+	row := tx.QueryRow(ctx, `
+		INSERT INTO force_eod_settlements
+		  (tenant_id, settlement_number, sales_rep_id, cashier_user_id,
+		   total_system_cash, total_physical_cash, discrepancy_amount, status,
+		   cashier_notes)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		RETURNING `+settleColumns,
+		s.TenantID, s.SettlementNumber, s.SalesRepID, s.CashierUserID,
+		s.TotalSystemCash, s.TotalPhysicalCash, s.DiscrepancyAmount, string(s.Status),
+		s.CashierNotes,
+	)
+	out, err := scanSettle(row)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return settlement.Settlement{}, fmt.Errorf("%w: settlement_number already exists", apperrors.ErrConflict)
+		}
+		return settlement.Settlement{}, fmt.Errorf("insert settlement tx: %w", err)
 	}
 	return out, nil
 }

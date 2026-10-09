@@ -34,6 +34,6 @@ func NewServices(d Deps) *Services {
 		Rep:        NewRepService(d.Reps),
 		Store:      NewStoreService(d.Stores),
 		Visit:      NewVisitService(d.Visits, d.Stores, d.Audit),
-		Collection: NewCollectionService(d.Collections, d.Settlements, d.Reps, d.Stores, d.Visits, d.Outbox, d.Audit, d.Core),
+		Collection: NewCollectionService(d.Pool, d.Collections, d.Settlements, d.Reps, d.Stores, d.Visits, d.Outbox, d.Audit, d.Core),
 	}
 }
