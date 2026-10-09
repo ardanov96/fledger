@@ -20,6 +20,7 @@ import (
 type ProofOfDeliveryService struct {
 	pods       *postgres.PODRepo
 	dos        *postgres.DORepo
+	trips      *postgres.TripRepo
 	outbox     *postgres.OutboxRepo
 	audit      *postgres.AuditRepo
 	coreClient *coreclient.Client
@@ -29,12 +30,13 @@ type ProofOfDeliveryService struct {
 func NewProofOfDeliveryService(
 	pods *postgres.PODRepo,
 	dos *postgres.DORepo,
+	trips *postgres.TripRepo,
 	ob *postgres.OutboxRepo,
 	audit *postgres.AuditRepo,
 	core *coreclient.Client,
 	pool *pgxpool.Pool,
 ) *ProofOfDeliveryService {
-	return &ProofOfDeliveryService{pods: pods, dos: dos, outbox: ob, audit: audit, coreClient: core, pool: pool}
+	return &ProofOfDeliveryService{pods: pods, dos: dos, trips: trips, outbox: ob, audit: audit, coreClient: core, pool: pool}
 }
 
 // SubmitInput is the shape of POST /v1/fleet/delivery-orders/:id/pod.
@@ -54,6 +56,7 @@ type SubmitInput struct {
 
 // SubmitResult is what the use case returns to the handler.
 type SubmitResult struct {
+	DOID                string                       `json:"do_id"`
 	DO                  delivery_order.DeliveryOrder `json:"do"`
 	Status              string                       `json:"status"`
 	NominalDeliveredCents int64                      `json:"nominal_delivered_cents"`
@@ -84,6 +87,23 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 		return nil, err
 	}
 	if do.Status != delivery_order.StatusOutForDelivery {
+		if do.Status == delivery_order.StatusDeliveredFull ||
+			do.Status == delivery_order.StatusDeliveredPartial ||
+			do.Status == delivery_order.StatusDeliveryFailed {
+			invID := ""
+			if do.FledgerInvoiceID != nil {
+				invID = *do.FledgerInvoiceID
+			}
+			return &SubmitResult{
+				DOID:                  do.ID,
+				DO:                    do,
+				Status:                string(do.Status),
+				NominalDeliveredCents: do.NominalDeliveredCents,
+				FledgerInvoiceID:      invID,
+				Queued:                false,
+				Message:               "POD already submitted (idempotent replay)",
+			}, nil
+		}
 		return nil, fmt.Errorf("%w: DO must be OUT_FOR_DELIVERY before submitting POD (current=%s)",
 			apperrors.ErrInvalidInput, do.Status)
 	}
@@ -129,8 +149,8 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 					apperrors.ErrInvalidInput, r.RejectionReason, r.ProductSKU)
 			}
 			if len(in.PhotoEvidenceURLs) == 0 {
-				return nil, fmt.Errorf("%w: photo_evidence_urls required when any qty_rejected > 0",
-					apperrors.ErrInvalidInput)
+				return nil, fmt.Errorf("%w: Photo evidence is required when rejected items > 0",
+					apperrors.ErrUnprocessableEntity)
 			}
 		}
 		totalDelivered += r.QtyDelivered
@@ -178,6 +198,27 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 		_ = s.audit.SetActor(ctx, in.TenantID, do.ID, in.ActorID)
 	}
 
+	// Auto-complete trip and release vehicle/driver if all DOs in this trip are done
+	if s.trips != nil && updated.TripID != nil && *updated.TripID != "" {
+		_, _ = s.trips.CompleteIfAllDelivered(ctx, in.TenantID, *updated.TripID)
+	}
+
+	res := &SubmitResult{
+		DOID:                  do.ID,
+		DO:                    updated,
+		Status:                string(newStatus),
+		NominalDeliveredCents: nominalDelivered,
+		Queued:                false,
+		Message:               "POD stored",
+	}
+
+	// Only sync clean invoice to Fledger Core if delivery succeeded (full or partial) and nominal > 0.
+	// If all items were rejected or delivery failed completely, Core invoices must not be created.
+	if newStatus == delivery_order.StatusDeliveryFailed || nominalDelivered <= 0 {
+		res.Message = "POD successfully submitted (delivery failed/rejected; no invoice generated in Core)"
+		return res, nil
+	}
+
 	// Build the outbox payload (so retries reuse the same invoice number).
 	due := time.Now().UTC().Add(14 * 24 * time.Hour).Format("2006-01-02")
 	payload := map[string]any{
@@ -203,13 +244,8 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 
 	// Try synchronous settle. On upstream failure we return queued=true so the
 	// handler can respond 200 OK without blocking on a retry.
-	res := &SubmitResult{
-		DO:                   updated,
-		Status:               string(newStatus),
-		NominalDeliveredCents: nominalDelivered,
-		Queued:               true,
-		Message:              "POD stored; invoice queued for sync to Fledger Core",
-	}
+	res.Queued = true
+	res.Message = "POD stored; invoice queued for sync to Fledger Core"
 
 	invoice, err := s.coreClient.CreateInvoice(ctx, coreclient.InvoiceInput{
 		CustomerID:  do.CustomerID,
@@ -250,6 +286,7 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 // updatedAndQueue is a tiny helper used when sync settle fails but we still
 // need to attach the latest DO + nominal to the response.
 func updatedAndQueue(r *SubmitResult, do delivery_order.DeliveryOrder, nominal int64) *SubmitResult {
+	r.DOID = do.ID
 	r.DO = do
 	r.NominalDeliveredCents = nominal
 	return r

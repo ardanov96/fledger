@@ -228,6 +228,16 @@ func (h *Handlers) ListTrips(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, out)
 }
 
+// ListTodayTrips — GET /v1/fleet/trips/today
+func (h *Handlers) ListTodayTrips(w http.ResponseWriter, r *http.Request) {
+	out, err := h.Trip.ListToday(r.Context(), tenantFrom(r))
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
 // GetTrip — GET /v1/fleet/trips/:id
 func (h *Handlers) GetTrip(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -353,14 +363,15 @@ type PODItemResult struct {
 }
 
 type SubmitPODRequest struct {
-	RecipientName     string         `json:"recipient_name"      validate:"required,min=1,max=100"`
-	RecipientPhone    string         `json:"recipient_phone"     validate:"omitempty,max=30"`
-	SignatureDataURL  string         `json:"signature_data_url"  validate:"required,min=1"`
-	PhotoEvidenceURLs []string       `json:"photo_evidence_urls" validate:"omitempty,dive"`
-	DeliveredLat      float64        `json:"delivered_lat"       validate:"gte=-90,lte=90"`
-	DeliveredLng      float64        `json:"delivered_lng"       validate:"gte=-180,lte=180"`
-	DriverNotes       string         `json:"driver_notes"        validate:"omitempty,max=1000"`
-	Items             []PODItemResult `json:"items"              validate:"required,min=1,dive"`
+	RecipientName     string          `json:"recipient_name"      validate:"required,min=1,max=100"`
+	RecipientPhone    string          `json:"recipient_phone"     validate:"omitempty,max=30"`
+	SignatureDataURL  string          `json:"signature_data_url"  validate:"required,min=1"`
+	PhotoEvidenceURLs []string        `json:"photo_evidence_urls" validate:"omitempty,dive"`
+	DeliveredLat      float64         `json:"delivered_lat"       validate:"gte=-90,lte=90"`
+	DeliveredLng      float64         `json:"delivered_lng"       validate:"gte=-180,lte=180"`
+	DriverNotes       string          `json:"driver_notes"        validate:"omitempty,max=1000"`
+	Items             []PODItemResult `json:"items"              validate:"omitempty,dive"`
+	ItemsResult       []PODItemResult `json:"items_result"       validate:"omitempty,dive"`
 }
 
 // SubmitPOD — POST /v1/fleet/delivery-orders/:id/pod
@@ -373,6 +384,14 @@ func (h *Handlers) SubmitPOD(w http.ResponseWriter, r *http.Request) {
 	var req SubmitPODRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
+		return
+	}
+	// Support both "items" and "items_result" per API-SPECIFICATION.md §3.2
+	if len(req.Items) == 0 && len(req.ItemsResult) > 0 {
+		req.Items = req.ItemsResult
+	}
+	if len(req.Items) == 0 {
+		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": "items or items_result is required and must contain at least 1 item"})
 		return
 	}
 	if err := h.Validator.Struct(&req); err != nil {

@@ -9,10 +9,29 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	apperrors "github.com/fledger/fledger-fleet/internal/platform/errors"
+	"github.com/fledger/fledger-fleet/internal/domain/driver"
 	"github.com/fledger/fledger-fleet/internal/domain/trip"
 	"github.com/fledger/fledger-fleet/internal/domain/vehicle"
 	"github.com/fledger/fledger-fleet/internal/repository/postgres"
 )
+
+// KgPerBox is the estimated weight in kilograms per box/item.
+const KgPerBox = 10.0
+
+// EstimateWeightKg returns the total estimated weight for a given number of boxes.
+func EstimateWeightKg(boxes int) float64 {
+	return float64(boxes) * KgPerBox
+}
+
+// CheckCapacity verifies that estimated weight does not exceed vehicle capacity.
+func CheckCapacity(capacityKg float64, totalBoxes int) error {
+	est := EstimateWeightKg(totalBoxes)
+	if est > capacityKg {
+		return fmt.Errorf("%w: total estimated weight %.1fkg exceeds vehicle capacity %.1fkg",
+			apperrors.ErrConflict, est, capacityKg)
+	}
+	return nil
+}
 
 // TripService orchestrates trip creation and dispatching.
 type TripService struct {
@@ -58,24 +77,20 @@ func (s *TripService) Create(ctx context.Context, in CreateTripInput) (trip.Trip
 	if v.Status != vehicle.StatusAvailable {
 		return trip.Trip{}, fmt.Errorf("%w: vehicle is %s, cannot dispatch new trip", apperrors.ErrConflict, v.Status)
 	}
-	if _, err := s.drivers.Get(ctx, in.TenantID, in.DriverID); err != nil {
+	d, err := s.drivers.Get(ctx, in.TenantID, in.DriverID)
+	if err != nil {
 		return trip.Trip{}, err
 	}
+	if d.Status != driver.StatusActive {
+		return trip.Trip{}, fmt.Errorf("%w: driver is %s, cannot assign to new trip", apperrors.ErrConflict, d.Status)
+	}
 
-	// Capacity check: sum unit_price_cents as a proxy? No — we want a weight
-	// proxy. Each DO is 1 SKU per item by default; for the demo we treat the
-	// count of items as "boxes" with a 10 kg-per-box constant. A future Sprint
-	// can read `qty_kg` from a metadata field. For now we use 10kg/box and
-	// expose the constant so tests can override.
 	totalBoxes, err := s.countBoxes(ctx, in.TenantID, in.DoIDs)
 	if err != nil {
 		return trip.Trip{}, err
 	}
-	const kgPerBox = 10.0
-	estimatedKg := float64(totalBoxes) * kgPerBox
-	if estimatedKg > v.CapacityKg {
-		return trip.Trip{}, fmt.Errorf("%w: total estimated weight %.1fkg exceeds vehicle capacity %.1fkg",
-			apperrors.ErrConflict, estimatedKg, v.CapacityKg)
+	if err := CheckCapacity(v.CapacityKg, totalBoxes); err != nil {
+		return trip.Trip{}, err
 	}
 
 	t := trip.Trip{
@@ -99,6 +114,9 @@ func (s *TripService) Dispatch(ctx context.Context, tenantID, id string) (trip.T
 	if _, err := s.vehicles.UpdateStatus(ctx, tenantID, t.VehicleID, vehicle.StatusOnTrip); err != nil {
 		return trip.Trip{}, fmt.Errorf("update vehicle: %w", err)
 	}
+	if _, err := s.drivers.UpdateStatus(ctx, tenantID, t.DriverID, driver.StatusOnDuty); err != nil {
+		return trip.Trip{}, fmt.Errorf("update driver: %w", err)
+	}
 	return t, nil
 }
 
@@ -113,6 +131,11 @@ func (s *TripService) List(ctx context.Context, tenantID, status string) ([]trip
 		return nil, fmt.Errorf("%w: invalid status filter %q", apperrors.ErrInvalidInput, status)
 	}
 	return s.trips.List(ctx, tenantID, status)
+}
+
+// ListToday returns trips created today or currently in transit/dispatched.
+func (s *TripService) ListToday(ctx context.Context, tenantID string) ([]trip.Trip, error) {
+	return s.trips.ListToday(ctx, tenantID)
 }
 
 // countBoxes counts qty_ordered across all items of the supplied DO ids. It

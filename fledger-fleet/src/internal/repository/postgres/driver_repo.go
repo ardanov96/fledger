@@ -100,3 +100,22 @@ func (r *DriverRepo) List(ctx context.Context, tenantID string, status string) (
 	}
 	return out, rows.Err()
 }
+
+// UpdateStatus updates the driver's status.
+func (r *DriverRepo) UpdateStatus(ctx context.Context, tenantID, id string, status driver.Status) (driver.Driver, error) {
+	row := r.pool.QueryRow(ctx, `
+		UPDATE fleet_drivers
+		   SET status = $3, updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2
+		 RETURNING `+driverColumns,
+		tenantID, id, string(status),
+	)
+	d, err := scanDriver(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return driver.Driver{}, fmt.Errorf("%w: driver %s", apperrors.ErrNotFound, id)
+		}
+		return driver.Driver{}, err
+	}
+	return d, nil
+}

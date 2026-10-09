@@ -122,6 +122,7 @@ func run() error {
 			r.Post("/fleet/drivers", handlers.CreateDriver)
 			r.Get("/fleet/drivers/{id}", handlers.GetDriver)
 			r.Get("/fleet/trips", handlers.ListTrips)
+			r.Get("/fleet/trips/today", handlers.ListTodayTrips)
 			r.Post("/fleet/trips", handlers.CreateTrip)
 			r.Get("/fleet/trips/{id}", handlers.GetTrip)
 			r.Post("/fleet/trips/{id}/dispatch", handlers.DispatchTrip)

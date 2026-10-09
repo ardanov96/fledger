@@ -12,14 +12,16 @@ import (
 
 	"github.com/fledger/fledger-fleet/internal/domain/delivery_order"
 	"github.com/fledger/fledger-fleet/internal/domain/vehicle"
+	"github.com/fledger/fledger-fleet/internal/usecase"
 )
 
-// TestCapacityValidation_Pass proves that within-capacity totals succeed.
+// TestCapacityValidation_Pass proves that within-capacity totals succeed using real usecase logic.
 func TestCapacityValidation_Pass(t *testing.T) {
 	v := vehicle.Vehicle{CapacityKg: 1500}
 	// 50 boxes × 10kg = 500kg — well under 1500kg.
 	boxes := 50
-	assert.True(t, float64(boxes)*10.0 <= v.CapacityKg, "must fit")
+	assert.Equal(t, 500.0, usecase.EstimateWeightKg(boxes))
+	assert.NoError(t, usecase.CheckCapacity(v.CapacityKg, boxes))
 }
 
 // TestCapacityValidation_Fail covers the failure path the trip service uses
@@ -28,7 +30,9 @@ func TestCapacityValidation_Fail(t *testing.T) {
 	v := vehicle.Vehicle{CapacityKg: 400}
 	// 50 boxes × 10kg = 500kg — exceeds 400kg capacity.
 	boxes := 50
-	assert.False(t, float64(boxes)*10.0 <= v.CapacityKg, "must exceed capacity")
+	err := usecase.CheckCapacity(v.CapacityKg, boxes)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds vehicle capacity")
 }
 
 // TestDeliveryOrder_ComputeNominal_AllCases exercises the money math used by

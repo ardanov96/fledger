@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # FLEDGER FLEET — End-to-end smoke test (PowerShell)
 # Runs the full Sprint-5 happy path against a live Fledger Fleet API.
 # Exits 0 on success, non-zero on any failure.
@@ -91,8 +91,27 @@ Step "Dispatch trip"
 $dispatched = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/fleet/trips/$tripId/dispatch" -Headers $authHdr
 if ($dispatched.status -ne "IN_TRANSIT") { FailMsg "dispatch failed: $($dispatched.status)" } else { OkMsg "trip IN_TRANSIT" }
 
-# 7. POD DO1 (partial: 8/10 minyak, 2 bocor)
-Step "Submit POD partial - DO1"
+# 7. Negative test: POD without photo evidence for rejected items (tested on DO1 while OUT_FOR_DELIVERY)
+Step "Negative: POD without photo evidence for rejected items"
+try {
+    $badBody = @{
+        recipient_name     = "Ibu Siti Fatimah"
+        signature_data_url = $signatureSample
+        delivered_lat      = -6.152350
+        delivered_lng      = 106.758920
+        items_result = @(
+            @{ product_sku = "SKU-OIL-01"; qty_delivered = 8; qty_rejected = 2; rejection_reason = "DAMAGED_LEAK" }
+        )
+    }
+    Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/fleet/delivery-orders/$do1Id/pod" -Headers ($authHdr + $jsonHdr) -Body ($badBody | ConvertTo-Json -Depth 6 -Compress) | Out-Null
+    FailMsg "expected 422 for missing photo, got 200"
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    if ($statusCode -eq 422) { OkMsg "correctly rejected with 422 Unprocessable Entity" } else { FailMsg "wrong status: $statusCode (expected 422)" }
+}
+
+# 8. POD DO1 (partial: 8/10 minyak, 2 bocor) using items_result
+Step "Submit POD partial - DO1 (using items_result)"
 $pod1Body = @{
     recipient_name      = "Ibu Siti Fatimah"
     signature_data_url  = $signatureSample
@@ -100,15 +119,21 @@ $pod1Body = @{
     delivered_lat       = -6.152350
     delivered_lng       = 106.758920
     driver_notes        = "2 karton bocor di jalan"
-    items = @(
+    items_result = @(
         @{ product_sku = "SKU-OIL-01"; qty_delivered = 8; qty_rejected = 2; rejection_reason = "DAMAGED_LEAK" }
     )
 }
 $pod1 = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/fleet/delivery-orders/$do1Id/pod" -Headers ($authHdr + $jsonHdr) -Body ($pod1Body | ConvertTo-Json -Depth 6 -Compress)
 if ($pod1.status -ne "DELIVERED_PARTIAL") { FailMsg "DO1 POD status wrong: $($pod1.status)" } else { OkMsg "DO1 status=DELIVERED_PARTIAL" }
 if ($pod1.nominal_delivered_cents -ne 4000000) { FailMsg "DO1 nominal wrong: $($pod1.nominal_delivered_cents)" } else { OkMsg "DO1 nominal=4,000,000" }
+if ($pod1.do_id -ne $do1Id) { FailMsg "DO1 do_id missing or mismatch: $($pod1.do_id)" } else { OkMsg "DO1 do_id=$($pod1.do_id)" }
 
-# 8. POD DO2 (full: 5/5 mie)
+# 9. Idempotent POD re-submission for DO1
+Step "Idempotent retry test - DO1"
+$pod1Retry = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/fleet/delivery-orders/$do1Id/pod" -Headers ($authHdr + $jsonHdr) -Body ($pod1Body | ConvertTo-Json -Depth 6 -Compress)
+if ($pod1Retry.status -ne "DELIVERED_PARTIAL") { FailMsg "DO1 retry failed" } else { OkMsg "DO1 idempotent replay succeeded" }
+
+# 10. POD DO2 (full: 5/5 mie)
 Step "Submit POD full - DO2"
 $pod2Body = @{
     recipient_name     = "Pak Darmawan"
@@ -122,26 +147,25 @@ $pod2Body = @{
 $pod2 = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/fleet/delivery-orders/$do2Id/pod" -Headers ($authHdr + $jsonHdr) -Body ($pod2Body | ConvertTo-Json -Depth 6 -Compress)
 if ($pod2.status -ne "DELIVERED_FULL") { FailMsg "DO2 POD status wrong: $($pod2.status)" } else { OkMsg "DO2 status=DELIVERED_FULL" }
 if ($pod2.nominal_delivered_cents -ne 600000) { FailMsg "DO2 nominal wrong: $($pod2.nominal_delivered_cents)" } else { OkMsg "DO2 nominal=600,000" }
+if ($pod2.do_id -ne $do2Id) { FailMsg "DO2 do_id missing or mismatch: $($pod2.do_id)" } else { OkMsg "DO2 do_id=$($pod2.do_id)" }
 
-# 9. Negative test: POD without photo for rejected items
-Step "Negative: POD without photo evidence for rejected items"
-try {
-    $badBody = @{
-        recipient_name     = "X"
-        signature_data_url = $signatureSample
-        delivered_lat      = -6.1
-        delivered_lng      = 106.7
-        items = @(
-            @{ product_sku = "SKU-OIL-01"; qty_delivered = 8; qty_rejected = 2; rejection_reason = "DAMAGED_LEAK" }
-        )
-    }
-    Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/fleet/delivery-orders/$do1Id/pod" -Headers ($authHdr + $jsonHdr) -Body ($badBody | ConvertTo-Json -Depth 6 -Compress) | Out-Null
-    FailMsg "expected 400 for missing photo, got 200"
-} catch {
-    if ($_.Exception.Response.StatusCode -eq 400) { OkMsg "correctly rejected with 400" } else { FailMsg "wrong status: $($_.Exception.Response.StatusCode)" }
-}
+# 11. Verify Trip auto-completion and Vehicle/Driver release
+Step "Verify Trip auto-completion and Vehicle/Driver release"
+$tripAfter = Invoke-RestMethod -Method GET -Uri "$BaseUrl/v1/fleet/trips/$tripId" -Headers $authHdr
+if ($tripAfter.status -ne "COMPLETED") { FailMsg "Trip not COMPLETED: $($tripAfter.status)" } else { OkMsg "Trip is COMPLETED" }
 
-# 10. Outbox counts
+$vehicleAfter = Invoke-RestMethod -Method GET -Uri "$BaseUrl/v1/fleet/vehicles/$vehicleId" -Headers $authHdr
+if ($vehicleAfter.status -ne "AVAILABLE") { FailMsg "Vehicle not released to AVAILABLE: $($vehicleAfter.status)" } else { OkMsg "Vehicle is AVAILABLE" }
+
+$driverAfter = Invoke-RestMethod -Method GET -Uri "$BaseUrl/v1/fleet/drivers/$driverId" -Headers $authHdr
+if ($driverAfter.status -ne "ACTIVE") { FailMsg "Driver not released to ACTIVE: $($driverAfter.status)" } else { OkMsg "Driver is ACTIVE" }
+
+# 12. Test GET /v1/fleet/trips/today
+Step "Test GET /v1/fleet/trips/today"
+$todayTrips = Invoke-RestMethod -Method GET -Uri "$BaseUrl/v1/fleet/trips/today" -Headers $authHdr
+if ($todayTrips.Count -lt 1) { FailMsg "trips/today returned empty" } else { OkMsg "trips/today returned $($todayTrips.Count) trips" }
+
+# 13. Outbox counts
 Step "Outbox counts"
 $counts = Invoke-RestMethod -Method GET -Uri "$BaseUrl/v1/fleet/outbox/counts" -Headers $authHdr
 OkMsg "pending=$($counts.pending) sent=$($counts.sent) failed=$($counts.failed)"

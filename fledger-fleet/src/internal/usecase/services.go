@@ -40,7 +40,7 @@ func NewServices(d Deps) *Services {
 		Driver:  NewDriverService(d.Drivers, d.Pool),
 		Trip:    NewTripService(d.Trips, d.Vehicles, d.Drivers, d.Pool),
 		DO:      NewDeliveryOrderService(d.DOs, d.Pool),
-		POD:     NewProofOfDeliveryService(d.PODs, d.DOs, d.Outbox, d.Audit, d.CoreClient, d.Pool),
-		Outbox:  NewOutboxService(d.Outbox, d.CoreClient),
+		POD:     NewProofOfDeliveryService(d.PODs, d.DOs, d.Trips, d.Outbox, d.Audit, d.CoreClient, d.Pool),
+		Outbox:  NewOutboxService(d.Outbox, d.CoreClient, d.DOs),
 	}
 }

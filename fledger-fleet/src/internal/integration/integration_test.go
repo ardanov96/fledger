@@ -184,6 +184,7 @@ func TestPOD_PartialDelivery_SyncsInvoice(t *testing.T) {
 		}},
 	})
 	require.NoError(t, err)
+	assert.Equal(t, do.ID, res.DOID)
 	assert.Equal(t, "DELIVERED_PARTIAL", res.Status)
 	assert.EqualValues(t, 4_000_000, res.NominalDeliveredCents)
 	assert.False(t, res.Queued)
@@ -191,6 +192,32 @@ func TestPOD_PartialDelivery_SyncsInvoice(t *testing.T) {
 	assert.Equal(t, "cccccccc-0001-0000-0000-000000000001", r.received[0].CustomerID)
 	assert.Equal(t, "INV-DO-DO-T-001", r.received[0].Code)
 	assert.EqualValues(t, 4_000_000, r.received[0].AmountMinor)
+
+	// Verify that trip auto-completed and vehicle/driver were released
+	tUpdated, err := r.Services.Trip.Get(context.Background(), testTenant, trip.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "COMPLETED", string(tUpdated.Status))
+	assert.NotNil(t, tUpdated.CompletedTime)
+
+	vUpdated, err := r.Services.Vehicle.Get(context.Background(), testTenant, v.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "AVAILABLE", string(vUpdated.Status))
+
+	dUpdated, err := r.Services.Driver.Get(context.Background(), testTenant, d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "ACTIVE", string(dUpdated.Status))
+
+	// Verify idempotent resubmission does not fail
+	res2, err := r.Services.POD.Submit(context.Background(), usecase.SubmitInput{
+		TenantID:         testTenant,
+		DOID:             do.ID,
+		RecipientName:    "Ibu Test",
+		SignatureDataURL: "data:image/png;base64,TEST",
+		Items:            []pod.ItemResult{{ProductSKU: "SKU-OIL-01", QtyDelivered: 8, QtyRejected: 2}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, res.Status, res2.Status)
+	assert.Equal(t, res.NominalDeliveredCents, res2.NominalDeliveredCents)
 }
 
 // TestPOD_RejectsMissingPhotoEvidence covers the Sprint 3 guard.
@@ -221,7 +248,7 @@ func TestPOD_RejectsMissingPhotoEvidence(t *testing.T) {
 		}},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "photo_evidence_urls")
+	assert.Contains(t, err.Error(), "Photo evidence is required")
 	assert.Empty(t, r.received, "no invoice must have been sent to Core")
 }
 
@@ -234,17 +261,12 @@ func TestTrip_RejectsUnavailableVehicle(t *testing.T) {
 	do, _ := mustDO(t, r, "DO-T-003")
 
 	// First trip goes live — vehicle becomes ON_TRIP after dispatch.
-	_, err := r.Services.Trip.Create(context.Background(), usecase.CreateTripInput{
+	tripA, err := r.Services.Trip.Create(context.Background(), usecase.CreateTripInput{
 		TenantID: testTenant, TripNumber: "TRIP-T-003-A",
 		VehicleID: v.ID, DriverID: d.ID, DoIDs: []string{do.ID},
 	})
 	require.NoError(t, err)
-	_, err = r.Services.Trip.Dispatch(context.Background(), testTenant, "TRIP-T-003-A")
-	// Trip lookup is by UUID not number — query it back.
-	all, err := r.Services.Trip.List(context.Background(), testTenant, "")
-	require.NoError(t, err)
-	require.Len(t, all, 1)
-	_, err = r.Services.Trip.Dispatch(context.Background(), testTenant, all[0].ID)
+	_, err = r.Services.Trip.Dispatch(context.Background(), testTenant, tripA.ID)
 	require.NoError(t, err)
 
 	// Now try to create a second trip with the same vehicle — must fail.
@@ -256,7 +278,9 @@ func TestTrip_RejectsUnavailableVehicle(t *testing.T) {
 	assert.Contains(t, err.Error(), "ON_TRIP")
 }
 
-// TestOutbox_QueuesWhenCoreOffline simulates Core being down on the first call.
+// TestOutbox_QueuesWhenCoreOffline simulates Core being down on the first call
+// and verifies that the outbox worker subsequently settles the invoice AND
+// updates fledger_invoice_id on the local DO record.
 func TestOutbox_QueuesWhenCoreOffline(t *testing.T) {
 	r := setup(t)
 	r.CoreSrv.Close() // take Core offline
@@ -290,4 +314,35 @@ func TestOutbox_QueuesWhenCoreOffline(t *testing.T) {
 	counts, err := r.Services.Outbox.Counts(context.Background(), testTenant)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, counts.Pending, 1)
+
+	// Now bring Core back online via a new stub server
+	workerInvID := uuid.NewString()
+	newCore := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(coreclient.InvoiceResponse{
+			ID:          workerInvID,
+			Code:        "INV-DO-" + do.DoNumber,
+			AmountMinor: 5_000_000,
+			CustomerID:  do.CustomerID,
+			Status:      "open",
+		})
+	}))
+	defer newCore.Close()
+
+	r.Services.Outbox = usecase.NewOutboxService(
+		postgres.NewOutboxRepo(r.Pool),
+		coreclient.NewClient(coreclient.Config{BaseURL: newCore.URL, TenantID: testTenant}),
+		postgres.NewDORepo(r.Pool),
+	)
+
+	sent, failed, err := r.Services.Outbox.DrainOnce(context.Background(), 10, 5)
+	require.NoError(t, err)
+	assert.Equal(t, 1, sent)
+	assert.Equal(t, 0, failed)
+
+	// Verify that the local DO has fledger_invoice_id updated by the worker!
+	savedDO, _, err := r.Services.DO.Get(context.Background(), testTenant, do.ID)
+	require.NoError(t, err)
+	require.NotNil(t, savedDO.FledgerInvoiceID)
+	assert.Equal(t, workerInvID, *savedDO.FledgerInvoiceID)
 }

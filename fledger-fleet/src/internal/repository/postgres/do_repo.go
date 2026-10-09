@@ -243,3 +243,20 @@ func (r *DORepo) ApplyPODResult(
 	}
 	return updated, nil
 }
+
+// UpdateFledgerInvoiceID updates the fledger_invoice_id on a DO (used by the outbox worker).
+func (r *DORepo) UpdateFledgerInvoiceID(ctx context.Context, tenantID, doID, invoiceID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE fleet_delivery_orders
+		   SET fledger_invoice_id = $3, updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, doID, invoiceID,
+	)
+	if err != nil {
+		return fmt.Errorf("update fledger invoice id: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: DO %s", apperrors.ErrNotFound, doID)
+	}
+	return nil
+}

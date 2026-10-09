@@ -48,6 +48,8 @@ func Error(w http.ResponseWriter, r *http.Request, err error) {
 		writeAppErr(w, apperrors.ErrForbiddenAction)
 	case errors.Is(err, apperrors.ErrUpstreamUnavailable):
 		writeAppErr(w, apperrors.ErrUpstreamUnavailable503)
+	case errors.Is(err, apperrors.ErrUnprocessableEntity):
+		writeAppErr(w, apperrors.ErrUnprocessableEntity422)
 	default:
 		writeAppErr(w, apperrors.ErrInternalDefault)
 	}
@@ -65,11 +67,16 @@ func ErrorWithDetails(w http.ResponseWriter, r *http.Request, err error, detail 
 	base := apperrors.ErrInternalDefault
 	if errors.Is(err, apperrors.ErrInvalidInput) {
 		base = apperrors.ErrInvalidInputBadRequest
+	} else if errors.Is(err, apperrors.ErrUnprocessableEntity) {
+		base = apperrors.ErrUnprocessableEntity422
 	}
 	writeAppErr(w, base.WithDetail(detail))
 }
 
 func writeAppErr(w http.ResponseWriter, e *apperrors.AppError) {
+	if e.ErrorMsg == "" {
+		e.ErrorMsg = e.Message
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(e.Status)
 	_ = json.NewEncoder(w).Encode(e)

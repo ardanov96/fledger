@@ -17,11 +17,12 @@ import (
 type OutboxService struct {
 	repo   *postgres.OutboxRepo
 	client *coreclient.Client
+	dos    *postgres.DORepo
 	log    *slog.Logger
 }
 
-func NewOutboxService(repo *postgres.OutboxRepo, c *coreclient.Client) *OutboxService {
-	return &OutboxService{repo: repo, client: c, log: slog.Default()}
+func NewOutboxService(repo *postgres.OutboxRepo, c *coreclient.Client, dos *postgres.DORepo) *OutboxService {
+	return &OutboxService{repo: repo, client: c, dos: dos, log: slog.Default()}
 }
 
 // SetLogger lets the caller inject a structured logger (mainly for main).
@@ -88,6 +89,11 @@ func (s *OutboxService) DrainOnce(ctx context.Context, batch int, maxAttempts in
 		}
 		if err := s.repo.MarkSent(ctx, e.ID); err != nil {
 			return sent, failed, err
+		}
+		if s.dos != nil && e.AggregateID != "" && resp.ID != "" {
+			if err := s.dos.UpdateFledgerInvoiceID(ctx, e.TenantID, e.AggregateID, resp.ID); err != nil {
+				s.log.Warn("update DO invoice id failed", "err", err.Error(), "do_id", e.AggregateID)
+			}
 		}
 		s.log.Info("outbox sent",
 			"event_id", e.ID,

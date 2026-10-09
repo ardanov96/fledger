@@ -181,3 +181,102 @@ func (r *TripRepo) Dispatch(ctx context.Context, tenantID, id string) (trip.Trip
 	}
 	return t, nil
 }
+
+// CompleteIfAllDelivered checks if all DOs in the specified trip have reached
+// a terminal state (DELIVERED_FULL, DELIVERED_PARTIAL, DELIVERY_FAILED). If so,
+// it marks the trip COMPLETED, records completed_time, and releases the vehicle
+// back to AVAILABLE and driver back to ACTIVE.
+func (r *TripRepo) CompleteIfAllDelivered(ctx context.Context, tenantID, tripID string) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var totalDOs, doneDOs, deliveredDOs int
+	err = tx.QueryRow(ctx, `
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE status IN ('DELIVERED_FULL', 'DELIVERED_PARTIAL', 'DELIVERY_FAILED')),
+		       COUNT(*) FILTER (WHERE status IN ('DELIVERED_FULL', 'DELIVERED_PARTIAL'))
+		  FROM fleet_delivery_orders
+		 WHERE tenant_id = $1 AND trip_id = $2`,
+		tenantID, tripID,
+	).Scan(&totalDOs, &doneDOs, &deliveredDOs)
+	if err != nil {
+		return false, fmt.Errorf("count trip DOs: %w", err)
+	}
+
+	if totalDOs == 0 || totalDOs != doneDOs {
+		// Not all DOs finished yet
+		return false, nil
+	}
+
+	var vehicleID, driverID string
+	err = tx.QueryRow(ctx, `
+		UPDATE fleet_trips
+		   SET status = 'COMPLETED',
+		       completed_time = NOW(),
+		       total_delivered = $3,
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2 AND status = 'IN_TRANSIT'
+		 RETURNING vehicle_id, driver_id`,
+		tenantID, tripID, deliveredDOs,
+	).Scan(&vehicleID, &driverID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Trip wasn't in IN_TRANSIT (already completed or cancelled)
+			return false, nil
+		}
+		return false, fmt.Errorf("update trip to completed: %w", err)
+	}
+
+	// Release vehicle back to AVAILABLE
+	if _, err := tx.Exec(ctx, `
+		UPDATE fleet_vehicles
+		   SET status = 'AVAILABLE', updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, vehicleID,
+	); err != nil {
+		return false, fmt.Errorf("release vehicle: %w", err)
+	}
+
+	// Release driver back to ACTIVE
+	if _, err := tx.Exec(ctx, `
+		UPDATE fleet_drivers
+		   SET status = 'ACTIVE', updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, driverID,
+	); err != nil {
+		return false, fmt.Errorf("release driver: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit: %w", err)
+	}
+	return true, nil
+}
+
+// ListToday returns trips created today or currently in transit/dispatched.
+func (r *TripRepo) ListToday(ctx context.Context, tenantID string) ([]trip.Trip, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+tripColumns+`
+		  FROM fleet_trips
+		 WHERE tenant_id = $1
+		   AND (created_at::date = CURRENT_DATE OR status IN ('DRAFT', 'DISPATCHED', 'IN_TRANSIT'))
+		 ORDER BY created_at DESC`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list today trips: %w", err)
+	}
+	defer rows.Close()
+	out := make([]trip.Trip, 0, 8)
+	for rows.Next() {
+		t, err := scanTrip(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

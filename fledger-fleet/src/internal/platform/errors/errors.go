@@ -18,20 +18,22 @@ var (
 	ErrValidationFailed   = errors.New("validation failed")
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrForbidden          = errors.New("forbidden")
-	ErrInternal           = errors.New("internal error")
+	ErrInternal            = errors.New("internal error")
 	ErrUpstreamUnavailable = errors.New("upstream unavailable")
 	ErrIdempotencyConflict = errors.New("idempotency conflict")
+	ErrUnprocessableEntity = errors.New("unprocessable entity")
 )
 
 // AppError is a typed error that knows its HTTP status, public code, and an
 // optional detail map. It implements `error` and unwraps to the wrapped error
 // so errors.Is still works.
 type AppError struct {
-	Status  int            `json:"-"`
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Detail  map[string]any `json:"detail,omitempty"`
-	Cause   error          `json:"-"`
+	Status   int            `json:"-"`
+	Code     string         `json:"code"`
+	Message  string         `json:"message"`
+	ErrorMsg string         `json:"error,omitempty"`
+	Detail   map[string]any `json:"detail,omitempty"`
+	Cause    error          `json:"-"`
 }
 
 func (e *AppError) Error() string {
@@ -46,12 +48,12 @@ func (e *AppError) Unwrap() error { return e.Cause }
 
 // New constructs an AppError with the given status, code, and message.
 func New(status int, code, message string) *AppError {
-	return &AppError{Status: status, Code: code, Message: message}
+	return &AppError{Status: status, Code: code, Message: message, ErrorMsg: message}
 }
 
 // Wrap wraps the given cause with the same metadata.
 func Wrap(status int, code, message string, cause error) *AppError {
-	return &AppError{Status: status, Code: code, Message: message, Cause: cause}
+	return &AppError{Status: status, Code: code, Message: message, ErrorMsg: message, Cause: cause}
 }
 
 // WithDetail attaches a detail map for client-side diagnostics.
@@ -62,11 +64,13 @@ func (e *AppError) WithDetail(d map[string]any) *AppError {
 
 // Pre-baked common errors.
 var (
-	ErrInvalidInputBadRequest  = New(http.StatusBadRequest, "invalid_input", "request payload is invalid")
-	ErrNotFoundResource        = New(http.StatusNotFound, "not_found", "resource not found")
-	ErrUnauthorizedMissing     = New(http.StatusUnauthorized, "unauthorized", "missing or invalid Authorization header")
-	ErrForbiddenAction         = New(http.StatusForbidden, "forbidden", "action not permitted")
-	ErrInternalDefault         = New(http.StatusInternalServerError, "internal_error", "internal server error")
-	ErrUpstreamUnavailable503  = New(http.StatusServiceUnavailable, "upstream_unavailable", "Fledger Core unavailable; request queued for retry")
-	ErrIdempotencyConflict409  = New(http.StatusConflict, "idempotency_conflict", "idempotency key reused with different payload")
+	ErrInvalidInputBadRequest   = New(http.StatusBadRequest, "invalid_input", "request payload is invalid")
+	ErrNotFoundResource         = New(http.StatusNotFound, "not_found", "resource not found")
+	ErrUnauthorizedMissing      = New(http.StatusUnauthorized, "unauthorized", "missing or invalid Authorization header")
+	ErrForbiddenAction          = New(http.StatusForbidden, "forbidden", "action not permitted")
+	ErrInternalDefault          = New(http.StatusInternalServerError, "internal_error", "internal server error")
+	ErrUpstreamUnavailable503   = New(http.StatusServiceUnavailable, "upstream_unavailable", "Fledger Core unavailable; request queued for retry")
+	ErrIdempotencyConflict409   = New(http.StatusConflict, "idempotency_conflict", "idempotency key reused with different payload")
+	ErrUnprocessableEntity422   = New(http.StatusUnprocessableEntity, "unprocessable_entity", "request is unprocessable")
+	ErrPhotoEvidenceRequired    = New(http.StatusUnprocessableEntity, "unprocessable_entity", "Photo evidence is required when rejected items > 0")
 )
