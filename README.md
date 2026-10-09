@@ -46,6 +46,16 @@ fledger/
 │   ├── .env.example               <-- Template konfigurasi lingkungan
 │   └── README.md                  <-- Onboarding guide Fledger Force
 │
+├── fledger-order/                 <-- Layanan B2B Order Management System (OMS) & Hard Credit Gate
+│   ├── docs/                      <-- Blueprint eksekusi AI Agent, skema DB & spesifikasi API
+│   │   ├── AGENT-EXECUTION-BRIEF.md  <-- Blueprint siap eksekusi untuk AI Coding Agent
+│   │   ├── DATABASE-SCHEMA.sql       <-- Skrip DDL PostgreSQL 16
+│   │   ├── API-SPECIFICATION.md      <-- Spesifikasi REST API
+│   │   ├── ROADMAP-ORDER.md          <-- Sprint roadmap & Definition of Done
+│   │   └── HARD-CREDIT-GATE-AND-FLEET-BRIDGE-GUIDE.md <-- Panduan credit gate & fleet bridge
+│   ├── .env.example               <-- Template konfigurasi lingkungan
+│   └── README.md                  <-- Onboarding guide Fledger Order
+│
 └── README.md                      <-- Berkas ini (Monorepo Master Guide)
 ```
 
@@ -95,7 +105,7 @@ fledger/
 ---
 
 ### 4. 📱 `fledger-force` (Sales Force Automation & Anti-Cash Kitting Engine)
-* **Status**: **Siap Dieksekusi oleh AI Agent (Phase 3 Milestone 1)**
+* **Status**: **Tahap Pengembangan oleh AI Agent (Phase 3 Milestone 1)**
 * **Teknologi**: Go 1.23+, PostgreSQL 16, Geofencing Haversine, PWA Mobile UI
 * **Tanggung Jawab**:
   - Rute kunjungan harian (*Geofenced Beat Plan*) dengan verifikasi GPS radius 100m.
@@ -104,6 +114,19 @@ fledger/
   - Daily Settlement Lock: meja setor kasir gudang di sore hari untuk membuka kunci operasional esok hari.
 * 👉 **[Buka Blueprint Eksekusi AI Agent fledger-force](fledger-force/docs/AGENT-EXECUTION-BRIEF.md)**
 * 👉 **[Buka Panduan fledger-force](fledger-force/README.md)**
+
+---
+
+### 5. 📦 `fledger-order` (B2B Order Management System & Hard Credit Gate)
+* **Status**: **Siap Dieksekusi oleh AI Agent (Phase 3 Milestone 2)**
+* **Teknologi**: Go 1.23+, PostgreSQL 16, Chi Router, B2B Web Ordering Portal
+* **Tanggung Jawab**:
+  - Master katalog SKU produk FMCG & penetapan harga grosir bertingkat (*wholesale pricing tiers*).
+  - Alokasi & penguncian stok fisik gudang (*inventory stock reservation*) untuk mencegah overselling.
+  - **Hard Credit Gate (Pre-Flight Check ke Fledger Core)**: Blokir pesanan otomatis jika melanggar plafon piutang atau menunggak faktur $>30$ hari (`CREDIT_BLOCKED`).
+  - **Fleet Dispatching Bridge**: Otomatis menerbitkan Surat Jalan (DO) di `fledger-fleet` dengan akumulasi tonase berat muatan dalam kilogram.
+* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-order](fledger-order/docs/AGENT-EXECUTION-BRIEF.md)**
+* 👉 **[Buka Panduan fledger-order](fledger-order/README.md)**
 
 ---
 
@@ -116,7 +139,9 @@ Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di 
    - Fitur logistik armada atau POD: buka dan kerjakan di dalam folder [`fledger-fleet/`](fledger-fleet/).
    - Fitur payment gateway atau auto-settlement: buka dan kerjakan di dalam folder [`fledger-pay/`](fledger-pay/).
    - Fitur SFA, kunjungan toko GPS, atau cash collection: buka dan kerjakan di dalam folder [`fledger-force/`](fledger-force/).
+   - Fitur OMS, katalog grosir, atau Hard Credit Gate: buka dan kerjakan di dalam folder [`fledger-order/`](fledger-order/).
 2. **Pedoman Teknis Layanan**:
+   - **Fledger Order**: Baca spesifikasi di [`fledger-order/docs/AGENT-EXECUTION-BRIEF.md`](fledger-order/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-order/docs/DATABASE-SCHEMA.sql`](fledger-order/docs/DATABASE-SCHEMA.sql).
    - **Fledger Force**: Baca spesifikasi di [`fledger-force/docs/AGENT-EXECUTION-BRIEF.md`](fledger-force/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-force/docs/DATABASE-SCHEMA.sql`](fledger-force/docs/DATABASE-SCHEMA.sql).
    - **Fledger Pay**: Baca spesifikasi di [`fledger-pay/docs/AGENT-EXECUTION-BRIEF.md`](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-pay/docs/DATABASE-SCHEMA.sql`](fledger-pay/docs/DATABASE-SCHEMA.sql).
    - **Fledger Fleet**: Baca spesifikasi di [`fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md`](fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-fleet/docs/DATABASE-SCHEMA.sql`](fledger-fleet/docs/DATABASE-SCHEMA.sql).
