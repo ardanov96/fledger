@@ -56,6 +56,16 @@ fledger/
 │   ├── .env.example               <-- Template konfigurasi lingkungan
 │   └── README.md                  <-- Onboarding guide Fledger Order
 │
+├── fledger-dunning/               <-- Layanan Otomasi Penagihan Piutang (AR Dunning) & WhatsApp Gateway
+│   ├── docs/                      <-- Blueprint eksekusi AI Agent, skema DB & spesifikasi API
+│   │   ├── AGENT-EXECUTION-BRIEF.md  <-- Blueprint siap eksekusi untuk AI Coding Agent
+│   │   ├── DATABASE-SCHEMA.sql       <-- Skrip DDL PostgreSQL 16
+│   │   ├── API-SPECIFICATION.md      <-- Spesifikasi REST API
+│   │   ├── ROADMAP-DUNNING.md        <-- Sprint roadmap & Definition of Done
+│   │   └── WHATSAPP-CADENCE-AND-STATEMENT-GUIDE.md <-- Panduan dunning & anti-ban
+│   ├── .env.example               <-- Template konfigurasi lingkungan
+│   └── README.md                  <-- Onboarding guide Fledger Dunning
+│
 └── README.md                      <-- Berkas ini (Monorepo Master Guide)
 ```
 
@@ -130,6 +140,20 @@ fledger/
 
 ---
 
+### 6. 🔔 `fledger-dunning` (Automated AR Dunning & WhatsApp Gateway)
+* **Status**: **Siap Dieksekusi oleh AI Agent (Phase 4 Milestone 1)**
+* **Teknologi**: Go 1.23+, PostgreSQL 16, Chi Router, WhatsApp Engine, PDF e-Statement
+* **Tanggung Jawab**:
+  - Penagihan bertingkat otomatis 5 tahap: H-3 (Pengingat ramah), Hari H, H+3, H+7, dan H+14 eskalasi penangguhan pesanan.
+  - Deep-link pembayaran 1-klik terintegrasi langsung ke `fledger-pay` (QRIS & Virtual Account).
+  - **Self-Healing Webhook Loop**: Otomatis membatalkan seluruh sisa antrian dunning seketika saat faktur lunas di `fledger-pay`.
+  - **Anti-Ban Jitter Engine**: Delay acak 3–8 detik & variasi teks (*spintax*) untuk melindungi nomor WhatsApp resmi.
+  - Render PDF Rekening Koran Toko bulanan (e-Statement) otomatis setiap tanggal 1 awal bulan.
+* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-dunning](fledger-dunning/docs/AGENT-EXECUTION-BRIEF.md)**
+* 👉 **[Buka Panduan fledger-dunning](fledger-dunning/README.md)**
+
+---
+
 ## 🤖 Panduan Khusus untuk AI Coding Agent
 
 Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di repositori ini:
@@ -140,7 +164,9 @@ Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di 
    - Fitur payment gateway atau auto-settlement: buka dan kerjakan di dalam folder [`fledger-pay/`](fledger-pay/).
    - Fitur SFA, kunjungan toko GPS, atau cash collection: buka dan kerjakan di dalam folder [`fledger-force/`](fledger-force/).
    - Fitur OMS, katalog grosir, atau Hard Credit Gate: buka dan kerjakan di dalam folder [`fledger-order/`](fledger-order/).
+   - Fitur dunning WA, rekening koran e-Statement, atau penagihan AR: buka dan kerjakan di dalam folder [`fledger-dunning/`](fledger-dunning/).
 2. **Pedoman Teknis Layanan**:
+   - **Fledger Dunning**: Baca spesifikasi di [`fledger-dunning/docs/AGENT-EXECUTION-BRIEF.md`](fledger-dunning/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-dunning/docs/DATABASE-SCHEMA.sql`](fledger-dunning/docs/DATABASE-SCHEMA.sql).
    - **Fledger Order**: Baca spesifikasi di [`fledger-order/docs/AGENT-EXECUTION-BRIEF.md`](fledger-order/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-order/docs/DATABASE-SCHEMA.sql`](fledger-order/docs/DATABASE-SCHEMA.sql).
    - **Fledger Force**: Baca spesifikasi di [`fledger-force/docs/AGENT-EXECUTION-BRIEF.md`](fledger-force/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-force/docs/DATABASE-SCHEMA.sql`](fledger-force/docs/DATABASE-SCHEMA.sql).
    - **Fledger Pay**: Baca spesifikasi di [`fledger-pay/docs/AGENT-EXECUTION-BRIEF.md`](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-pay/docs/DATABASE-SCHEMA.sql`](fledger-pay/docs/DATABASE-SCHEMA.sql).
