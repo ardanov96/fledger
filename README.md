@@ -31,13 +31,20 @@ fledger/
 │
 ├── fledger-pay/                   <-- Layanan B2B Payment Gateway & Auto-Settlement Engine
 │   ├── docs/                      <-- Blueprint eksekusi AI Agent, skema DB & spesifikasi API
-│   │   ├── AGENT-EXECUTION-BRIEF.md  <-- Blueprint siap eksekusi untuk AI Coding Agent
-│   │   ├── DATABASE-SCHEMA.sql       <-- Skrip DDL PostgreSQL 16
-│   │   ├── API-SPECIFICATION.md      <-- Spesifikasi REST API & Webhook contracts
-│   │   ├── ROADMAP-PAY.md            <-- Sprint roadmap & Definition of Done
-│   │   └── SIMULATOR-AND-SETTLEMENT-GUIDE.md <-- Panduan sandbox & settlement
+│   ├── src/                       <-- Source code backend Fledger Pay (Go Chi, :8083)
+│   ├── web/                       <-- Web Simulator Sandbox VA & QRIS
 │   ├── .env.example               <-- Template konfigurasi lingkungan
 │   └── README.md                  <-- Onboarding guide Fledger Pay
+│
+├── fledger-force/                 <-- Layanan Sales Force Automation (SFA) & Anti-Cash Kitting
+│   ├── docs/                      <-- Blueprint eksekusi AI Agent, skema DB & spesifikasi API
+│   │   ├── AGENT-EXECUTION-BRIEF.md  <-- Blueprint siap eksekusi untuk AI Coding Agent
+│   │   ├── DATABASE-SCHEMA.sql       <-- Skrip DDL PostgreSQL 16
+│   │   ├── API-SPECIFICATION.md      <-- Spesifikasi REST API
+│   │   ├── ROADMAP-FORCE.md          <-- Sprint roadmap & Definition of Done
+│   │   └── CASH-COLLECTION-AND-EOD-GUIDE.md <-- Panduan cash collection & EOD kasir
+│   ├── .env.example               <-- Template konfigurasi lingkungan
+│   └── README.md                  <-- Onboarding guide Fledger Force
 │
 └── README.md                      <-- Berkas ini (Monorepo Master Guide)
 ```
@@ -75,15 +82,28 @@ fledger/
 ---
 
 ### 3. 💳 `fledger-pay` (B2B Payment Gateway & Auto-Settlement Engine)
-* **Status**: **Siap Dieksekusi oleh AI Agent**
-* **Teknologi**: Go 1.23+, PostgreSQL 16, Bank Sandbox Simulator
+* **Status**: **Production-Ready** (Sprint 1–5 Selesai & Web Simulator Live)
+* **Teknologi**: Go 1.23+, PostgreSQL 16, Chi Router, Embedded Web Simulator
 * **Tanggung Jawab**:
   - Multi-bank Virtual Account (BCA, Mandiri, BRI, BNI) & Dynamic B2B QRIS.
   - Webhook callback ingestion dengan validasi tanda tangan HMAC SHA-256 & anti double-crediting.
   - Auto-settlement bridge ke `fledger-core` (`POST /v1/transfers` & `POST /v1/invoices/:id/pay`).
   - Interactive payment sandbox simulator UI.
-* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-pay](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md)**
+  - Standalone repositori: [ardanov96/fledger-pay](https://github.com/ardanov96/fledger-pay)
 * 👉 **[Buka Panduan fledger-pay](fledger-pay/README.md)**
+
+---
+
+### 4. 📱 `fledger-force` (Sales Force Automation & Anti-Cash Kitting Engine)
+* **Status**: **Siap Dieksekusi oleh AI Agent (Phase 3 Milestone 1)**
+* **Teknologi**: Go 1.23+, PostgreSQL 16, Geofencing Haversine, PWA Mobile UI
+* **Tanggung Jawab**:
+  - Rute kunjungan harian (*Geofenced Beat Plan*) dengan verifikasi GPS radius 100m.
+  - Mobile Cash Collection & tanda terima WhatsApp instan ke toko.
+  - Anti-Cash Kitting liability transfer: memindahkan beban kas dari piutang toko ke wallet salesman di `fledger-core`.
+  - Daily Settlement Lock: meja setor kasir gudang di sore hari untuk membuka kunci operasional esok hari.
+* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-force](fledger-force/docs/AGENT-EXECUTION-BRIEF.md)**
+* 👉 **[Buka Panduan fledger-force](fledger-force/README.md)**
 
 ---
 
@@ -95,7 +115,9 @@ Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di 
    - Fitur akuntansi atau core wallet: buka dan kerjakan di dalam folder [`fledger-core/`](fledger-core/).
    - Fitur logistik armada atau POD: buka dan kerjakan di dalam folder [`fledger-fleet/`](fledger-fleet/).
    - Fitur payment gateway atau auto-settlement: buka dan kerjakan di dalam folder [`fledger-pay/`](fledger-pay/).
+   - Fitur SFA, kunjungan toko GPS, atau cash collection: buka dan kerjakan di dalam folder [`fledger-force/`](fledger-force/).
 2. **Pedoman Teknis Layanan**:
+   - **Fledger Force**: Baca spesifikasi di [`fledger-force/docs/AGENT-EXECUTION-BRIEF.md`](fledger-force/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-force/docs/DATABASE-SCHEMA.sql`](fledger-force/docs/DATABASE-SCHEMA.sql).
    - **Fledger Pay**: Baca spesifikasi di [`fledger-pay/docs/AGENT-EXECUTION-BRIEF.md`](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-pay/docs/DATABASE-SCHEMA.sql`](fledger-pay/docs/DATABASE-SCHEMA.sql).
    - **Fledger Fleet**: Baca spesifikasi di [`fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md`](fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-fleet/docs/DATABASE-SCHEMA.sql`](fledger-fleet/docs/DATABASE-SCHEMA.sql).
 3. **Peta Roadmap Global**:
