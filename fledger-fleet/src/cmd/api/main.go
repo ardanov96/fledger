@@ -125,7 +125,23 @@ func run() error {
 	})
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		httpx.JSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		httpx.JSON(w, http.StatusOK, map[string]any{"status": "alive"})
+	})
+
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := pool.Ping(ctx); err != nil {
+			httpx.JSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status": "unhealthy",
+				"db":     err.Error(),
+			})
+			return
+		}
+		httpx.JSON(w, http.StatusOK, map[string]any{
+			"status": "ready",
+			"db":     "connected",
+		})
 	})
 
 	// Web Portal static files
