@@ -4,12 +4,23 @@
 
   const baseURL = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:8083';
 
+  // Persistent token storage
+  let savedToken = '';
+  try {
+    savedToken = localStorage.getItem('fledger_pay_token') || '';
+  } catch (e) {}
+
   function headers(extra) {
     const h = Object.assign({
       'Content-Type': 'application/json',
       'X-Tenant-ID': '00000000-0000-0000-0000-000000000001',
       'X-Actor-Id': 'simulator-ui',
     }, extra || {});
+
+    const tok = PayClient.token || savedToken;
+    if (tok) {
+      h['Authorization'] = 'Bearer ' + tok;
+    }
     return h;
   }
 
@@ -37,11 +48,18 @@
   // Public API
   const PayClient = {
     baseURL: baseURL,
+    token: savedToken,
 
     /** Mint a dev JWT (APP_ENV=development only). */
-    login: function (tenantId) {
+    login: async function (tenantId) {
       const q = tenantId ? '?tenant_id=' + encodeURIComponent(tenantId) : '';
-      return call('POST', '/v1/dev/login' + q);
+      const res = await call('POST', '/v1/dev/login' + q);
+      if (res && res.access_token) {
+        PayClient.token = res.access_token;
+        savedToken = res.access_token;
+        try { localStorage.setItem('fledger_pay_token', res.access_token); } catch(e) {}
+      }
+      return res;
     },
 
     /** Create payment request. */

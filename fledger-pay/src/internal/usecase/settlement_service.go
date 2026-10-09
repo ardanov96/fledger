@@ -89,8 +89,8 @@ type SettleResult struct {
 // pay_transactions row, updates the payment request to SETTLED, and enqueues
 // the outbox event in one DB transaction.
 func (s *SettlementService) ProcessCallback(ctx context.Context, in WebhookInput) (*SettleResult, error) {
-	if in.TenantID == "" || in.OrderID == "" || in.ExternalRef == "" {
-		return nil, fmt.Errorf("%w: tenant_id, order_id, external_ref required", apperrors.ErrInvalidInput)
+	if in.OrderID == "" || in.ExternalRef == "" {
+		return nil, fmt.Errorf("%w: order_id, external_ref required", apperrors.ErrInvalidInput)
 	}
 	if in.GrossAmount <= 0 {
 		return nil, fmt.Errorf("%w: gross_amount must be > 0", apperrors.ErrInvalidInput)
@@ -99,15 +99,28 @@ func (s *SettlementService) ProcessCallback(ctx context.Context, in WebhookInput
 		return nil, fmt.Errorf("%w: invalid channel %q", apperrors.ErrInvalidInput, in.Channel)
 	}
 
+	// If tenant_id was not provided in headers (e.g. external payment gateway callback),
+	// resolve it from the payment request by its globally unique request_number.
+	var pr payment.Request
+	var err error
+	if in.TenantID == "" {
+		pr, err = s.payments.GetByRequestNumberGlobal(ctx, in.OrderID)
+		if err != nil {
+			return nil, err
+		}
+		in.TenantID = pr.TenantID
+	} else {
+		pr, err = s.payments.GetByRequestNumber(ctx, in.TenantID, in.OrderID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Idempotency guard: if a transaction with this external_ref already
 	// exists, return a 200 with idempotent_replay=true and DO NOTHING.
 	existing, err := s.transactions.GetByExternalRef(ctx, in.TenantID, in.ExternalRef)
 	if err == nil {
 		// Build a synthetic result from the existing transaction.
-		pr, perr := s.payments.Get(ctx, in.TenantID, existing.PaymentRequestID)
-		if perr != nil {
-			return nil, perr
-		}
 		counts, _ := s.outbox.Count(ctx, in.TenantID)
 		_ = counts
 		return &SettleResult{
@@ -121,11 +134,6 @@ func (s *SettlementService) ProcessCallback(ctx context.Context, in WebhookInput
 		}, nil
 	}
 	if !errors.Is(err, apperrors.ErrNotFound) {
-		return nil, err
-	}
-
-	pr, err := s.payments.GetByRequestNumber(ctx, in.TenantID, in.OrderID)
-	if err != nil {
 		return nil, err
 	}
 	if pr.Status == payment.StatusSettled {

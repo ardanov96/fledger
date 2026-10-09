@@ -163,6 +163,19 @@ func (r *PaymentRepo) GetByRequestNumber(ctx context.Context, tenantID, number s
 	return pr, nil
 }
 
+// GetByRequestNumberGlobal looks up a payment request across all tenants by its globally unique request_number.
+func (r *PaymentRepo) GetByRequestNumberGlobal(ctx context.Context, number string) (payment.Request, error) {
+	row := r.pool.QueryRow(ctx, `SELECT `+prColumns+` FROM pay_payment_requests WHERE request_number = $1`, number)
+	pr, err := scanPR(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return payment.Request{}, fmt.Errorf("%w: request_number %s", apperrors.ErrNotFound, number)
+		}
+		return payment.Request{}, err
+	}
+	return pr, nil
+}
+
 // List returns payment requests filtered by status (empty = all).
 func (r *PaymentRepo) List(ctx context.Context, tenantID, status string) ([]payment.Request, error) {
 	var (

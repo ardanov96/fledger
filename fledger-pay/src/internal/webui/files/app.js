@@ -6,27 +6,41 @@
   const fmtIDR = (n) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Number(n) || 0);
   const fmtUTC = (s) => s ? new Date(s).toLocaleString('id-ID') : '-';
 
-  // Initial tokens to populate the form.
-  const SAMPLE_INVOICE = randomUUID();
-  const SAMPLE_CUSTOMER = randomUUID();
-
-  document.addEventListener('DOMContentLoaded', function () {
-    $('fledger_invoice_id').value = SAMPLE_INVOICE;
-    $('customer_id').value = SAMPLE_CUSTOMER;
+  document.addEventListener('DOMContentLoaded', async function () {
+    resetSampleData();
     $('base-url').textContent = PayClient.baseURL;
     $('create-form').addEventListener('submit', onCreate);
     $('settle-form').addEventListener('submit', onSettle);
+
+    // Auto dev login so simulator functions immediately without 401
+    if (!PayClient.token) {
+      try {
+        await PayClient.login();
+        console.log('Dev auto-login successful');
+      } catch (e) {
+        console.warn('Dev auto-login skipped/failed:', e);
+      }
+    }
+
     refreshOutbox();
     setInterval(refreshOutbox, 5000);
   });
+
+  function resetSampleData() {
+    $('fledger_invoice_id').value = randomUUID();
+    $('customer_id').value = randomUUID();
+  }
 
   function setStatus(el, msg, kind) {
     el.className = 'status ' + (kind || '');
     el.textContent = msg;
   }
 
-  function onCreate(ev) {
+  async function onCreate(ev) {
     ev.preventDefault();
+    if (!PayClient.token) {
+      try { await PayClient.login(); } catch (e) {}
+    }
     const banks = Array.from($('enabled_banks').selectedOptions).map((o) => o.value);
     const body = {
       fledger_invoice_id: $('fledger_invoice_id').value.trim(),
@@ -39,14 +53,14 @@
       enable_qris: $('enable_qris').checked,
     };
     setStatus($('create-status'), 'Membuat payment request…', '');
-    PayClient.createRequest(body)
-      .then((out) => {
-        setStatus($('create-status'), 'Created: ' + out.request.request_number, 'ok');
-        renderDetail(out);
-      })
-      .catch((err) => {
-        setStatus($('create-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
-      });
+    try {
+      const out = await PayClient.createRequest(body);
+      setStatus($('create-status'), 'Created: ' + out.request.request_number, 'ok');
+      renderDetail(out);
+      refreshOutbox();
+    } catch (err) {
+      setStatus($('create-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
+    }
   }
 
   function renderDetail(out) {
@@ -62,7 +76,7 @@
     (out.virtual_accounts || []).forEach((va) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${va.bank_code}</td>
+        <td><strong>${va.bank_code}</strong></td>
         <td class="va-number">${va.va_number}</td>
         <td>${va.va_name}</td>
         <td><button class="copy-btn" data-copy="${va.va_number}">Salin</button></td>
@@ -85,7 +99,7 @@
     window._lastRequest = out;
   }
 
-  function onSettle(ev) {
+  async function onSettle(ev) {
     ev.preventDefault();
     if (!window._lastRequest) {
       setStatus($('settle-status'), 'Belum ada payment request aktif', 'err');
@@ -98,22 +112,20 @@
       payer_name: $('settle_payer').value.trim(),
     };
     setStatus($('settle-status'), 'Mengirim settlement…', '');
-    PayClient.simulateSettle(body)
-      .then((out) => {
-        const msg = 'SETTLED ✓\n' +
-          'tx_id: ' + out.transaction_id + '\n' +
-          'invoice: ' + out.fledger_invoice_id + '\n' +
-          'outbox: ' + out.outbox_status;
-        setStatus($('settle-status'), msg, 'ok');
-        // Refresh detail to show new status
-        PayClient.getRequest(window._lastRequest.request.id).then((d) => {
-          renderDetail(d);
-        });
-        refreshOutbox();
-      })
-      .catch((err) => {
-        setStatus($('settle-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
-      });
+    try {
+      const out = await PayClient.simulateSettle(body);
+      const msg = 'SETTLED ✓\n' +
+        'tx_id: ' + out.transaction_id + '\n' +
+        'invoice: ' + out.fledger_invoice_id + '\n' +
+        'outbox: ' + out.outbox_status;
+      setStatus($('settle-status'), msg, 'ok');
+      // Refresh detail to show new status
+      const updated = await PayClient.getRequest(window._lastRequest.request.id);
+      renderDetail(updated);
+      refreshOutbox();
+    } catch (err) {
+      setStatus($('settle-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
+    }
   }
 
   function refreshOutbox() {

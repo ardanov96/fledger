@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fledger/fledger-pay/internal/domain/transaction"
+	"github.com/fledger/fledger-pay/internal/middleware"
 	apperrors "github.com/fledger/fledger-pay/internal/platform/errors"
 	"github.com/fledger/fledger-pay/internal/platform/httpx"
 	"github.com/fledger/fledger-pay/internal/usecase"
@@ -367,12 +368,18 @@ func tenantFrom(r *http.Request) string {
 	if h := r.Header.Get("X-Tenant-ID"); h != "" {
 		return h
 	}
+	if p := middleware.PrincipalFromContext(r.Context()); p != nil && p.TenantID != "" {
+		return p.TenantID
+	}
 	return ""
 }
 
 func actorIDFrom(r *http.Request) string {
 	if h := r.Header.Get("X-Actor-Id"); h != "" {
 		return h
+	}
+	if p := middleware.PrincipalFromContext(r.Context()); p != nil && p.UserID != "" {
+		return p.UserID
 	}
 	return ""
 }
