@@ -2,7 +2,10 @@
 
 > **Service**: `fledger-fleet`  
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for Distribution & Supply Chain*)  
-> **Status**: ✅ **Production-Ready (Sprint 1–5 selesai)**
+> **Port**: `:8082`  
+> **Gateway Route**: `http://localhost:80/fleet/`  
+> **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**  
+> **Standalone Repository**: [ardanov96/fledger-fleet](https://github.com/ardanov96/fledger-fleet)
 
 ---
 
@@ -70,6 +73,7 @@ OUTBOX_MAX_ATTEMPTS=8
 
 ## 🚀 Quick Start
 
+### Opsi A: Menjalankan via Local Host
 ```powershell
 # 1. Setup database (membuat DB, menjalankan semua migrasi, seeder)
 .\src\scripts\setup-db.cmd
@@ -82,6 +86,22 @@ OUTBOX_MAX_ATTEMPTS=8
 
 # 4. (terminal lain) Jalankan E2E smoke test
 .\src\scripts\e2e-flow.ps1
+
+# 5. Akses Web Portal
+#    http://localhost:8082/ atau via Gateway http://localhost:80/fleet/
+```
+
+### Opsi B: Menjalankan via Docker Standalone
+```bash
+# Build & jalankan image Docker service
+docker build -t fledger-fleet:latest .
+docker run -d --name fledger-fleet -p 8082:8082 --env-file .env fledger-fleet:latest
+```
+
+### Opsi C: Menjalankan via Master Docker Compose (Ekosistem Penuh)
+```bash
+# Dari root monorepo:
+docker compose up -d fledger-fleet
 ```
 
 API server listen di `http://localhost:8082`.  

@@ -56,16 +56,16 @@ Sistem FMCG Wallet mencakup **9 modul terpadu** yang saling terhubung untuk menj
 
 ## 🧩 Ekosistem & Roadmap Microservices (FLEDGER OS)
 
-Sistem ini merupakan fondasi inti (**Fledger Core**) dari ekosistem **FLEDGER OS** (*The Ledger-First Operating System for Distribution & Supply Chain*). Dibangun dengan Clean Architecture & Domain-Driven Design (DDD), Fledger OS memisahkan tanggung jawab operasional menjadi layanan-layanan mikro (*bounded contexts*):
+Sistem ini merupakan fondasi inti (**Fledger Core**) dari ekosistem **FLEDGER OS** (*The Ledger-First Operating System for Distribution & Supply Chain*). Dibangun dengan Clean Architecture & Domain-Driven Design (DDD), seluruh 6 microservice kini telah selesai (**100% Production-Ready**) dan terhubung via API Gateway & Docker Compose:
 
-- **🟢 Fledger Core** *(Repo Ini)*: Core Financial Ledger, Double-Entry Engine, AR Aging Schedule, SHA-256 Hash Chains, dan Settlement Vault.
-- **🚚 Fledger Fleet**: Manajemen logistik, dispatching armada pengiriman, Surat Jalan (DO), dan Proof of Delivery (POD) digital via driver foto/tanda tangan (terhubung ke [`ekspedisi-dashboard`](file:///c:/Dev/ekspedisi-dashboard)).
-- **📱 Fledger Force (SFA)**: Aplikasi mobile salesman/motoris untuk kunjungan outlet (*beat plan*), order taking, dan penerimaan kas di toko (*mobile cash collection*).
-- **💳 Fledger Pay**: B2B Payment Gateway Adapter untuk integrasi Virtual Account (BCA, Mandiri, BRI) & QRIS Dinamis B2B dengan auto-reconciliation webhook.
-- **📦 Fledger Order (OMS)**: B2B Order Management, katalog grosir, alokasi stok gudang, dan penegakan batas kredit (*Hard Credit Limit Gate*).
-- **🔔 Fledger Dunning**: Otomasi pengingat piutang jatuh tempo via WhatsApp & Email terintegrasi.
+- **🟢 Fledger Core** *(Port :8081 / Gateway: `/core/`)*: Core Financial Ledger, Double-Entry Engine, AR Aging Schedule, SHA-256 Hash Chains, dan Settlement Vault.
+- **🚚 Fledger Fleet** *(Port :8082 / Gateway: `/fleet/`)*: Manajemen logistik armada, dispatching trip, Surat Jalan (DO), dan Proof of Delivery (POD) digital touch canvas ([GitHub](https://github.com/ardanov96/fledger-fleet)).
+- **💳 Fledger Pay** *(Port :8083 / Gateway: `/pay/`)*: B2B Payment Gateway Adapter untuk integrasi Virtual Account (BCA, Mandiri, BRI) & QRIS Dinamis B2B dengan auto-settlement webhook ([GitHub](https://github.com/ardanov96/fledger-pay)).
+- **📱 Fledger Force** *(Port :8084 / Gateway: `/force/`)*: Sales Force Automation (SFA) PWA, verifikasi GPS Haversine radius 100m, Mobile Cash Collection, dan Anti-Cash Kitting Daily Settlement ([GitHub](https://github.com/ardanov96/fledger-force)).
+- **📦 Fledger Order** *(Port :8085 / Gateway: `/order/`)*: B2B Order Management System (OMS), katalog grosir multi-tier, alokasi stok gudang, dan Hard Credit Limit Gate ([GitHub](https://github.com/ardanov96/fledger-order)).
+- **🔔 Fledger Dunning** *(Port :8086 / Gateway: `/dunning/`)*: Otomasi penagihan piutang via WhatsApp 5-tahap cadence, anti-ban jitter engine, PDF e-Statement generator, dan self-healing webhook loop ([GitHub](https://github.com/ardanov96/fledger-dunning)).
 
-> 🗺️ **Dokumentasi lengkap arsitektur microservices, solusi 5 masalah industri FMCG, kontrak integrasi NATS/REST, dan strategi deployment live demo 100% gratis dapat dibaca di [Roadmap Microservices Fledger OS](docs/architecture/roadmap-microservices.md).**
+> 🗺️ **Dokumentasi lengkap arsitektur microservices, solusi 5 masalah industri FMCG, kontrak integrasi REST/outbox, dan orkestrasi master compose dapat dibaca di [Roadmap Microservices Fledger OS](docs/architecture/roadmap-microservices.md) dan [Master Monorepo Guide](../README.md).**
 
 ---
 

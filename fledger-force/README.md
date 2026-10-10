@@ -3,8 +3,10 @@
 > **Service**: `fledger-force`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8084`
+> **Gateway Route**: `http://localhost:80/force/`
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, Geofencing Haversine, embedded PWA
+> **Standalone Repository**: [ardanov96/fledger-force](https://github.com/ardanov96/fledger-force)
 
 ---
 
@@ -36,10 +38,10 @@
 
 Baca dokumen di folder `docs/`:
 - 📄 [AGENT-EXECUTION-BRIEF.md](docs/AGENT-EXECUTION-BRIEF.md) — Blueprint eksekusi.
-- 📄 [ROADMAP-PAY.md](docs/ROADMAP-PAY.md) — Rincian 5 sprint + DoD.
+- 📄 [ROADMAP-FORCE.md](docs/ROADMAP-FORCE.md) — Rincian 5 sprint + DoD.
 - 📄 [DATABASE-SCHEMA.sql](docs/DATABASE-SCHEMA.sql) — DDL lengkap.
 - 📄 [API-SPECIFICATION.md](docs/API-SPECIFICATION.md) — Kontrak REST + webhook.
-- 📄 [SIMULATOR-AND-SETTLEMENT-GUIDE.md](docs/SIMULATOR-AND-SETTLEMENT-GUIDE.md) — Alur operasional + rekonsiliasi.
+- 📄 [CASH-COLLECTION-AND-EOD-GUIDE.md](docs/CASH-COLLECTION-AND-EOD-GUIDE.md) — Alur operasional + cash collection & EOD settlement.
 
 ---
 
@@ -63,6 +65,7 @@ OUTBOX_MAX_ATTEMPTS=10
 
 ## 🚀 Quick Start
 
+### Opsi A: Menjalankan via Local Host
 ```powershell
 # 1. Setup database (opsional, script `migrations/000001_init_force.sql` bisa dijalankan manual)
 psql -U fmcg -d fledger_force -f src/migrations/000001_init_force.sql
@@ -77,7 +80,20 @@ psql -U fmcg -d fledger_force -f src/migrations/000001_init_force.sql
 .\src\scripts\e2e-flow.ps1
 
 # 5. Buka PWA di browser
-#    http://localhost:8084/
+#    http://localhost:8084/ atau via Gateway http://localhost:80/force/
+```
+
+### Opsi B: Menjalankan via Docker Standalone
+```bash
+# Build & jalankan image Docker service
+docker build -t fledger-force:latest .
+docker run -d --name fledger-force -p 8084:8084 --env-file .env fledger-force:latest
+```
+
+### Opsi C: Menjalankan via Master Docker Compose (Ekosistem Penuh)
+```bash
+# Dari root monorepo:
+docker compose up -d fledger-force
 ```
 
 ---

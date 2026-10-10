@@ -3,8 +3,10 @@
 > **Service**: `fledger-order`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8085`
+> **Gateway Route**: `http://localhost:80/order/`
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, embedded PWA, no npm
+> **Standalone Repository**: [ardanov96/fledger-order](https://github.com/ardanov96/fledger-order)
 
 ---
 
@@ -63,6 +65,7 @@ OUTBOX_MAX_ATTEMPTS=10
 
 ## 🚀 Quick Start
 
+### Opsi A: Menjalankan via Local Host
 ```powershell
 # 1. Setup database
 psql -U fmcg -d fledger_order -f src/migrations/000001_init_order.sql
@@ -76,8 +79,21 @@ psql -U fmcg -d fledger_order -f src/migrations/000001_init_order.sql
 # 4. (terminal lain) E2E smoke test
 .\src\scripts\e2e-flow.ps1
 
-# 5. Buka PWA
-#    http://localhost:8085/
+# 5. Buka PWA di browser
+#    http://localhost:8085/ atau via Gateway http://localhost:80/order/
+```
+
+### Opsi B: Menjalankan via Docker Standalone
+```bash
+# Build & jalankan image Docker service
+docker build -t fledger-order:latest .
+docker run -d --name fledger-order -p 8085:8085 --env-file .env fledger-order:latest
+```
+
+### Opsi C: Menjalankan via Master Docker Compose (Ekosistem Penuh)
+```bash
+# Dari root monorepo:
+docker compose up -d fledger-order
 ```
 
 ---

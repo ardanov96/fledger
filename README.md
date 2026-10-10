@@ -115,33 +115,33 @@ fledger/
 ---
 
 ### 4. 📱 `fledger-force` (Sales Force Automation & Anti-Cash Kitting Engine)
-* **Status**: **Tahap Pengembangan oleh AI Agent (Phase 3 Milestone 1)**
+* **Status**: **Production-Ready** (Sprint 1–5 Selesai & PWA Live)
 * **Teknologi**: Go 1.23+, PostgreSQL 16, Geofencing Haversine, PWA Mobile UI
 * **Tanggung Jawab**:
   - Rute kunjungan harian (*Geofenced Beat Plan*) dengan verifikasi GPS radius 100m.
   - Mobile Cash Collection & tanda terima WhatsApp instan ke toko.
   - Anti-Cash Kitting liability transfer: memindahkan beban kas dari piutang toko ke wallet salesman di `fledger-core`.
   - Daily Settlement Lock: meja setor kasir gudang di sore hari untuk membuka kunci operasional esok hari.
-* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-force](fledger-force/docs/AGENT-EXECUTION-BRIEF.md)**
+  - Standalone repositori: [ardanov96/fledger-force](https://github.com/ardanov96/fledger-force)
 * 👉 **[Buka Panduan fledger-force](fledger-force/README.md)**
 
 ---
 
 ### 5. 📦 `fledger-order` (B2B Order Management System & Hard Credit Gate)
-* **Status**: **Siap Dieksekusi oleh AI Agent (Phase 3 Milestone 2)**
+* **Status**: **Production-Ready** (Sprint 1–5 Selesai & B2B Portal Live)
 * **Teknologi**: Go 1.23+, PostgreSQL 16, Chi Router, B2B Web Ordering Portal
 * **Tanggung Jawab**:
   - Master katalog SKU produk FMCG & penetapan harga grosir bertingkat (*wholesale pricing tiers*).
   - Alokasi & penguncian stok fisik gudang (*inventory stock reservation*) untuk mencegah overselling.
   - **Hard Credit Gate (Pre-Flight Check ke Fledger Core)**: Blokir pesanan otomatis jika melanggar plafon piutang atau menunggak faktur $>30$ hari (`CREDIT_BLOCKED`).
   - **Fleet Dispatching Bridge**: Otomatis menerbitkan Surat Jalan (DO) di `fledger-fleet` dengan akumulasi tonase berat muatan dalam kilogram.
-* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-order](fledger-order/docs/AGENT-EXECUTION-BRIEF.md)**
+  - Standalone repositori: [ardanov96/fledger-order](https://github.com/ardanov96/fledger-order)
 * 👉 **[Buka Panduan fledger-order](fledger-order/README.md)**
 
 ---
 
 ### 6. 🔔 `fledger-dunning` (Automated AR Dunning & WhatsApp Gateway)
-* **Status**: **Siap Dieksekusi oleh AI Agent (Phase 4 Milestone 1)**
+* **Status**: **Production-Ready** (Sprint 1–5 Selesai & Dunning Hub Live)
 * **Teknologi**: Go 1.23+, PostgreSQL 16, Chi Router, WhatsApp Engine, PDF e-Statement
 * **Tanggung Jawab**:
   - Penagihan bertingkat otomatis 5 tahap: H-3 (Pengingat ramah), Hari H, H+3, H+7, dan H+14 eskalasi penangguhan pesanan.
@@ -149,30 +149,29 @@ fledger/
   - **Self-Healing Webhook Loop**: Otomatis membatalkan seluruh sisa antrian dunning seketika saat faktur lunas di `fledger-pay`.
   - **Anti-Ban Jitter Engine**: Delay acak 3–8 detik & variasi teks (*spintax*) untuk melindungi nomor WhatsApp resmi.
   - Render PDF Rekening Koran Toko bulanan (e-Statement) otomatis setiap tanggal 1 awal bulan.
-* 👉 **[Buka Blueprint Eksekusi AI Agent fledger-dunning](fledger-dunning/docs/AGENT-EXECUTION-BRIEF.md)**
+  - Standalone repositori: [ardanov96/fledger-dunning](https://github.com/ardanov96/fledger-dunning)
 * 👉 **[Buka Panduan fledger-dunning](fledger-dunning/README.md)**
 
 ---
 
-## 🤖 Panduan Khusus untuk AI Coding Agent
+## 🤖 Status Ekosistem & Panduan AI Agent / Developer
 
-Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di repositori ini:
+Seluruh 6 microservice dalam ekosistem **FLEDGER OS** telah berhasil diselesaikan secara menyeluruh (**100% Production-Ready**) dengan unit & integration testing lengkap, UI PWA ter-embed, container Dockerfiles individual, serta integrasi orkestrasi terpusat.
 
-1. **Fokus Ruang Kerja**:
-   - Fitur akuntansi atau core wallet: buka dan kerjakan di dalam folder [`fledger-core/`](fledger-core/).
-   - Fitur logistik armada atau POD: buka dan kerjakan di dalam folder [`fledger-fleet/`](fledger-fleet/).
-   - Fitur payment gateway atau auto-settlement: buka dan kerjakan di dalam folder [`fledger-pay/`](fledger-pay/).
-   - Fitur SFA, kunjungan toko GPS, atau cash collection: buka dan kerjakan di dalam folder [`fledger-force/`](fledger-force/).
-   - Fitur OMS, katalog grosir, atau Hard Credit Gate: buka dan kerjakan di dalam folder [`fledger-order/`](fledger-order/).
-   - Fitur dunning WA, rekening koran e-Statement, atau penagihan AR: buka dan kerjakan di dalam folder [`fledger-dunning/`](fledger-dunning/).
-2. **Pedoman Teknis Layanan**:
-   - **Fledger Dunning**: Baca spesifikasi di [`fledger-dunning/docs/AGENT-EXECUTION-BRIEF.md`](fledger-dunning/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-dunning/docs/DATABASE-SCHEMA.sql`](fledger-dunning/docs/DATABASE-SCHEMA.sql).
-   - **Fledger Order**: Baca spesifikasi di [`fledger-order/docs/AGENT-EXECUTION-BRIEF.md`](fledger-order/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-order/docs/DATABASE-SCHEMA.sql`](fledger-order/docs/DATABASE-SCHEMA.sql).
-   - **Fledger Force**: Baca spesifikasi di [`fledger-force/docs/AGENT-EXECUTION-BRIEF.md`](fledger-force/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-force/docs/DATABASE-SCHEMA.sql`](fledger-force/docs/DATABASE-SCHEMA.sql).
-   - **Fledger Pay**: Baca spesifikasi di [`fledger-pay/docs/AGENT-EXECUTION-BRIEF.md`](fledger-pay/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-pay/docs/DATABASE-SCHEMA.sql`](fledger-pay/docs/DATABASE-SCHEMA.sql).
-   - **Fledger Fleet**: Baca spesifikasi di [`fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md`](fledger-fleet/docs/AGENT-EXECUTION-BRIEF.md) dan terapkan skema dari [`fledger-fleet/docs/DATABASE-SCHEMA.sql`](fledger-fleet/docs/DATABASE-SCHEMA.sql).
-3. **Peta Roadmap Global**:
-   - Pelajari visi makro dan 5 masalah industri FMCG Indonesia di [`fledger-core/docs/architecture/roadmap-microservices.md`](fledger-core/docs/architecture/roadmap-microservices.md).
+### 🌐 Repositori Git Standalone:
+| Service | Remote | GitHub Repository URL | Port |
+|---|---|---|---|
+| **🟢 Fledger Core** | `origin` | [ardanov96/fledger](https://github.com/ardanov96/fledger) (Root Monorepo) | `:8081` |
+| **🚚 Fledger Fleet** | `fleet` | [ardanov96/fledger-fleet](https://github.com/ardanov96/fledger-fleet) | `:8082` |
+| **💳 Fledger Pay** | `pay` | [ardanov96/fledger-pay](https://github.com/ardanov96/fledger-pay) | `:8083` |
+| **📱 Fledger Force** | `force` | [ardanov96/fledger-force](https://github.com/ardanov96/fledger-force) | `:8084` |
+| **📦 Fledger Order** | `order` | [ardanov96/fledger-order](https://github.com/ardanov96/fledger-order) | `:8085` |
+| **🔔 Fledger Dunning** | `dunning` | [ardanov96/fledger-dunning](https://github.com/ardanov96/fledger-dunning) | `:8086` |
+
+Jika Anda adalah AI Agent atau developer yang ditugaskan untuk iterasi atau pengujian lanjutan:
+1. **Fokus Ruang Kerja**: Setiap folder mikroservis bersifat modular, independen, dan dapat dijalankan terpisah maupun bersamaan.
+2. **Pedoman Arsitektur**: Semua service mematuhi arsitektur *Clean Architecture*, transactional outbox pattern, dan zero float (`BIGINT` minor units).
+3. **Peta Roadmap Global**: Pelajari visi makro ekosistem di [`fledger-core/docs/architecture/roadmap-microservices.md`](fledger-core/docs/architecture/roadmap-microservices.md).
 
 ---
 

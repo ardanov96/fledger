@@ -3,8 +3,10 @@
 > **Service**: `fledger-pay`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8083`
+> **Gateway Route**: `http://localhost:80/pay/`
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, zero npm dependencies
+> **Standalone Repository**: [ardanov96/fledger-pay](https://github.com/ardanov96/fledger-pay)
 
 ---
 
@@ -59,6 +61,7 @@ OUTBOX_MAX_ATTEMPTS=10
 
 ## 🚀 Quick Start
 
+### Opsi A: Menjalankan via Local Host
 ```powershell
 # 1. Setup database (opsional, script `migrations/000001_init_pay.sql` bisa dijalankan manual)
 psql -U fmcg -d fledger_pay -f src/migrations/000001_init_pay.sql
@@ -73,7 +76,20 @@ psql -U fmcg -d fledger_pay -f src/migrations/000001_init_pay.sql
 .\src\scripts\e2e-flow.ps1
 
 # 5. Buka web simulator
-#    http://localhost:8083/
+#    http://localhost:8083/ atau via Gateway http://localhost:80/pay/
+```
+
+### Opsi B: Menjalankan via Docker Standalone
+```bash
+# Build & jalankan image Docker service
+docker build -t fledger-pay:latest .
+docker run -d --name fledger-pay -p 8083:8083 --env-file .env fledger-pay:latest
+```
+
+### Opsi C: Menjalankan via Master Docker Compose (Ekosistem Penuh)
+```bash
+# Dari root monorepo:
+docker compose up -d fledger-pay
 ```
 
 ---

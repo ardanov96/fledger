@@ -3,8 +3,10 @@
 > **Service**: `fledger-dunning`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8086`
+> **Gateway Route**: `http://localhost:80/dunning/`
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, embedded dark-mode PWA
+> **Standalone Repository**: [ardanov96/fledger-dunning](https://github.com/ardanov96/fledger-dunning)
 
 ---
 
@@ -66,6 +68,7 @@ TOKEN_TTL=24h
 
 ## 🚀 Quick Start
 
+### Opsi A: Menjalankan via Local Host
 ```powershell
 # 1. Setup database
 psql -U fmcg -d fledger_dunning -f docs/DATABASE-SCHEMA.sql
@@ -80,7 +83,20 @@ go test -v ./...
 .\scripts\e2e-flow.ps1
 
 # 5. Buka PWA dark-mode di browser
-#    http://localhost:8086/
+#    http://localhost:8086/ atau via Gateway http://localhost:80/dunning/
+```
+
+### Opsi B: Menjalankan via Docker Standalone
+```bash
+# Build & jalankan image Docker service
+docker build -t fledger-dunning:latest .
+docker run -d --name fledger-dunning -p 8086:8086 --env-file .env fledger-dunning:latest
+```
+
+### Opsi C: Menjalankan via Master Docker Compose (Ekosistem Penuh)
+```bash
+# Dari root monorepo:
+docker compose up -d fledger-dunning
 ```
 
 ---
