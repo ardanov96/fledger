@@ -34,8 +34,9 @@
 ## 🤖 Panduan untuk AI Coding Agent / Developer
 
 Baca dokumen di folder `docs/`:
+- 🤖 [AI-AGENT-PROMPT.md](docs/AI-AGENT-PROMPT.md) — Master prompt instruksi AI agent.
 - 📄 [AGENT-EXECUTION-BRIEF.md](docs/AGENT-EXECUTION-BRIEF.md) — Blueprint eksekusi.
-- 📄 [ROADMAP-PAY.md](docs/ROADMAP-PAY.md) — Rincian 5 sprint + DoD.
+- 📄 [ROADMAP-DUNNING.md](docs/ROADMAP-DUNNING.md) — Rincian 5 sprint + DoD.
 - 📄 [DATABASE-SCHEMA.sql](docs/DATABASE-SCHEMA.sql) — DDL lengkap + seed data.
 - 📄 [API-SPECIFICATION.md](docs/API-SPECIFICATION.md) — Kontrak REST.
 - 📄 [WHATSAPP-CADENCE-AND-STATEMENT-GUIDE.md](docs/WHATSAPP-CADENCE-AND-STATEMENT-GUIDE.md) — Logika spintax + jitter + PDF.
@@ -123,10 +124,13 @@ fledger-dunning/
 | Statement_GeneratesAndPersistsPDF | same | ✅ PASS |
 | WhatsAppStatusProvider (CONNECTED via mock) | same | ✅ PASS |
 | WebhookAuth_FailsWithoutSecret | same | ✅ PASS |
+| DispatchOne_SpecificQueueID (manual target ID) | same | ✅ PASS |
+| Statement_GetByIDAndDownload (direct fetch & PDF download) | same | ✅ PASS |
+| Automated Test Runner | `run-tests.ps1` | ✅ PASS (All green) |
 | E2E (live HTTP) | `scripts/e2e-flow.ps1` | ✅ PASS (8/8 steps) |
 
 ```
-ok  github.com/fledger/fledger-dunning/internal/integration  30.214s
+ok  github.com/fledger/fledger-dunning/internal/integration  26.203s
 ```
 
 ---

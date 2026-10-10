@@ -76,3 +76,5 @@ docs/api/swagger/
 .gobuild/
 *.test.exe
 **/*.test.exe
+storage/statements/
+**/storage/statements/

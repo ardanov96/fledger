@@ -132,24 +132,9 @@ func (s *StatementService) Send(ctx context.Context, in SendInput) (*domain.Stat
 	if in.TenantID == "" || in.StatementID == "" {
 		return nil, fmt.Errorf("%w: tenant_id and statement_id required", apperrors.ErrInvalidInput)
 	}
-	// We don't have a single get-by-id; the cleanest path is to scan recent
-	// statements and pick the matching id. (StatementRepo has no Get(id) by
-	// design, since the primary key is internal.)
-	rows, err := s.statements.ListByTenant(ctx, in.TenantID, 100)
+	st, err := s.statements.GetByID(ctx, in.TenantID, in.StatementID)
 	if err != nil {
 		return nil, err
-	}
-	var st domain.Statement
-	found := false
-	for _, r := range rows {
-		if r.ID == in.StatementID {
-			st = r
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil, fmt.Errorf("%w: statement %s", apperrors.ErrNotFound, in.StatementID)
 	}
 
 	if err := s.sendPDF(ctx, st); err != nil {
@@ -166,6 +151,11 @@ func (s *StatementService) Send(ctx context.Context, in SendInput) (*domain.Stat
 		return nil, err
 	}
 	return &out, nil
+}
+
+// GetByID returns a single statement by ID.
+func (s *StatementService) GetByID(ctx context.Context, tenantID, id string) (domain.Statement, error) {
+	return s.statements.GetByID(ctx, tenantID, id)
 }
 
 // sendPDF posts the document via the WhatsApp provider.

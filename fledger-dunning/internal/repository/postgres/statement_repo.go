@@ -91,6 +91,21 @@ func (r *StatementRepo) Get(ctx context.Context, tenantID, storeID, month string
 	return s, nil
 }
 
+// GetByID fetches a single statement by ID.
+func (r *StatementRepo) GetByID(ctx context.Context, tenantID, id string) (domain.Statement, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT `+stColumns+` FROM dunning_statements WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+		tenantID, id)
+	s, err := scanStatement(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Statement{}, fmt.Errorf("%w: statement %s", apperrors.ErrNotFound, id)
+		}
+		return domain.Statement{}, err
+	}
+	return s, nil
+}
+
 // ListByTenant returns recent statements.
 func (r *StatementRepo) ListByTenant(ctx context.Context, tenantID string, limit int) ([]domain.Statement, error) {
 	if limit <= 0 {

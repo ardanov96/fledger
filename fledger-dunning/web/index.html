@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Fledger Dunning — Portal Manajemen Penagihan</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body class="dark">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🔔</span>
+      <div>
+        <h1>Fledger Dunning</h1>
+        <small id="who">WhatsApp AR Dunning &amp; E-Statement Portal</small>
+      </div>
+    </div>
+    <div class="badge"><span id="status-pill" class="pill off">DISCONNECTED</span></div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>1. WhatsApp Gateway</h2>
+      <div class="kv">
+        <div><strong>Provider</strong>: <span id="wa-provider">MOCK</span></div>
+        <div><strong>Session</strong>: <span id="wa-session">-</span></div>
+        <div><strong>Phone</strong>: <span id="wa-phone">-</span></div>
+        <div><strong>Status</strong>: <span id="wa-status">-</span></div>
+      </div>
+      <div class="row">
+        <button class="primary" id="btn-pair">🔳 Pairing QR (Mock)</button>
+        <button class="secondary" id="btn-test-send">✉️ Test Send</button>
+        <button class="danger" id="btn-disconnect">⛔ Disconnect</button>
+      </div>
+      <div id="qr-area" class="qr hidden">
+        <div class="qr-frame">
+          <div class="qr-grid">
+            <div class="qr-cell" style="--i:0"></div>
+            <div class="qr-cell" style="--i:1"></div>
+            <div class="qr-cell" style="--i:2"></div>
+            <div class="qr-cell" style="--i:3"></div>
+            <div class="qr-cell" style="--i:4"></div>
+            <div class="qr-cell" style="--i:5"></div>
+            <div class="qr-cell" style="--i:6"></div>
+            <div class="qr-cell" style="--i:7"></div>
+            <div class="qr-cell" style="--i:8"></div>
+          </div>
+          <div class="qr-caption">Scan dengan WhatsApp HP Anda</div>
+          <div class="qr-token" id="qr-token">-</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Ingest Faktur Baru (Auto-Schedule 5 Tahap)</h2>
+      <form id="ingest-form" class="grid">
+        <label>Invoice ID <input id="f-invoice-id" required></label>
+        <label>Invoice Number <input id="f-invoice-num" required></label>
+        <label>Store ID <input id="f-store-id" required></label>
+        <label>Store Name <input id="f-store-name" value="Toko Sumber Rezeki"></label>
+        <label>Owner Name <input id="f-owner-name" value="Haji Mahmud"></label>
+        <label>No HP (E.164) <input id="f-phone" value="6281234567801"></label>
+        <label>Due Date <input type="date" id="f-due-date" required></label>
+        <label>Amount (Rp) <input type="number" id="f-amount" value="4500000" required></label>
+        <label class="span2">Payment Link URL <input id="f-pay-link" value="http://localhost:8083/pay/INV-DEMO"></label>
+      </form>
+      <button class="primary" id="btn-ingest">Ingest Faktur (5 Tahap Otomatis)</button>
+      <div id="ingest-status" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>3. Antrean Dunning Aktif</h2>
+      <div class="row">
+        <button class="secondary" id="btn-refresh">🔄 Refresh</button>
+        <button class="primary" id="btn-cron">▶️ Run Cron Dispatch</button>
+        <button class="secondary" id="btn-simulate-pay">💸 Simulasi Pembayaran Toko (Self-Healing)</button>
+      </div>
+      <div class="kv" id="queue-counts"></div>
+      <table class="queue-table" id="queue-table">
+        <thead><tr><th>Invoice</th><th>Stage</th><th>Phone</th><th>Status</th><th>Scheduled</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>4. Simulator Layar HP — WhatsApp Preview</h2>
+      <div class="phone-frame">
+        <div class="phone-notch"></div>
+        <div class="phone-screen">
+          <div class="wa-header">
+            <div class="wa-avatar">🏢</div>
+            <div>
+              <div class="wa-title">Fledger Dunning</div>
+              <div class="wa-sub">online</div>
+            </div>
+          </div>
+          <div class="wa-messages" id="wa-messages">
+            <div class="wa-empty">Belum ada pesan. Klik tombol di atas untuk simulasi.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5. E-Statement Generator (Rekening Koran Bulanan)</h2>
+      <form id="stmt-form" class="grid">
+        <label>Store ID <input id="s-store-id" required></label>
+        <label>Statement Month <input id="s-month" value="2026-10"></label>
+        <button class="primary span2" id="btn-generate-stmt">📄 Generate &amp; Save PDF</button>
+      </form>
+      <div id="stmt-status" class="status"></div>
+      <table class="queue-table" id="stmt-table">
+        <thead><tr><th>Store</th><th>Month</th><th>Invoiced</th><th>Paid</th><th>Closing</th><th>PDF</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <small>Fledger Dunning — PWA dark-mode glassmorphism.</small>
+  </footer>
+
+  <script src="/web/dunning-client.js"></script>
+  <script src="/web/app.js"></script>
+</body>
+</html>

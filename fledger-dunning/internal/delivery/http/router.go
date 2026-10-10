@@ -68,6 +68,7 @@ func NewRouter(cfg *config.Config, h *handler.Handlers, verifier jwt.Verifier) h
 				r.Get("/statements", h.ListStatements)
 				r.Post("/statements/generate", h.GenerateStatement)
 				r.Post("/statements/{id}/send", h.SendStatement)
+				r.Get("/statements/{id}/download", h.DownloadStatementPDF)
 				// Outbox (queue counts)
 				r.Get("/outbox/counts", h.QueueCounts)
 			})

@@ -377,6 +377,36 @@ func (s *DunningService) ListQueues(ctx context.Context, tenantID, status string
 	return s.queues.ListByTenant(ctx, tenantID, status, limit)
 }
 
+// GetQueueByID returns a specific queue item by ID.
+func (s *DunningService) GetQueueByID(ctx context.Context, tenantID, id string) (domain.QueueItem, error) {
+	return s.queues.GetByID(ctx, tenantID, id)
+}
+
+// DispatchOneByID forces immediate delivery of a specific queue row by ID.
+func (s *DunningService) DispatchOneByID(ctx context.Context, tenantID, id string) error {
+	q, err := s.queues.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if q.Status == domain.StatusSent {
+		return fmt.Errorf("%w: message already sent", apperrors.ErrConflict)
+	}
+	if q.Status == domain.StatusCancelledByPayment {
+		return fmt.Errorf("%w: queue already cancelled by payment", apperrors.ErrConflict)
+	}
+	if err := s.queues.MarkProcessing(ctx, tenantID, id); err != nil {
+		return fmt.Errorf("mark processing: %w", err)
+	}
+	if err := s.dispatchOne(ctx, q); err != nil {
+		_ = s.queues.MarkFailed(ctx, q.ID, err.Error(), 5*time.Minute)
+		return fmt.Errorf("dispatch message: %w", err)
+	}
+	_ = s.queues.MarkSent(ctx, q.ID)
+	_ = s.audits.Append(ctx, q.TenantID, "operator", "DISPATCH_SENT_MANUAL", q.ID, "",
+		map[string]any{"stage": string(q.Stage), "manual": true})
+	return nil
+}
+
 // Contacts exposes the contact repo for the handler.
 func (s *DunningService) Contacts() *postgres.StoreContactRepo { return s.contacts }
 

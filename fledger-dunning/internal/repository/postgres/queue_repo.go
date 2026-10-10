@@ -138,6 +138,12 @@ func (r *QueueRepo) FetchDue(ctx context.Context, limit int) ([]domain.QueueItem
 	return out, nil
 }
 
+// MarkProcessing marks a specific queue row as PROCESSING.
+func (r *QueueRepo) MarkProcessing(ctx context.Context, tenantID, id string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE dunning_queues SET status='PROCESSING', retry_count=retry_count+1, updated_at=NOW() WHERE tenant_id=$1::uuid AND id=$2::uuid`, tenantID, id)
+	return err
+}
+
 // MarkSent promotes a row to SENT.
 func (r *QueueRepo) MarkSent(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `UPDATE dunning_queues SET status='SENT', sent_at=NOW(), updated_at=NOW() WHERE id=$1::uuid`, id)

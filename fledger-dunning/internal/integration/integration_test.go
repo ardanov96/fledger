@@ -215,7 +215,6 @@ func TestWhatsAppStatusProvider(t *testing.T) {
 
 // TestWebhookAuth_FailsWithoutSecret confirms the X-Webhook-Secret guard.
 func TestWebhookAuth_FailsWithoutSecret(t *testing.T) {
-	// covered end-to-end via the HTTP handler test in TestPayWebhook.
 	_ = sync.Mutex{}
 	_ = httptest.NewRecorder
 	_ = json.NewEncoder
@@ -224,4 +223,64 @@ func TestWebhookAuth_FailsWithoutSecret(t *testing.T) {
 	_ = uuid.NewString
 	_ = context.Background
 	_ = time.Now
+}
+
+// TestDispatchOne_SpecificQueueID verifies manual dispatch by specific queue ID.
+func TestDispatchOne_SpecificQueueID(t *testing.T) {
+	r := setup(t)
+	contact := mustStoreContact(t, r, "TKO-005", "Toko Lima", "Pak Budi", "6281234567805")
+	due := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	out, err := r.services.Dunning.Ingest(context.Background(), usecase.IngestInput{
+		TenantID:       testTenant,
+		InvoiceID:      "INV-2026-T-5",
+		InvoiceNumber:  "INV/2026/10/T5",
+		StoreID:        contact.StoreID,
+		PhoneNumber:    contact.Phone,
+		DueDate:        due,
+		AmountDueMinor: 2_500_000,
+		PaymentLinkURL: "http://localhost:8083/pay/INV-2026-T-5",
+		StoreName:      contact.StoreName,
+	})
+	require.NoError(t, err)
+	require.Len(t, out.SchedulesCreated, 5)
+
+	targetID := out.SchedulesCreated[0].ID
+	// Verify GetQueueByID direct fetch
+	item, err := r.services.Dunning.GetQueueByID(context.Background(), testTenant, targetID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusQueued, item.Status)
+
+	// Manually dispatch target item
+	err = r.services.Dunning.DispatchOneByID(context.Background(), testTenant, targetID)
+	require.NoError(t, err)
+
+	// Verify status is now SENT
+	itemAfter, err := r.services.Dunning.GetQueueByID(context.Background(), testTenant, targetID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusSent, itemAfter.Status)
+
+	// Re-dispatch should return error (already sent)
+	err = r.services.Dunning.DispatchOneByID(context.Background(), testTenant, targetID)
+	require.Error(t, err)
+}
+
+// TestStatement_GetByIDAndDownload verifies direct fetch and file persistence for statements.
+func TestStatement_GetByIDAndDownload(t *testing.T) {
+	r := setup(t)
+	contact := mustStoreContact(t, r, "TKO-006", "Toko Enam", "Ibu Siti", "6281234567806")
+
+	res, err := r.services.Statement.Generate(context.Background(), usecase.GenerateInput{
+		TenantID:       testTenant,
+		StoreID:        contact.StoreID,
+		StatementMonth: "2026-10",
+		ActorID:        "test",
+	})
+	require.NoError(t, err)
+
+	st, err := r.services.Statement.GetByID(context.Background(), testTenant, res.Statement.ID)
+	require.NoError(t, err)
+	assert.Equal(t, res.Statement.ID, st.ID)
+	assert.NotEmpty(t, st.PDFFilePath)
+	_, statErr := os.Stat(st.PDFFilePath)
+	assert.NoError(t, statErr)
 }

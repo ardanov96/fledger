@@ -4,7 +4,10 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -223,14 +226,12 @@ func (h *Handlers) DispatchOne(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
 		return
 	}
-	// The dispatch path runs the full loop, not a single row. Expose this
-	// endpoint for manual triggering.
-	sent, failed, err := h.Dunning.DispatchDue(r.Context(), 1)
-	if err != nil {
+	tenantID := middleware.TenantFromRequest(r)
+	if err := h.Dunning.DispatchOneByID(r.Context(), tenantID, id); err != nil {
 		httpx.Error(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, httpx.EnvelopeMessage{Status: "success", Count: sent + failed})
+	httpx.JSON(w, http.StatusOK, httpx.EnvelopeMessage{Status: "success", Message: "Pesan dunning berhasil dikirim"})
 }
 
 func (h *Handlers) CronRun(w http.ResponseWriter, r *http.Request) {
@@ -266,18 +267,12 @@ func (h *Handlers) GetQueueByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenantID := middleware.TenantFromRequest(r)
-	items, err := h.Dunning.ListQueues(r.Context(), tenantID, "", 200)
+	item, err := h.Dunning.GetQueueByID(r.Context(), tenantID, id)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return
 	}
-	for _, it := range items {
-		if it.ID == id {
-			httpx.JSON(w, http.StatusOK, it)
-			return
-		}
-	}
-	httpx.Error(w, r, apperrors.New(http.StatusNotFound, "not_found", "queue not found"))
+	httpx.JSON(w, http.StatusOK, item)
 }
 
 // =============================================================================
@@ -400,6 +395,35 @@ func (h *Handlers) ListStatements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handlers) DownloadStatementPDF(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(id); err != nil {
+		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
+		return
+	}
+	tenantID := middleware.TenantFromRequest(r)
+	st, err := h.Statement.GetByID(r.Context(), tenantID, id)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	if st.PDFFilePath == "" {
+		httpx.Error(w, r, apperrors.New(http.StatusNotFound, "not_found", "pdf has not been generated"))
+		return
+	}
+	f, err := os.Open(st.PDFFilePath)
+	if err != nil {
+		httpx.Error(w, r, apperrors.New(http.StatusNotFound, "file_not_found", "pdf file not found on disk"))
+		return
+	}
+	defer f.Close()
+
+	filename := filepath.Base(st.PDFFilePath)
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+	http.ServeContent(w, r, filename, st.CreatedAt, f)
 }
 
 // =============================================================================
