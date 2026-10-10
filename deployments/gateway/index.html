@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLEDGER OS — Enterprise Microservices Hub</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.2);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      background: radial-gradient(circle at 50% 0%, #1e293b 0%, var(--bg) 75%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+    header { text-align: center; margin-bottom: 40px; }
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+    h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+    p.subtitle { color: var(--muted); font-size: 16px; max-width: 650px; line-height: 1.6; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      width: 100%;
+      max-width: 1100px;
+    }
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), 0 0 16px var(--accent-glow);
+    }
+    .card-header { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+    .icon { font-size: 32px; }
+    .title { font-size: 20px; font-weight: 700; }
+    .port {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--accent);
+      margin-left: auto;
+      font-family: monospace;
+    }
+    .desc { color: var(--muted); font-size: 14px; line-height: 1.5; margin-bottom: 20px; }
+    .btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 12px;
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    footer { margin-top: 50px; color: var(--muted); font-size: 13px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="badge">LEDGER-FIRST OPERATING SYSTEM</div>
+    <h1>FLEDGER OS API GATEWAY</h1>
+    <p class="subtitle">Unified Microservices Control Plane untuk Rantai Pasok B2B & Distribusi FMCG Indonesia.</p>
+  </header>
+
+  <main class="grid">
+    <!-- 1. Core -->
+    <div class="card">
+      <div>
+        <div class="card-header">
+          <span class="icon">🟢</span>
+          <span class="title">Fledger Core</span>
+          <span class="port">:8081</span>
+        </div>
+        <p class="desc">Core Double-Entry Ledger, AR Aging engine, cryptographic hash chains, penutupan periode akuntansi, dan reconciler audit.</p>
+      </div>
+      <a href="http://localhost:8081/web" target="_blank" class="btn">Buka Core Ledger</a>
+    </div>
+
+    <!-- 2. Fleet -->
+    <div class="card">
+      <div>
+        <div class="card-header">
+          <span class="icon">🚚</span>
+          <span class="title">Fledger Fleet</span>
+          <span class="port">:8082</span>
+        </div>
+        <p class="desc">Logistik armada truk, trip dispatching, Surat Jalan (DO), dan Proof of Delivery (POD) digital via tanda tangan touch-canvas.</p>
+      </div>
+      <a href="http://localhost:8082/web" target="_blank" class="btn">Buka Fleet Portal</a>
+    </div>
+
+    <!-- 3. Pay -->
+    <div class="card">
+      <div>
+        <div class="card-header">
+          <span class="icon">💳</span>
+          <span class="title">Fledger Pay</span>
+          <span class="port">:8083</span>
+        </div>
+        <p class="desc">B2B Payment Gateway ingestion (Virtual Account BCA/Mandiri/BRI, Dynamic QRIS), webhook ingestion, dan auto-settlement.</p>
+      </div>
+      <a href="http://localhost:8083/web" target="_blank" class="btn">Buka Payment Sandbox</a>
+    </div>
+
+    <!-- 4. Force -->
+    <div class="card">
+      <div>
+        <div class="card-header">
+          <span class="icon">📱</span>
+          <span class="title">Fledger Force</span>
+          <span class="port">:8084</span>
+        </div>
+        <p class="desc">Sales Force Automation (SFA) PWA, GPS geofencing radius 100m, mobile cash collection, dan Daily Settlement Lock kasir.</p>
+      </div>
+      <a href="http://localhost:8084/web" target="_blank" class="btn">Buka SFA Mobile PWA</a>
+    </div>
+
+    <!-- 5. Order -->
+    <div class="card">
+      <div>
+        <div class="card-header">
+          <span class="icon">📦</span>
+          <span class="title">Fledger Order</span>
+          <span class="port">:8085</span>
+        </div>
+        <p class="desc">B2B Order Management System (OMS), katalog harga grosir bertingkat, alokasi stok gudang, dan Hard Credit Gate pre-flight check.</p>
+      </div>
+      <a href="http://localhost:8085/web" target="_blank" class="btn">Buka OMS Order Portal</a>
+    </div>
+
+    <!-- 6. Dunning -->
+    <div class="card">
+      <div>
+        <div class="card-header">
+          <span class="icon">🔔</span>
+          <span class="title">Fledger Dunning</span>
+          <span class="port">:8086</span>
+        </div>
+        <p class="desc">Automated AR Dunning 5 tahap, WhatsApp anti-ban jitter & spintax, self-healing loop pembatalan lunas, dan PDF e-Statement bulanan.</p>
+      </div>
+      <a href="http://localhost:8086/web" target="_blank" class="btn">Buka Dunning Portal</a>
+    </div>
+  </main>
+
+  <footer>
+    <p>Fledger OS &copy; 2026. Microservices production stack powered by Go 1.23+, PostgreSQL 16, Redis 7, NATS JetStream, and Docker.</p>
+  </footer>
+</body>
+</html>

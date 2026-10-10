@@ -176,25 +176,58 @@ Jika Anda adalah AI Agent yang ditugaskan untuk mengerjakan project lanjutan di 
 
 ---
 
-## 🚀 Quick Start (Menjalankan Fledger Core)
+---
 
+## 🚀 Menjalankan Seluruh Ekosistem Microservices (Master Orchestration)
+
+Ekosistem Fledger OS kini dilengkapi dengan **Master Docker Compose** dan **Unified API Gateway** untuk menyalakan seluruh 6 microservice secara terpadu:
+
+### Opsi A: Full Container Mode (Infrastruktur + 6 Microservices + Gateway)
 ```bash
-# 1. Pindah ke direktori fledger-core
-cd fledger-core
+# Menyalakan PostgreSQL cluster, Redis, NATS, 6 microservices, dan API Gateway (:80)
+docker compose up -d
 
-# 2. Setup environment
-cp .env.example .env
+# Periksa status seluruh container
+docker compose ps
 
-# 3. Jalankan infrastruktur & migrasi
-make up
-make migrate-up
-
-# 4. Jalankan Core API
-go run ./cmd/api
-
-# 5. Jalankan Web Dashboard (di terminal lain)
-node web/server.js
+# Matikan seluruh ekosistem secara rapi
+docker compose down
 ```
 
-Akses Web Dashboard di browser: `http://localhost:3000`  
-Kredensial Login Demo: `demo-user` / `demo-password`
+### Opsi B: Hybrid / Local Host Mode (Infrastruktur di Docker, Kode di Host)
+```bash
+# 1. Nyalakan infrastruktur saja (Postgres multi-db, Redis, NATS)
+docker compose up -d postgres redis nats
+
+# 2. Nyalakan ke-6 service Go secara background di Windows
+powershell -ExecutionPolicy Bypass -File .\scripts\start-all-local.ps1
+
+# 3. Untuk mematikan seluruh service lokal
+powershell -ExecutionPolicy Bypass -File .\scripts\stop-all-local.ps1
+```
+
+---
+
+## 🌐 Unified Port & Web Portal Directory
+
+Akses langsung seluruh modul operasional Fledger OS:
+
+| Layanan / Modul | Port Langsung | Path Gateway (:80) | Tanggung Jawab & Web UI |
+|---|---|---|---|
+| **🌐 API Gateway Hub** | `http://localhost:80` | `/` | Central Portal Control Plane & Service Directory |
+| **🟢 Fledger Core** | `http://localhost:8081` | `/core/` | Core Ledger, AR Aging & Reconciler (`/web`) |
+| **🚚 Fledger Fleet** | `http://localhost:8082` | `/fleet/` | Logistik Armada & Digital POD Canvas (`/web`) |
+| **💳 Fledger Pay** | `http://localhost:8083` | `/pay/` | Payment Sandbox VA & QRIS Simulator (`/web`) |
+| **📱 Fledger Force** | `http://localhost:8084` | `/force/` | Sales Force Automation PWA & GPS Check-In (`/web`) |
+| **📦 Fledger Order** | `http://localhost:8085` | `/order/` | B2B OMS & Hard Credit Gate (`/web`) |
+| **🔔 Fledger Dunning** | `http://localhost:8086` | `/dunning/` | AR Dunning WhatsApp & PDF e-Statement (`/web`) |
+
+---
+
+## 🧪 "The Golden FMCG Flow" — Master E2E Ecosystem Test
+
+Untuk menguji integritas siklus hidup distribusi B2B dari hulu ke hilir (Order ➡️ Credit Check Core ➡️ Dispatch Fleet ➡️ Digital POD ➡️ Faktur Bersih ➡️ Dunning 5-Tahap ➡️ Pembayaran QRIS/VA ➡️ Self-Healing Pembatalan ➡️ Jurnal Finansial Seimbang):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\test-ecosystem-e2e.ps1
+```

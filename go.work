@@ -1,0 +1,10 @@
+go 1.26.5
+
+use (
+	./fledger-core
+	./fledger-fleet/src
+	./fledger-pay/src
+	./fledger-force/src
+	./fledger-order/src
+	./fledger-dunning
+)
