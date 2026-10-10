@@ -12,7 +12,8 @@ WORKDIR /app
 COPY src/go.mod src/go.sum ./
 RUN go mod download
 
-COPY src/ .
+COPY src/ ./
+COPY web/ ./web/
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
@@ -28,6 +29,7 @@ USER nonroot:nonroot
 WORKDIR /app
 
 COPY --from=builder /out/api /app/api
+COPY --from=builder /app/web /app/web
 
 EXPOSE 8082
 ENTRYPOINT ["/app/api"]

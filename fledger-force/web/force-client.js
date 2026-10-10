@@ -1,7 +1,8 @@
 // Fledger Force PWA client SDK.
 (function (global) {
   'use strict';
-  const baseURL = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:8084';
+  const subpath = location.pathname.startsWith('/force') ? '/force' : '';
+  const baseURL = (location.origin && location.origin !== 'null') ? (location.origin + subpath) : 'http://localhost:8084';
 
   let savedToken = '';
   try {

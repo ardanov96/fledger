@@ -65,19 +65,22 @@ func run() error {
 	signer := jwt.NewSigner(jwt.StaticSecret{Value: []byte(cfg.JWTSecret)})
 	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWTSecret)})
 
+	serviceJWT := mintServiceJWT(signer, cfg)
 	coreHTTP := coreclient.NewClient(coreclient.Config{
-		BaseURL: cfg.FledgerCoreURL,
+		BaseURL:  cfg.FledgerCoreURL,
 		TenantID: cfg.FledgerTenantID,
-		APIKey: cfg.FledgerCoreAPIKey,
-		Timeout: cfg.OutboxRequestTimeout,
-		Log: logger,
+		APIKey:   cfg.FledgerCoreAPIKey,
+		JWT:      serviceJWT,
+		Timeout:  cfg.OutboxRequestTimeout,
+		Log:      logger,
 	})
 	fleetHTTP := fleetclient.NewClient(fleetclient.Config{
-		BaseURL: cfg.FledgerFleetURL,
+		BaseURL:  cfg.FledgerFleetURL,
 		TenantID: cfg.FledgerTenantID,
-		APIKey: cfg.FledgerCoreAPIKey, // same shared key for fleet
-		Timeout: cfg.OutboxRequestTimeout,
-		Log: logger,
+		APIKey:   cfg.FledgerCoreAPIKey, // same shared key for fleet
+		JWT:      serviceJWT,
+		Timeout:  cfg.OutboxRequestTimeout,
+		Log:      logger,
 	})
 
 	services := usecase.NewServices(usecase.Deps{
@@ -203,8 +206,8 @@ func mintServiceJWT(s *jwt.Signer, cfg *config.Config) string {
 		UserID: "service:fledger-order",
 		Tenant: cfg.FledgerTenantID,
 		Role:   "service",
-		Scopes: []string{"transfer:create", "invoice:pay"},
-	}, 1*time.Hour)
+		Scopes: []string{"transfer:create", "invoice:pay", "delivery-order:create"},
+	}, 24*time.Hour)
 	if err != nil {
 		slog.Default().Warn("mint service JWT failed", "err", err.Error())
 		return ""

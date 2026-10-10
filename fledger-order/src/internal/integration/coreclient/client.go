@@ -37,6 +37,7 @@ type Client struct {
 	baseURL    string
 	tenantID   string
 	apiKey     string
+	jwt        string
 	httpClient *http.Client
 	log        *slog.Logger
 }
@@ -45,6 +46,7 @@ type Config struct {
 	BaseURL  string
 	TenantID string
 	APIKey   string
+	JWT      string
 	Timeout  time.Duration
 	Log      *slog.Logger
 }
@@ -63,6 +65,7 @@ func NewClient(c Config) *Client {
 		baseURL:    c.BaseURL,
 		tenantID:   c.TenantID,
 		apiKey:     c.APIKey,
+		jwt:        c.JWT,
 		httpClient: &http.Client{Timeout: c.Timeout, Transport: transport},
 		log:        c.Log,
 	}
@@ -290,6 +293,9 @@ func (c *Client) setHeadersWithIdem(req *http.Request, idem string) {
 	req.Header.Set("X-Tenant-ID", c.tenantID)
 	if c.apiKey != "" {
 		req.Header.Set("X-API-Key", c.apiKey)
+	}
+	if c.jwt != "" {
+		req.Header.Set("Authorization", "Bearer "+c.jwt)
 	}
 	if idem != "" {
 		req.Header.Set("Idempotency-Key", idem)

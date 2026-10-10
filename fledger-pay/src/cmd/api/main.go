@@ -21,6 +21,7 @@ import (
 	"github.com/fledger/fledger-pay/internal/config"
 	"github.com/fledger/fledger-pay/internal/handler"
 	"github.com/fledger/fledger-pay/internal/integration/coreclient"
+	"github.com/fledger/fledger-pay/internal/integration/dunningclient"
 	"github.com/fledger/fledger-pay/internal/middleware"
 	"github.com/fledger/fledger-pay/internal/platform/httpx"
 	"github.com/fledger/fledger-pay/internal/platform/log"
@@ -70,6 +71,11 @@ func run() error {
 		Timeout:  cfg.OutboxRequestTimeout,
 		Log:      logger,
 	})
+	dunningHTTP := dunningclient.NewClient(
+		cfg.FledgerDunningURL,
+		cfg.WebhookSecret,
+		cfg.FledgerTenantID,
+	)
 
 	services := usecase.NewServices(usecase.Deps{
 		Pool:         pool,
@@ -78,6 +84,7 @@ func run() error {
 		Outbox:       outboxRepo,
 		Audit:        auditRepo,
 		Core:         coreHTTP,
+		Dunning:      dunningHTTP,
 	})
 	services.Settlement.SetLogger(logger)
 

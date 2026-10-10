@@ -1,8 +1,9 @@
-// Fledger Pay Client SDK — minimal fetch wrapper used by the simulator UI.
+// Fledger Pay Client SDK ??? minimal fetch wrapper used by the simulator UI.
 (function (global) {
   'use strict';
 
-  const baseURL = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:8083';
+  const subpath = location.pathname.startsWith('/pay') ? '/pay' : '';
+  const baseURL = (location.origin && location.origin !== 'null') ? (location.origin + subpath) : 'http://localhost:8083';
 
   // Persistent token storage
   let savedToken = '';

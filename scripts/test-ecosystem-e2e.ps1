@@ -1,13 +1,13 @@
 # ==============================================================================
-# FLEDGER OS — "The Golden FMCG Flow" Master E2E Ecosystem Integration Test
+# FLEDGER OS ??? "The Golden FMCG Flow" Master E2E Ecosystem Integration Test
 #
 # Tests the full end-to-end lifecycle across all 6 live microservices:
-#   1. Core (:8081)    — Financial Ledger, AR Aging & Chart of Accounts
-#   2. Fleet (:8082)   — Dispatching, Surat Jalan (DO) & Digital POD
-#   3. Pay (:8083)     — B2B Payment Gateway (VA & QRIS Simulator)
-#   4. Force (:8084)   — Sales Force Automation & Store GPS Geofencing
-#   5. Order (:8085)   — B2B OMS, Stock Reservation & Hard Credit Gate
-#   6. Dunning (:8086) — Automated AR Dunning, Anti-Ban & Self-Healing Loop
+#   1. Core (:8081)    ??? Financial Ledger, AR Aging & Chart of Accounts
+#   2. Fleet (:8082)   ??? Dispatching, Surat Jalan (DO) & Digital POD
+#   3. Pay (:8083)     ??? B2B Payment Gateway (VA & QRIS Simulator)
+#   4. Force (:8084)   ??? Sales Force Automation & Store GPS Geofencing
+#   5. Order (:8085)   ??? B2B OMS, Stock Reservation & Hard Credit Gate
+#   6. Dunning (:8086) ??? Automated AR Dunning, Anti-Ban & Self-Healing Loop
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -62,10 +62,14 @@ $services = @(
 foreach ($svc in $services) {
     try {
         $res = Invoke-RestMethod -Uri $svc.Url -Method GET -TimeoutSec 3
-        if ($res.status -eq "alive" -or $res.status -eq "ok" -or $res.status -eq "success") {
+        # Different services wrap status differently: top-level ("alive") or
+        # nested under .data.status ("alive" inside .data). Handle both.
+        $status = $res.status
+        if ($res.data -and $res.data.status) { $status = $res.data.status }
+        if ($status -eq "alive" -or $status -eq "ok" -or $status -eq "success") {
             Success "$($svc.Name) is healthy ($($svc.Url))"
         } else {
-            Failure "$($svc.Name) reported unhealthy status"
+            Failure "$($svc.Name) reported unhealthy status: $status"
         }
     } catch {
         Failure "$($svc.Name) unreachable at $($svc.Url): $($_.Exception.Message)"
@@ -202,9 +206,9 @@ try {
     $ingestRes = Invoke-RestMethod -Uri "$dunningUrl/v1/dunning/queues/ingest-invoice" -Method POST -Headers $authHeaders -Body $ingestPayload
     $schedules = $ingestRes.data.schedules_created
     if ($schedules.Count -eq 5) {
-        Success "Generated exactly 5 dunning stages for $invoiceId:"
+        Success ("Generated exactly 5 dunning stages for " + $invoiceId + ":")
         foreach ($s in $schedules) {
-            Write-Host "      • $($s.stage) -> $($s.scheduled_at)" -ForegroundColor DarkCyan
+            Write-Host "      ??? $($s.stage) -> $($s.scheduled_at)" -ForegroundColor DarkCyan
         }
     } else {
         Failure "Expected 5 schedules, got $($schedules.Count)"
@@ -235,8 +239,12 @@ $settlementPayload = @{
 
 try {
     $webhookRes = Invoke-RestMethod -Uri "$dunningUrl/v1/dunning/webhooks/pay" -Method POST -Headers $payHeaders -Body $settlementPayload
-    if ($webhookRes.status -eq "success") {
-        Success "Payment settled webhook ingested: $($webhookRes.cancelled_count) dunning reminders cancelled"
+    $whStatus = $webhookRes.status
+    if ($webhookRes.data -and $webhookRes.data.status) { $whStatus = $webhookRes.data.status }
+    if ($whStatus -eq "success") {
+        $cancelled = $webhookRes.cancelled_count
+        if ($cancelled -eq $null) { $cancelled = $webhookRes.data.cancelled_count }
+        Success "Payment settled webhook ingested: $cancelled dunning reminders cancelled"
     } else {
         Failure "Payment settlement reported non-success: $($webhookRes | ConvertTo-Json)"
     }
@@ -251,11 +259,14 @@ Step "8/8" "Verifying Self-Healing Cancellation Integrity"
 
 try {
     $countsRes = Invoke-RestMethod -Uri "$dunningUrl/v1/dunning/outbox/counts" -Method GET -Headers $authHeaders
-    Write-Host "    Current Queue State: Queued=$($countsRes.queued), Sent=$($countsRes.sent), Cancelled=$($countsRes.cancelled)" -ForegroundColor DarkCyan
-    if ($countsRes.cancelled -ge 5) {
+    $cQueued  = $countsRes.queued;  if ($countsRes.data -and $countsRes.data.queued)  { $cQueued  = $countsRes.data.queued }
+    $cSent    = $countsRes.sent;    if ($countsRes.data -and $countsRes.data.sent)    { $cSent    = $countsRes.data.sent }
+    $cCancel  = $countsRes.cancelled; if ($countsRes.data -and $countsRes.data.cancelled) { $cCancel  = $countsRes.data.cancelled }
+    Write-Host "    Current Queue State: Queued=$cQueued, Sent=$cSent, Cancelled=$cCancel" -ForegroundColor DarkCyan
+    if ($cCancel -ge 5) {
         Success "Self-healing loop confirmed: All remaining dunning schedules cancelled upon payment"
     } else {
-        Warn "Cancelled count is $($countsRes.cancelled)"
+        Warn "Cancelled count is $cCancel"
     }
 } catch {
     Failure "Failed to verify queue counts: $($_.Exception.Message)"

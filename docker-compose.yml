@@ -12,6 +12,12 @@
 
 name: fledger-os
 
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   fledger_net:
     driver: bridge
@@ -38,6 +44,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deployments/docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init-databases.sh:ro
+      - ./fledger-core/migrations:/docker-entrypoint-initdb.d/schemas/core:ro
+      - ./fledger-fleet/src/migrations:/docker-entrypoint-initdb.d/schemas/fleet:ro
+      - ./fledger-pay/src/migrations:/docker-entrypoint-initdb.d/schemas/pay:ro
+      - ./fledger-force/src/migrations:/docker-entrypoint-initdb.d/schemas/force:ro
+      - ./fledger-order/src/migrations:/docker-entrypoint-initdb.d/schemas/order:ro
+      - ./fledger-dunning/docs/DATABASE-SCHEMA.sql:/docker-entrypoint-initdb.d/schemas/dunning/000001_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fmcg -d fmcg_wallet"]
       interval: 5s
@@ -45,6 +57,8 @@ services:
       retries: 10
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 1024m
 
   # ----------------------------------------------------------------------------
   # 2. Redis 7 (Caching, Token Bucket Rate-Limiting & Idempotency Locks)
@@ -64,6 +78,8 @@ services:
       retries: 5
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 256m
 
   # ----------------------------------------------------------------------------
   # 3. NATS JetStream (Asynchronous Event-Driven Messaging Backbone)
@@ -80,6 +96,8 @@ services:
       - nats_data:/data
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 256m
 
   # ----------------------------------------------------------------------------
   # 4. Fledger Core (:8081) — Financial Ledger & Settlement Engine
@@ -106,6 +124,8 @@ services:
         condition: service_healthy
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 512m
 
   # ----------------------------------------------------------------------------
   # 5. Fledger Fleet (:8082) — Fleet Logistics, Trip Dispatch & Proof of Delivery
@@ -130,6 +150,8 @@ services:
         condition: service_healthy
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 512m
 
   # ----------------------------------------------------------------------------
   # 6. Fledger Pay (:8083) — B2B Payment Gateway & Auto-Settlement Engine
@@ -156,6 +178,8 @@ services:
         condition: service_healthy
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 512m
 
   # ----------------------------------------------------------------------------
   # 7. Fledger Force (:8084) — Sales Force Automation (SFA) & Anti-Cash Kitting
@@ -180,6 +204,8 @@ services:
         condition: service_healthy
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 512m
 
   # ----------------------------------------------------------------------------
   # 8. Fledger Order (:8085) — B2B OMS, Wholesale Tiers & Hard Credit Gate
@@ -205,6 +231,8 @@ services:
         condition: service_healthy
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 512m
 
   # ----------------------------------------------------------------------------
   # 9. Fledger Dunning (:8086) — AR Dunning Cadence & WhatsApp Engine
@@ -234,6 +262,8 @@ services:
         condition: service_healthy
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 512m
 
   # ----------------------------------------------------------------------------
   # 10. Unified API Gateway (:80) — Reverse Proxy & Ecosystem Control Plane
@@ -256,3 +286,5 @@ services:
       - dunning
     networks:
       - fledger_net
+    logging: *default-logging
+    mem_limit: 128m

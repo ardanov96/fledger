@@ -1,7 +1,8 @@
 // Fledger Order PWA client SDK.
 (function (global) {
   'use strict';
-  const baseURL = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:8085';
+  const subpath = location.pathname.startsWith('/order') ? '/order' : '';
+  const baseURL = (location.origin && location.origin !== 'null') ? (location.origin + subpath) : 'http://localhost:8085';
 
   let savedToken = '';
   try {

@@ -1,7 +1,8 @@
 // Fledger Dunning PWA client SDK.
 (function (global) {
   'use strict';
-  const baseURL = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:8086';
+  const subpath = location.pathname.startsWith('/dunning') ? '/dunning' : '';
+  const baseURL = (location.origin && location.origin !== 'null') ? (location.origin + subpath) : 'http://localhost:8086';
   const TENANT = 'a0000000-0000-0000-0000-000000000001';
 
   function headers(extra) {

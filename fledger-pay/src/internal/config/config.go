@@ -20,6 +20,7 @@ type Config struct {
 	FledgerCoreURL    string
 	FledgerTenantID   string
 	FledgerCoreAPIKey string
+	FledgerDunningURL string
 
 	JWTSecret string
 	TokenTTL  time.Duration
@@ -41,6 +42,7 @@ func Load() (*Config, error) {
 		FledgerCoreURL:        os.Getenv("FLEDGER_CORE_URL"),
 		FledgerTenantID:       os.Getenv("FLEDGER_TENANT_ID"),
 		FledgerCoreAPIKey:     os.Getenv("FLEDGER_CORE_API_KEY"),
+		FledgerDunningURL:     getEnv("FLEDGER_DUNNING_URL", "http://dunning:8086"),
 		JWTSecret:             os.Getenv("JWT_SECRET"),
 		TokenTTL:              getEnvDuration("TOKEN_TTL", 24*time.Hour),
 		WebhookSecret:         os.Getenv("WEBHOOK_SECRET"),

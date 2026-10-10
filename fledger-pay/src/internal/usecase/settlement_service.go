@@ -17,6 +17,7 @@ import (
 	"github.com/fledger/fledger-pay/internal/domain/payment"
 	"github.com/fledger/fledger-pay/internal/domain/transaction"
 	"github.com/fledger/fledger-pay/internal/integration/coreclient"
+	"github.com/fledger/fledger-pay/internal/integration/dunningclient"
 	"github.com/fledger/fledger-pay/internal/repository/postgres"
 )
 
@@ -28,6 +29,7 @@ type SettlementService struct {
 	outbox       *postgres.OutboxRepo
 	audit        *postgres.AuditRepo
 	core         *coreclient.Client
+	dunning      *dunningclient.Client
 	log          *slog.Logger
 }
 
@@ -37,6 +39,7 @@ func NewSettlementService(
 	o *postgres.OutboxRepo,
 	a *postgres.AuditRepo,
 	c *coreclient.Client,
+	d *dunningclient.Client,
 ) *SettlementService {
 	return &SettlementService{
 		payments:     p,
@@ -44,6 +47,7 @@ func NewSettlementService(
 		outbox:       o,
 		audit:        a,
 		core:         c,
+		dunning:      d,
 		log:          slog.Default(),
 	}
 }
@@ -207,6 +211,14 @@ func (s *SettlementService) ProcessCallback(ctx context.Context, in WebhookInput
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Best-effort: notify Fledger Dunning so it can self-heal its queue.
+	// A failure here does NOT block the payment settlement; the dunning
+	// side will still see the webhook if the operator retries, or the
+	// dunning cron will eventually catch up.
+	if s.dunning != nil && pr.FledgerInvoiceID != "" {
+		_ = s.dunning.NotifyPaymentSettled(ctx, pr.FledgerInvoiceID, in.GrossAmount, txRow.ID)
 	}
 
 	// Audit
