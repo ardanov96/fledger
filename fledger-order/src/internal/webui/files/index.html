@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1d4ed8">
+  <title>Fledger Order — B2B Ordering Portal</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🛒</span>
+      <div>
+        <h1>Fledger Order</h1>
+        <small>B2B OMS &amp; Hard Credit Gate</small>
+      </div>
+    </div>
+    <div class="who" id="who">…</div>
+  </header>
+
+  <main class="content">
+    <section class="card">
+      <h2>1. Katalog Produk FMCG</h2>
+      <div class="grid">
+        <label>
+          Kategori
+          <select id="catalog-category">
+            <option value="">Semua</option>
+            <option value="SEMBAKO">Sembako</option>
+            <option value="MIE_INSTAN">Mie Instan</option>
+            <option value="MINUMAN">Minuman</option>
+            <option value="TOILETRIES">Toiletries</option>
+            <option value="ROKOK">Rokok</option>
+          </select>
+        </label>
+        <button id="load-catalog" class="primary">Muat Katalog</button>
+      </div>
+      <div class="catalog" id="catalog"></div>
+    </section>
+
+    <section class="card">
+      <h2>2. Keranjang B2B</h2>
+      <form id="order-form" class="grid">
+        <label>
+          Customer ID (UUID)
+          <input type="text" id="customer_id" required>
+        </label>
+        <label>
+          Nama Toko
+          <input type="text" id="customer_name" value="Toko Sumber Rezeki" required>
+        </label>
+        <label>
+          Tier
+          <select id="customer_tier">
+            <option value="GROSIR">GROSIR</option>
+            <option value="SEMI_GROSIR">SEMI_GROSIR</option>
+            <option value="RETAIL">RETAIL</option>
+            <option value="STAR_OUTLET">STAR_OUTLET</option>
+          </select>
+        </label>
+        <label>
+          No HP Toko
+          <input type="text" id="customer_phone" value="081298765432">
+        </label>
+        <label class="span2">
+          Alamat Pengiriman
+          <input type="text" id="destination_address" value="Jl. Raya Daan Mogot No. 45, Jakarta Barat" required>
+        </label>
+      </form>
+      <div class="cart">
+        <table class="cart-table">
+          <thead>
+            <tr><th>SKU</th><th>Nama</th><th>Qty</th><th>Harga</th><th>Subtotal</th><th></th></tr>
+          </thead>
+          <tbody id="cart-body">
+            <tr><td colspan="6" class="muted">Belum ada item. Klik "Tambah" di katalog.</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><th colspan="4" class="right">Total:</th><th id="cart-total">Rp 0</th><th></th></tr>
+          </tfoot>
+        </table>
+      </div>
+      <button id="submit-order" class="primary">Buat Pesanan (PENDING_CREDIT_CHECK)</button>
+      <div id="order-status" class="status"></div>
+    </section>
+
+    <section class="card" id="credit-card" hidden>
+      <h2>3. Evaluasi Hard Credit Gate</h2>
+      <p>Setelah order dibuat, klik tombol di bawah untuk mengevaluasi otomatis ke <strong>Fledger Core</strong> (plafon + aging).</p>
+      <button id="evaluate-credit" class="primary">Evaluasi Credit Gate</button>
+      <div id="credit-status" class="status"></div>
+
+      <div id="override-block" hidden>
+        <h3>Managerial Override (Finance Manager)</h3>
+        <p>Pesanan di-block oleh Credit Gate. Masukkan PIN otorisasi dan alasan tertulis.</p>
+        <form id="override-form" class="grid">
+          <label>
+            Override PIN
+            <input type="password" id="override_pin" required>
+          </label>
+          <label class="span2">
+            Alasan Override
+            <input type="text" id="override_reason" required>
+          </label>
+          <button type="submit" class="primary">Override &amp; Setujui Order</button>
+        </form>
+        <div id="override-status" class="status"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Outbox → Fledger Fleet</h2>
+      <div id="outbox-counts">Memuat...</div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Fledger Order — Hard Credit Gate + Auto Dispatch.</small>
+  </footer>
+
+  <script src="/web/order-client.js"></script>
+  <script src="/web/app.js"></script>
+</body>
+</html>
