@@ -19,7 +19,7 @@ set "DATABASE_URL=postgres://fmcg:fmcg_dev_password@localhost:5432/fmcg_wallet?s
 set "REDIS_URL=redis://localhost:6379/0"
 set "NATS_URL=nats://localhost:4222"
 set "JWT_SECRET=fledger-super-secure-jwt-secret-key-2026-min-32"
-start /B "C:\Dev\fledger\fledger-core\src\core.exe" > "%LOGDIR%\core.out" 2>&1
+start "" /B "%BASE%\fledger-core\core.exe" > "%LOGDIR%\core.out" 2>&1
 echo Core started
 
 REM 2. Fleet
@@ -28,7 +28,7 @@ set "DATABASE_URL=postgres://fmcg:fmcg_dev_password@localhost:5432/fledger_fleet
 set "FLEDGER_CORE_URL=http://localhost:8081"
 set "FLEDGER_TENANT_ID=a0000000-0000-0000-0000-000000000001"
 set "JWT_SECRET=fledger-super-secure-jwt-secret-key-2026-min-32"
-start /B "C:\Dev\fledger\fledger-fleet\src\fleet.exe" > "%LOGDIR%\fleet.out" 2>&1
+start "" /B "%BASE%\fledger-fleet\src\fleet.exe" > "%LOGDIR%\fleet.out" 2>&1
 echo Fleet started
 
 REM 3. Pay
@@ -39,7 +39,7 @@ set "FLEDGER_DUNNING_URL=http://localhost:8086"
 set "FLEDGER_TENANT_ID=a0000000-0000-0000-0000-000000000001"
 set "JWT_SECRET=fledger-super-secure-jwt-secret-key-2026-min-32"
 set "WEBHOOK_SECRET=dunning-super-secret-key-2026"
-start /B "C:\Dev\fledger\fledger-pay\src\pay.exe" > "%LOGDIR%\pay.out" 2>&1
+start "" /B "%BASE%\fledger-pay\src\pay.exe" > "%LOGDIR%\pay.out" 2>&1
 echo Pay started
 
 REM 4. Force
@@ -48,7 +48,7 @@ set "DATABASE_URL=postgres://fmcg:fmcg_dev_password@localhost:5432/fledger_force
 set "FLEDGER_CORE_URL=http://localhost:8081"
 set "FLEDGER_TENANT_ID=a0000000-0000-0000-0000-000000000001"
 set "JWT_SECRET=fledger-super-secure-jwt-secret-key-2026-min-32"
-start /B "C:\Dev\fledger\fledger-force\src\force.exe" > "%LOGDIR%\force.out" 2>&1
+start "" /B "%BASE%\fledger-force\src\force.exe" > "%LOGDIR%\force.out" 2>&1
 echo Force started
 
 REM 5. Order
@@ -58,7 +58,7 @@ set "FLEDGER_CORE_URL=http://localhost:8081"
 set "FLEDGER_FLEET_URL=http://localhost:8082"
 set "FLEDGER_TENANT_ID=a0000000-0000-0000-0000-000000000001"
 set "JWT_SECRET=fledger-super-secure-jwt-secret-key-2026-min-32"
-start /B "C:\Dev\fledger\fledger-order\src\order.exe" > "%LOGDIR%\order.out" 2>&1
+start "" /B "%BASE%\fledger-order\src\order.exe" > "%LOGDIR%\order.out" 2>&1
 echo Order started
 
 REM 6. Dunning
@@ -72,7 +72,7 @@ set "PAY_WEBHOOK_SECRET=dunning-super-secret-key-2026"
 set "WA_PROVIDER=MOCK"
 set "WA_JITTER_MIN_SECONDS=0"
 set "WA_JITTER_MAX_SECONDS=1"
-start /B "C:\Dev\fledger\fledger-dunning\src\dunning.exe" > "%LOGDIR%\dunning.out" 2>&1
+start "" /B "%BASE%\fledger-dunning\dunning.exe" > "%LOGDIR%\dunning.out" 2>&1
 echo Dunning started
 
 echo.
