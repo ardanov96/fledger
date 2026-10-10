@@ -30,6 +30,7 @@ WORKDIR /app
 
 COPY --from=builder /out/api /app/api
 COPY --from=builder /app/web /app/web
+ENV WEB_DIR=/app/web
 
 EXPOSE 8082
 ENTRYPOINT ["/app/api"]

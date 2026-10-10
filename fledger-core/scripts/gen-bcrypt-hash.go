@@ -1,3 +1,5 @@
+//go:build ignore
+
 // gen-bcrypt-hash.go — one-off helper to generate a bcrypt hash for the demo
 // password. Run with: `go run scripts/gen-bcrypt-hash.go`
 //

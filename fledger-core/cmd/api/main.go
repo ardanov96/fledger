@@ -305,9 +305,9 @@ func run() error {
 		}
 		globalLimiter = middleware.NewMultiTierLimiterWithTierResolver(
 			rateResolver,
-			middleware.Tier{"ip", middleware.NewRateLimiter(gBurst, gRps), middleware.KeyByIP},
-			middleware.Tier{"user", middleware.NewRateLimiter(gBurst, gRps), middleware.KeyByUser},
-			middleware.Tier{"tenant", middleware.NewRateLimiter(gTenantBurst, gTenantRps), middleware.KeyByTenant},
+			middleware.Tier{Name: "ip", Limiter: middleware.NewRateLimiter(gBurst, gRps), KeyFunc: middleware.KeyByIP},
+			middleware.Tier{Name: "user", Limiter: middleware.NewRateLimiter(gBurst, gRps), KeyFunc: middleware.KeyByUser},
+			middleware.Tier{Name: "tenant", Limiter: middleware.NewRateLimiter(gTenantBurst, gTenantRps), KeyFunc: middleware.KeyByTenant},
 		)
 		log.Info("global rate limiter enabled (per-tenant tiers via DB)", "ip_burst", gBurst, "ip_rps", gRps, "tenant_burst", gTenantBurst, "tenant_rps", gTenantRps)
 
@@ -328,9 +328,9 @@ func run() error {
 		}
 		transferLimiter = middleware.NewMultiTierLimiterWithTierResolver(
 			rateResolver,
-			middleware.Tier{"ip", middleware.NewRateLimiter(tBurst, tRps), middleware.KeyByIP},
-			middleware.Tier{"user", middleware.NewRateLimiter(tBurst, tRps), middleware.KeyByUser},
-			middleware.Tier{"tenant", middleware.NewRateLimiter(tTenantBurst, tTenantRps), middleware.KeyByTenant},
+			middleware.Tier{Name: "ip", Limiter: middleware.NewRateLimiter(tBurst, tRps), KeyFunc: middleware.KeyByIP},
+			middleware.Tier{Name: "user", Limiter: middleware.NewRateLimiter(tBurst, tRps), KeyFunc: middleware.KeyByUser},
+			middleware.Tier{Name: "tenant", Limiter: middleware.NewRateLimiter(tTenantBurst, tTenantRps), KeyFunc: middleware.KeyByTenant},
 		)
 		log.Info("transfer rate limiter enabled", "user_burst", tBurst, "user_rps", tRps, "tenant_burst", tTenantBurst, "tenant_rps", tTenantRps)
 	}
