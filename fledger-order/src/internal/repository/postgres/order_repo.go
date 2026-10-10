@@ -200,6 +200,34 @@ func (r *OrderRepo) UpdateStatus(ctx context.Context, tenantID, id string, statu
 	return o, nil
 }
 
+// UpdateStatusTx moves an order to a new status within an active transaction.
+func (r *OrderRepo) UpdateStatusTx(ctx context.Context, tx pgx.Tx, tenantID, id string, status order.Status, extra map[string]any) (order.Order, error) {
+	if !status.Valid() {
+		return order.Order{}, fmt.Errorf("%w: invalid status %q", apperrors.ErrInvalidInput, status)
+	}
+	meta := extra
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	metaJSON, _ := jsonMarshal(meta)
+	cgs := creditGateStatusFromMap(extra)
+	row := tx.QueryRow(ctx, `
+		UPDATE order_orders
+		   SET status=$3, credit_gate_status=COALESCE(NULLIF($4,'')::varchar, credit_gate_status),
+		       credit_check_details=COALESCE($5::jsonb, credit_check_details),
+		       updated_at=NOW()
+		 WHERE tenant_id=$1::uuid AND id=$2::uuid
+		 RETURNING `+orderColumns, tenantID, id, string(status), cgs, metaJSON)
+	o, err := scanOrder(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.Order{}, fmt.Errorf("%w: order %s", apperrors.ErrNotFound, id)
+		}
+		return order.Order{}, err
+	}
+	return o, nil
+}
+
 // creditGateStatusFromMap returns the value of key "credit_gate_status" if set.
 func creditGateStatusFromMap(m map[string]any) string {
 	if m == nil {
@@ -219,6 +247,30 @@ func (r *OrderRepo) ApplyOverride(ctx context.Context, tenantID, id, overrideBy,
 	}
 	detJSON, _ := jsonMarshal(det)
 	row := r.pool.QueryRow(ctx, `
+		UPDATE order_orders
+		   SET status='APPROVED', credit_gate_status='OVERRIDDEN',
+		       override_by=$3, override_reason=$4,
+		       credit_check_details=$5::jsonb, updated_at=NOW()
+		 WHERE tenant_id=$1::uuid AND id=$2::uuid
+		 RETURNING `+orderColumns, tenantID, id, overrideBy, reason, detJSON)
+	o, err := scanOrder(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.Order{}, fmt.Errorf("%w: order %s", apperrors.ErrNotFound, id)
+		}
+		return order.Order{}, err
+	}
+	return o, nil
+}
+
+// ApplyOverrideTx sets override_by, override_reason, status=APPROVED, credit_gate_status=OVERRIDDEN in a transaction.
+func (r *OrderRepo) ApplyOverrideTx(ctx context.Context, tx pgx.Tx, tenantID, id, overrideBy, reason string, details map[string]any) (order.Order, error) {
+	det := details
+	if det == nil {
+		det = map[string]any{}
+	}
+	detJSON, _ := jsonMarshal(det)
+	row := tx.QueryRow(ctx, `
 		UPDATE order_orders
 		   SET status='APPROVED', credit_gate_status='OVERRIDDEN',
 		       override_by=$3, override_reason=$4,

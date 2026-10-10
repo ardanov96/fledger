@@ -162,6 +162,7 @@ func run() error {
 			r.Get("/order/orders/{id}", handlers.GetOrder)
 			r.Post("/order/orders/{id}/evaluate-credit", handlers.EvaluateCredit)
 			r.Post("/order/orders/{id}/override-credit", handlers.OverrideCredit)
+			r.Post("/order/orders/{id}/dispatch-fleet", handlers.DispatchFleet)
 			r.Post("/order/orders/{id}/cancel", handlers.CancelOrder)
 			r.Get("/order/outbox/counts", handlers.OutboxCounts)
 		})

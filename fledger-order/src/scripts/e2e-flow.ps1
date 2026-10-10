@@ -156,6 +156,20 @@ try {
     FailMsg "PWA error: $($_.Exception.Message)"
 }
 
+# 10. Manual dispatch fleet endpoint test.
+Step "Manual dispatch fleet endpoint"
+try {
+    $disp = Invoke-RestMethod -Method POST -Uri "$BaseUrl/v1/order/orders/$orderId/dispatch-fleet" -Headers $authHdr
+    OkMsg "manual dispatch responded: $($disp.order_status)"
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 409 -or $code -eq 503) {
+        OkMsg "dispatch correctly handled with status $code"
+    } else {
+        FailMsg "unexpected dispatch status: $code"
+    }
+}
+
 Write-Host ""
 $line = "================================================"
 if ($script:exitcode -eq 0) {

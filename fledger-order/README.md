@@ -130,6 +130,7 @@ fledger-order/
 | Override: bad PIN rejected (401) | same | ✅ PASS |
 | Stock reservation: insufficient stock rejected | same | ✅ PASS |
 | Order number format `ORD-YYYYMM-XXXXX` | same | ✅ PASS |
+| Manual Dispatch to Fleet: `POST /dispatch-fleet` | same | ✅ PASS |
 | E2E (live HTTP) | `scripts/e2e-flow.ps1` | ✅ PASS |
 
 ```
@@ -145,7 +146,7 @@ fledger-order/
 - ✅ **Stock reservation atomic**: `UPDATE ... WHERE available >= qty` — no overselling.
 - ✅ **Hard Credit Gate 2-rule**: plafond + aging > 30d.
 - ✅ **Managerial override**: PIN-protected, audit-trail recorded.
-- ✅ **Outbox transaksional**: order header + outbox event written together.
+- ✅ **Outbox transaksional**: order header + outbox event written together inside `pgx.Tx`.
 - ✅ **Idempotency-Key**: `Idempotency-Key: <order_id>` ke Fleet → no double DO.
 - ✅ **CORS terbuka**: `cors.AllowAllOrigins` mounted at root.
 - ✅ **Zero secret hardcoding**: all keys from env.
@@ -158,7 +159,8 @@ fledger-order/
 
 ```
 GET /v1/customers/{id}/ar-summary
-GET /v1/customers/{id}/credit-limit
+GET /v1/customers/{id}/aging
+GET /v1/invoices?customer_id={id}&status=ISSUED
 ```
 
 ### Ke Fledger Fleet (`:8082`) — Dispatching Bridge
@@ -169,12 +171,18 @@ Idempotency-Key: <order_id>
 
 {
   "do_number": "DO-202610-00812",
+  "customer_id": "cccccccc-0001-0000-0000-000000000001",
   "customer_name": "Toko Sumber Rezeki",
   "destination_address": "Jl. Raya Daan Mogot No. 45",
   "total_nominal": 4000000,
   "total_weight_kg": 320,
   "items": [
-    {"sku_id": "SKU-OIL-001", "name": "...", "quantity": 10, "unit_price": 120000}
+    {
+      "product_sku": "SKU-OIL-001",
+      "product_name": "Minyak Goreng Bimoli 2L (Dus)",
+      "qty_ordered": 10,
+      "unit_price_cents": 120000
+    }
   ]
 }
 ```

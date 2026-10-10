@@ -110,7 +110,11 @@ func (c *Client) fallbackARSummary(ctx context.Context, customerID string) (*ARS
 	var overdueInvoiceID string
 	now := time.Now().UTC()
 	for _, inv := range invoices {
-		total += inv.OutstandingMinor
+		val := inv.OutstandingMinor
+		if val == 0 {
+			val = inv.AmountMinor
+		}
+		total += val
 		if inv.DueDate == "" {
 			continue
 		}
@@ -127,6 +131,14 @@ func (c *Client) fallbackARSummary(ctx context.Context, customerID string) (*ARS
 			overdueInvoiceID = inv.ID
 		}
 	}
+	if aging30d, days, err := c.checkCustomerAging(ctx, customerID); err == nil {
+		if aging30d {
+			overdue30 = true
+			if days > oldestOverdue {
+				oldestOverdue = days
+			}
+		}
+	}
 	limit, _ := c.creditLimit(ctx, customerID)
 	return &ARSummary{
 		CustomerID:         customerID,
@@ -140,7 +152,8 @@ func (c *Client) fallbackARSummary(ctx context.Context, customerID string) (*ARS
 
 type coreInvoice struct {
 	ID               string `json:"id"`
-	OutstandingMinor int64  `json:"amount_minor"`
+	AmountMinor      int64  `json:"amount_minor"`
+	OutstandingMinor int64  `json:"outstanding_minor"`
 	Status           string `json:"status"`
 	DueDate          string `json:"due_date"`
 }
@@ -173,6 +186,49 @@ func (c *Client) listOpenInvoices(ctx context.Context, customerID string) ([]cor
 		return nil, fmt.Errorf("decode invoices: %w (raw=%s)", err, string(raw))
 	}
 	return out.Data, nil
+}
+
+type coreAgingBucket struct {
+	Bucket           string `json:"bucket"`
+	Count            int    `json:"count"`
+	OutstandingMinor int64  `json:"outstanding_minor"`
+}
+
+func (c *Client) checkCustomerAging(ctx context.Context, customerID string) (bool, int, error) {
+	url := c.baseURL + "/v1/customers/" + customerID + "/aging"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, 0, err
+	}
+	c.setHeaders(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return false, 0, fmt.Errorf("aging status %d", resp.StatusCode)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	var buckets []coreAgingBucket
+	if err := json.Unmarshal(raw, &buckets); err != nil {
+		return false, 0, err
+	}
+	hasOverdue30d := false
+	oldestDays := 0
+	for _, b := range buckets {
+		if (b.Bucket == "d_31_60" || b.Bucket == "d_61_90" || b.Bucket == "d_90_plus") && (b.Count > 0 || b.OutstandingMinor > 0) {
+			hasOverdue30d = true
+			if b.Bucket == "d_90_plus" && oldestDays < 90 {
+				oldestDays = 91
+			} else if b.Bucket == "d_61_90" && oldestDays < 60 {
+				oldestDays = 61
+			} else if b.Bucket == "d_31_60" && oldestDays < 30 {
+				oldestDays = 31
+			}
+		}
+	}
+	return hasOverdue30d, oldestDays, nil
 }
 
 func (c *Client) creditLimit(ctx context.Context, customerID string) (int64, error) {

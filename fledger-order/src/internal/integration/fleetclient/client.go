@@ -17,21 +17,26 @@ import (
 
 // DeliveryOrderInput is the shape we POST to Fleet.
 type DeliveryOrderInput struct {
-	DoNumber           string        `json:"do_number"`
-	CustomerName       string        `json:"customer_name"`
-	DestinationAddress string        `json:"destination_address"`
-	CustomerPhone      string        `json:"customer_phone,omitempty"`
-	TotalNominal       int64         `json:"total_nominal"`
-	TotalWeightKg      int           `json:"total_weight_kg"`
+	DoNumber           string         `json:"do_number"`
+	CustomerID         string         `json:"customer_id"`
+	CustomerName       string         `json:"customer_name"`
+	DestinationAddress string         `json:"destination_address"`
+	CustomerPhone      string         `json:"customer_phone,omitempty"`
+	TotalNominal       int64          `json:"total_nominal,omitempty"`
+	TotalWeightKg      int            `json:"total_weight_kg,omitempty"`
 	Items              []DeliveryItem `json:"items"`
 }
 
 // DeliveryItem is one SKU on a delivery order.
 type DeliveryItem struct {
-	SkuID     string `json:"sku_id"`
-	Name      string `json:"name"`
-	Quantity  int    `json:"quantity"`
-	UnitPrice int64  `json:"unit_price"`
+	ProductSKU     string `json:"product_sku"`
+	ProductName    string `json:"product_name"`
+	QtyOrdered     int    `json:"qty_ordered"`
+	UnitPriceCents int64  `json:"unit_price_cents"`
+	SkuID          string `json:"sku_id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Quantity       int    `json:"quantity,omitempty"`
+	UnitPrice      int64  `json:"unit_price,omitempty"`
 }
 
 // DeliveryOrderResponse is the Fleet response.

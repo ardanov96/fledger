@@ -29,13 +29,14 @@ const testTenant = "00000000-0000-0000-0000-000000000001"
 
 // rig bundles the wired-up services and a stub for Fledger Core + Fleet.
 type rig struct {
-	Pool      *pgxpool.Pool
-	Services  *usecase.Services
-	CoreSrv   *httptest.Server
-	FleetSrv  *httptest.Server
-	mu        sync.Mutex
-	arSummary coreclient.ARSummary
-	fleetDO   fleetclient.DeliveryOrderResponse
+	Pool             *pgxpool.Pool
+	Services         *usecase.Services
+	CoreSrv          *httptest.Server
+	FleetSrv         *httptest.Server
+	mu               sync.Mutex
+	arSummary        coreclient.ARSummary
+	fleetDO          fleetclient.DeliveryOrderResponse
+	lastFleetPayload map[string]any
 }
 
 func setup(t *testing.T) *rig {
@@ -102,6 +103,9 @@ func setup(t *testing.T) *rig {
 	r.FleetSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Connection", "close")
 		if req.Method == "POST" && req.URL.Path == "/v1/fleet/delivery-orders" {
+			r.mu.Lock()
+			_ = json.NewDecoder(req.Body).Decode(&r.lastFleetPayload)
+			r.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(r.fleetDO)
@@ -204,6 +208,19 @@ func TestHappyPath_CreateOrder_EvaluatePass_DispatchFleet(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "DISPATCHED_TO_FLEET", string(final.Status))
 	assert.Equal(t, r.fleetDO.ID, final.FledgerFleetDOID)
+
+	// Verify Fleet received correct payload including customer_id and aligned items
+	r.mu.Lock()
+	payload := r.lastFleetPayload
+	r.mu.Unlock()
+	assert.Equal(t, custID, payload["customer_id"])
+	assert.Equal(t, "Toko Sumber Rezeki", payload["customer_name"])
+	itemsRaw, _ := payload["items"].([]any)
+	require.NotEmpty(t, itemsRaw)
+	firstItem := itemsRaw[0].(map[string]any)
+	assert.Equal(t, "SKU-OIL-001", firstItem["product_sku"])
+	assert.EqualValues(t, 10, firstItem["qty_ordered"])
+	assert.EqualValues(t, 115000, firstItem["unit_price_cents"])
 }
 
 func TestCreditGate_Overdue_Blocks(t *testing.T) {
@@ -343,6 +360,45 @@ func TestGenerateOrderNumberFormat(t *testing.T) {
 	if len(n) < 14 || n[:4] != "ORD-" {
 		t.Fatalf("bad format: %s", n)
 	}
+}
+
+func TestDispatchFleet_ManualEndpoint(t *testing.T) {
+	r := setup(t)
+	prodID, _ := mustProduct(t, r, "SKU-DISP-01", "Bimoli 2L", 12000)
+	mustPricing(t, r, prodID, "GROSIR", 1, 120_000)
+	mustStock(t, r, prodID, 20)
+
+	custID := "cccccccc-0001-0000-0000-000000000001"
+	created, err := r.Services.Order.Create(context.Background(), usecase.CreateInput{
+		TenantID:           testTenant,
+		CustomerID:         custID,
+		CustomerName:       "Toko Berkah",
+		CustomerTier:       pricing.Tier("GROSIR"),
+		DestinationAddress: "Jl. Sudirman 10",
+		Items:              []usecase.CreateInputItem{{ProductID: prodID, Quantity: 2}},
+		ActorID:            "test", IPAddress: "127.0.0.1",
+	})
+	require.NoError(t, err)
+
+	// Direct dispatch before approval should fail with conflict
+	_, err = r.Services.Order.DispatchFleet(context.Background(), usecase.DispatchInput{
+		TenantID: testTenant, OrderID: created.Order.ID, ActorID: "dispatcher", IPAddress: "127.0.0.1",
+	})
+	require.Error(t, err)
+
+	// Evaluate credit so it becomes APPROVED
+	_, err = r.Services.Order.EvaluateCredit(context.Background(), usecase.EvaluateInput{
+		TenantID: testTenant, OrderID: created.Order.ID, ActorID: "test", IPAddress: "127.0.0.1",
+	})
+	require.NoError(t, err)
+
+	// Now manual dispatch should succeed
+	disp, err := r.Services.Order.DispatchFleet(context.Background(), usecase.DispatchInput{
+		TenantID: testTenant, OrderID: created.Order.ID, ActorID: "dispatcher", IPAddress: "127.0.0.1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "DISPATCHED_TO_FLEET", string(disp.OrderStatus))
+	assert.Equal(t, r.fleetDO.ID, disp.FledgerFleetDOID)
 }
 
 // _ = fmt to keep import in scope

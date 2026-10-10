@@ -360,6 +360,26 @@ func (h *Handlers) OverrideCredit(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, o)
 }
 
+// DispatchFleet — POST /v1/order/orders/{id}/dispatch-fleet
+func (h *Handlers) DispatchFleet(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(id); err != nil {
+		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
+		return
+	}
+	res, err := h.Order.DispatchFleet(r.Context(), usecase.DispatchInput{
+		TenantID:  tenantFrom(r),
+		OrderID:   id,
+		ActorID:   actorIDFrom(r),
+		IPAddress: clientIP(r),
+	})
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
+}
+
 func (h *Handlers) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {

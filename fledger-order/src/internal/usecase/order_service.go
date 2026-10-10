@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	apperrors "github.com/fledger/fledger-order/internal/platform/errors"
 	"github.com/fledger/fledger-order/internal/domain/audit"
@@ -34,6 +35,7 @@ import (
 
 // OrderService is the central orchestrator.
 type OrderService struct {
+	pool       *pgxpool.Pool
 	orders     *postgres.OrderRepo
 	products   *postgres.ProductRepo
 	prices     *postgres.PricingRepo
@@ -48,13 +50,14 @@ type OrderService struct {
 }
 
 func NewOrderService(
+	pool *pgxpool.Pool,
 	orders *postgres.OrderRepo, products *postgres.ProductRepo, prices *postgres.PricingRepo,
 	inv *postgres.InventoryRepo, ob *postgres.OutboxRepo, audit *postgres.AuditRepo,
 	core *coreclient.Client, fleet *fleetclient.Client, evaluator *credit.Evaluator,
 	overridePIN string,
 ) *OrderService {
 	return &OrderService{
-		orders: orders, products: products, prices: prices, inventory: inv, outbox: ob, audit: audit,
+		pool: pool, orders: orders, products: products, prices: prices, inventory: inv, outbox: ob, audit: audit,
 		core: core, fleet: fleet, evaluator: evaluator, overridePIN: overridePIN,
 		log: slog.Default(),
 	}
@@ -262,16 +265,6 @@ func (s *OrderService) EvaluateCredit(ctx context.Context, in EvaluateInput) (*E
 		cgs = creditGateFromDecision(decision)
 	}
 
-	_, err = s.orders.UpdateStatus(ctx, in.TenantID, in.OrderID, newStatus, map[string]any{
-		"credit_gate_status": string(cgs),
-		"evaluation":         decision,
-		"evaluated_at":       time.Now().UTC().Format(time.RFC3339),
-		"actor_id":           in.ActorID,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	action := audit.ActionCreditBlocked
 	if decision.Pass {
 		action = audit.ActionCreditPassed
@@ -287,32 +280,84 @@ func (s *OrderService) EvaluateCredit(ctx context.Context, in EvaluateInput) (*E
 		IPAddress:    in.IPAddress,
 	})
 
-	// If approved, enqueue the dispatch outbox event (Sprint 4).
 	if decision.Pass {
 		items, err := s.orders.ListItems(ctx, o.ID)
 		if err != nil {
 			return nil, err
 		}
-		ob, err := s.outbox.Append(ctx, outbox.Event{
-			TenantID:    in.TenantID,
-			EventType:   outbox.EventDispatchedFleet,
-			AggregateID: o.ID,
-			Payload: map[string]any{
-				"order_id":             o.ID,
-				"order_number":         o.OrderNumber,
-				"customer_id":          o.CustomerID,
-				"customer_name":        o.CustomerName,
-				"destination_address":  o.DestinationAddress,
-				"total_nominal":        o.TotalAmount,
-				"total_weight_kg":      o.TotalWeightKg,
-				"items":                orderItemsForFleet(items),
-				"idempotency_key":      o.ID,
-			},
+
+		obPayload := map[string]any{
+			"order_id":             o.ID,
+			"order_number":         o.OrderNumber,
+			"customer_id":          o.CustomerID,
+			"customer_name":        o.CustomerName,
+			"destination_address":  o.DestinationAddress,
+			"total_nominal":        o.TotalAmount,
+			"total_weight_kg":      o.TotalWeightKg,
+			"items":                orderItemsForFleet(items),
+			"idempotency_key":      o.ID,
+		}
+
+		if s.pool != nil {
+			tx, err := s.pool.Begin(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("begin evaluate tx: %w", err)
+			}
+			defer func() { _ = tx.Rollback(ctx) }()
+
+			_, err = s.orders.UpdateStatusTx(ctx, tx, in.TenantID, in.OrderID, newStatus, map[string]any{
+				"credit_gate_status": string(cgs),
+				"evaluation":         decision,
+				"evaluated_at":       time.Now().UTC().Format(time.RFC3339),
+				"actor_id":           in.ActorID,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = s.outbox.AppendTx(ctx, tx, outbox.Event{
+				TenantID:    in.TenantID,
+				EventType:   outbox.EventDispatchedFleet,
+				AggregateID: o.ID,
+				Payload:     obPayload,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			if err := tx.Commit(ctx); err != nil {
+				return nil, fmt.Errorf("commit evaluate tx: %w", err)
+			}
+		} else {
+			_, err = s.orders.UpdateStatus(ctx, in.TenantID, in.OrderID, newStatus, map[string]any{
+				"credit_gate_status": string(cgs),
+				"evaluation":         decision,
+				"evaluated_at":       time.Now().UTC().Format(time.RFC3339),
+				"actor_id":           in.ActorID,
+			})
+			if err != nil {
+				return nil, err
+			}
+			_, err = s.outbox.Append(ctx, outbox.Event{
+				TenantID:    in.TenantID,
+				EventType:   outbox.EventDispatchedFleet,
+				AggregateID: o.ID,
+				Payload:     obPayload,
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		_, err = s.orders.UpdateStatus(ctx, in.TenantID, in.OrderID, newStatus, map[string]any{
+			"credit_gate_status": string(cgs),
+			"evaluation":         decision,
+			"evaluated_at":       time.Now().UTC().Format(time.RFC3339),
+			"actor_id":           in.ActorID,
 		})
 		if err != nil {
 			return nil, err
 		}
-		_ = ob
 	}
 
 	return &EvaluateResult{
@@ -359,13 +404,73 @@ func (s *OrderService) OverrideCredit(ctx context.Context, in OverrideInput) (*o
 		return nil, fmt.Errorf("%w: order is not CREDIT_BLOCKED (current=%s)",
 			apperrors.ErrConflict, o.Status)
 	}
-	updated, err := s.orders.ApplyOverride(ctx, in.TenantID, in.OrderID, in.ActorID, in.Reason, map[string]any{
-		"override_reason": in.Reason,
-		"override_at":     time.Now().UTC().Format(time.RFC3339),
-	})
+	items, err := s.orders.ListItems(ctx, o.ID)
 	if err != nil {
 		return nil, err
 	}
+	obPayload := map[string]any{
+		"order_id":            o.ID,
+		"order_number":        o.OrderNumber,
+		"customer_id":         o.CustomerID,
+		"customer_name":       o.CustomerName,
+		"destination_address": o.DestinationAddress,
+		"total_nominal":       o.TotalAmount,
+		"total_weight_kg":     o.TotalWeightKg,
+		"items":               orderItemsForFleet(items),
+		"idempotency_key":     o.ID,
+	}
+
+	var updated order.Order
+	if s.pool != nil {
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin override tx: %w", err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		u, err := s.orders.ApplyOverrideTx(ctx, tx, in.TenantID, in.OrderID, in.ActorID, in.Reason, map[string]any{
+			"override_reason": in.Reason,
+			"override_at":     time.Now().UTC().Format(time.RFC3339),
+		})
+		if err != nil {
+			return nil, err
+		}
+		updated = u
+
+		_, err = s.outbox.AppendTx(ctx, tx, outbox.Event{
+			TenantID:    in.TenantID,
+			EventType:   outbox.EventDispatchedFleet,
+			AggregateID: o.ID,
+			Payload:     obPayload,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit override tx: %w", err)
+		}
+	} else {
+		u, err := s.orders.ApplyOverride(ctx, in.TenantID, in.OrderID, in.ActorID, in.Reason, map[string]any{
+			"override_reason": in.Reason,
+			"override_at":     time.Now().UTC().Format(time.RFC3339),
+		})
+		if err != nil {
+			return nil, err
+		}
+		updated = u
+
+		_, err = s.outbox.Append(ctx, outbox.Event{
+			TenantID:    in.TenantID,
+			EventType:   outbox.EventDispatchedFleet,
+			AggregateID: o.ID,
+			Payload:     obPayload,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	_ = s.audit.Append(ctx, audit.Log{
 		TenantID:     in.TenantID,
 		ActorID:      in.ActorID,
@@ -381,30 +486,6 @@ func (s *OrderService) OverrideCredit(ctx context.Context, in OverrideInput) (*o
 		IPAddress: in.IPAddress,
 	})
 
-	// Enqueue dispatch after override.
-	items, err := s.orders.ListItems(ctx, o.ID)
-	if err != nil {
-		return nil, err
-	}
-	_, err = s.outbox.Append(ctx, outbox.Event{
-		TenantID:    in.TenantID,
-		EventType:   outbox.EventDispatchedFleet,
-		AggregateID: o.ID,
-		Payload: map[string]any{
-			"order_id":            o.ID,
-			"order_number":        o.OrderNumber,
-			"customer_id":         o.CustomerID,
-			"customer_name":       o.CustomerName,
-			"destination_address": o.DestinationAddress,
-			"total_nominal":       o.TotalAmount,
-			"total_weight_kg":     o.TotalWeightKg,
-			"items":               orderItemsForFleet(items),
-			"idempotency_key":     o.ID,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
 	return &updated, nil
 }
 
@@ -465,15 +546,116 @@ func (s *OrderService) Cancel(ctx context.Context, in CancelInput) (*order.Order
 	return &updated, nil
 }
 
+// DispatchInput bundles input for POST /v1/order/orders/:id/dispatch-fleet.
+type DispatchInput struct {
+	TenantID  string
+	OrderID   string
+	ActorID   string
+	IPAddress string
+}
+
+type DispatchResult struct {
+	OrderID          string       `json:"order_id"`
+	OrderStatus      order.Status `json:"order_status"`
+	FledgerFleetDOID string       `json:"fledger_fleet_do_id"`
+	FleetDONumber    string       `json:"fleet_do_number"`
+	DispatchedAt     string       `json:"dispatched_at"`
+}
+
+// DispatchFleet manually dispatches an APPROVED order to Fledger Fleet.
+func (s *OrderService) DispatchFleet(ctx context.Context, in DispatchInput) (*DispatchResult, error) {
+	if _, err := uuid.Parse(in.OrderID); err != nil {
+		return nil, fmt.Errorf("%w: invalid order id", apperrors.ErrInvalidInput)
+	}
+	o, items, err := s.Get(ctx, in.TenantID, in.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if o.Status == order.StatusDispatchedToFleet {
+		return &DispatchResult{
+			OrderID:          o.ID,
+			OrderStatus:      o.Status,
+			FledgerFleetDOID: o.FledgerFleetDOID,
+			FleetDONumber:    o.OrderNumber,
+			DispatchedAt:     time.Now().UTC().Format(time.RFC3339),
+		}, nil
+	}
+	if o.Status != order.StatusApproved {
+		return nil, fmt.Errorf("%w: order is not APPROVED (current=%s)", apperrors.ErrConflict, o.Status)
+	}
+
+	fleetItems := make([]fleetclient.DeliveryItem, 0, len(items))
+	for _, it := range items {
+		fleetItems = append(fleetItems, fleetclient.DeliveryItem{
+			ProductSKU:     it.SKU,
+			ProductName:    it.Name,
+			QtyOrdered:     it.Quantity,
+			UnitPriceCents: it.UnitPrice,
+			SkuID:          it.SKU,
+			Name:           it.Name,
+			Quantity:       it.Quantity,
+			UnitPrice:      it.UnitPrice,
+		})
+	}
+	doIn := fleetclient.DeliveryOrderInput{
+		DoNumber:           o.OrderNumber,
+		CustomerID:         o.CustomerID,
+		CustomerName:       o.CustomerName,
+		DestinationAddress: o.DestinationAddress,
+		CustomerPhone:      o.CustomerPhone,
+		TotalNominal:       o.TotalAmount,
+		TotalWeightKg:      o.TotalWeightKg,
+		Items:              fleetItems,
+	}
+
+	resp, err := s.fleet.CreateDeliveryOrder(ctx, doIn, o.ID)
+	if err != nil {
+		return nil, fmt.Errorf("dispatch to fleet: %w", err)
+	}
+
+	updated, err := s.orders.SetFleetDOID(ctx, in.TenantID, o.ID, resp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("set fleet DOID: %w", err)
+	}
+
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	_ = s.audit.Append(ctx, audit.Log{
+		TenantID:     in.TenantID,
+		ActorID:      in.ActorID,
+		ActorRole:    "dispatcher",
+		Action:       audit.ActionDispatchedFleet,
+		ResourceType: "order",
+		ResourceID:   uuidFromString(o.ID),
+		Details: map[string]any{
+			"fleet_do_id":     resp.ID,
+			"fleet_do_number": resp.DoNumber,
+			"dispatched_by":   in.ActorID,
+		},
+		IPAddress: in.IPAddress,
+	})
+
+	return &DispatchResult{
+		OrderID:          updated.ID,
+		OrderStatus:      updated.Status,
+		FledgerFleetDOID: resp.ID,
+		FleetDONumber:    resp.DoNumber,
+		DispatchedAt:     nowStr,
+	}, nil
+}
+
 // orderItemsForFleet converts order.Item into the fleet payload shape.
 func orderItemsForFleet(items []order.Item) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for _, it := range items {
 		out = append(out, map[string]any{
-			"sku_id":    it.SKU,
-			"name":      it.Name,
-			"quantity":  it.Quantity,
-			"unit_price": it.UnitPrice,
+			"product_sku":      it.SKU,
+			"product_name":     it.Name,
+			"qty_ordered":      it.Quantity,
+			"unit_price_cents": it.UnitPrice,
+			"sku_id":           it.SKU,
+			"name":             it.Name,
+			"quantity":         it.Quantity,
+			"unit_price":       it.UnitPrice,
 		})
 	}
 	return out
@@ -518,6 +700,7 @@ func (s *OrderService) dispatchOne(ctx context.Context, e outbox.Event, maxAttem
 		return errors.New("missing order_id")
 	}
 	idem, _ := e.Payload["idempotency_key"].(string)
+	customerID, _ := e.Payload["customer_id"].(string)
 	customerName, _ := e.Payload["customer_name"].(string)
 	destAddr, _ := e.Payload["destination_address"].(string)
 	totalNom, _ := numericField(e.Payload, "total_nominal")
@@ -529,19 +712,38 @@ func (s *OrderService) dispatchOne(ctx context.Context, e outbox.Event, maxAttem
 		if m == nil {
 			continue
 		}
-		qty, _ := numericField(m, "quantity")
-		up, _ := numericField(m, "unit_price")
+		qty, _ := numericField(m, "qty_ordered")
+		if qty == 0 {
+			qty, _ = numericField(m, "quantity")
+		}
+		up, _ := numericField(m, "unit_price_cents")
+		if up == 0 {
+			up, _ = numericField(m, "unit_price")
+		}
+		sku := stringField(m, "product_sku")
+		if sku == "" {
+			sku = stringField(m, "sku_id")
+		}
+		name := stringField(m, "product_name")
+		if name == "" {
+			name = stringField(m, "name")
+		}
 		items = append(items, fleetclient.DeliveryItem{
-			SkuID:     stringField(m, "sku_id"),
-			Name:      stringField(m, "name"),
-			Quantity:  int(qty),
-			UnitPrice: up,
+			ProductSKU:     sku,
+			ProductName:    name,
+			QtyOrdered:     int(qty),
+			UnitPriceCents: up,
+			SkuID:          sku,
+			Name:           name,
+			Quantity:       int(qty),
+			UnitPrice:      up,
 		})
 	}
 	weightKg, _ := numericField(e.Payload, "total_weight_kg")
 
 	doIn := fleetclient.DeliveryOrderInput{
 		DoNumber:           stringField(e.Payload, "order_number"),
+		CustomerID:         customerID,
 		CustomerName:       customerName,
 		DestinationAddress: destAddr,
 		TotalNominal:       totalNom,

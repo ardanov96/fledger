@@ -39,7 +39,7 @@ func NewServices(d Deps) *Services {
 		Pricing: NewPricingService(d.Prices),
 		Inv:     NewInventoryService(d.Inventory),
 		Order: NewOrderService(
-			d.Orders, d.Products, d.Prices, d.Inventory, d.Outbox, d.Audit,
+			d.Pool, d.Orders, d.Products, d.Prices, d.Inventory, d.Outbox, d.Audit,
 			d.Core, d.Fleet, evaluator, d.OverridePIN,
 		),
 	}
