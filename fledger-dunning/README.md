@@ -24,6 +24,7 @@
 ---
 
 ## 📚 Berkas Dokumentasi & Spesifikasi
+- 🤖 **[AI-AGENT-PROMPT.md](docs/AI-AGENT-PROMPT.md)**: Master prompt siap salin (*copy-paste*) untuk menginstruksikan AI Coding Agent memulai eksekusi.
 - 📄 **[AGENT-EXECUTION-BRIEF.md](docs/AGENT-EXECUTION-BRIEF.md)**: Blueprint teknis dan manual eksekusi lengkap untuk AI Coding Agent.
 - 🗄️ **[DATABASE-SCHEMA.sql](docs/DATABASE-SCHEMA.sql)**: Skema DDL PostgreSQL 16 (konfigurasi, kontak toko, antrian dunning, rekening koran bulanan, log pesan).
 - 🌐 **[API-SPECIFICATION.md](docs/API-SPECIFICATION.md)**: Spesifikasi REST API lengkap (Port `:8086`) dan format template pesan WhatsApp.
