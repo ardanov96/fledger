@@ -1,13 +1,15 @@
 @echo off
 set BASE=C:\Dev\fledger
-set OUT=%TEMP%\fledger-binaries
+set OUT=%BASE%\.gobuild\bin
+set GOCACHE=%BASE%\.gobuild\gocache
+set GOTMPDIR=%BASE%\.gobuild\gotmp
 if not exist "%OUT%" mkdir "%OUT%"
+if not exist "%GOCACHE%" mkdir "%GOCACHE%"
+if not exist "%GOTMPDIR%" mkdir "%GOTMPDIR%"
 
 echo Building all 6 binaries...
 
 set GOFLAGS=-trimpath -ldflags=-s -w
-set GOCACHE=%TEMP%\fledger-gocache
-set GOTMPDIR=%TEMP%\fledger-gotmp
 
 cd /d "%BASE%\fledger-core"
 go build -o "%OUT%\core.exe" ./cmd/api

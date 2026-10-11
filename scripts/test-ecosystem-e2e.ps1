@@ -1,13 +1,13 @@
 # ==============================================================================
-# FLEDGER OS ??? "The Golden FMCG Flow" Master E2E Ecosystem Integration Test
+# FLEDGER OS - "The Golden FMCG Flow" Master E2E Ecosystem Integration Test
 #
 # Tests the full end-to-end lifecycle across all 6 live microservices:
-#   1. Core (:8081)    ??? Financial Ledger, AR Aging & Chart of Accounts
-#   2. Fleet (:8082)   ??? Dispatching, Surat Jalan (DO) & Digital POD
-#   3. Pay (:8083)     ??? B2B Payment Gateway (VA & QRIS Simulator)
-#   4. Force (:8084)   ??? Sales Force Automation & Store GPS Geofencing
-#   5. Order (:8085)   ??? B2B OMS, Stock Reservation & Hard Credit Gate
-#   6. Dunning (:8086) ??? Automated AR Dunning, Anti-Ban & Self-Healing Loop
+#   1. Core (:8081)    - Financial Ledger, AR Aging & Chart of Accounts
+#   2. Fleet (:8082)   - Dispatching, Surat Jalan (DO) & Digital POD
+#   3. Pay (:8083)     - B2B Payment Gateway (VA & QRIS Simulator)
+#   4. Force (:8084)   - Sales Force Automation & Store GPS Geofencing
+#   5. Order (:8085)   - B2B OMS, Stock Reservation & Hard Credit Gate
+#   6. Dunning (:8086) - Automated AR Dunning, Anti-Ban & Self-Healing Loop
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -107,8 +107,9 @@ try {
 # ------------------------------------------------------------------------------
 Step "3/8" "Setting up Store & Wholesale Catalog in Fledger Order"
 
-$storeId   = "STORE-E2E-$((Get-Date).Ticks)"
-$storeName = "Toko Berkah Mandiri E2E"
+$storeId    = "STORE-E2E-$((Get-Date).Ticks)"
+$storeUuid  = [guid]::NewGuid().ToString()
+$storeName  = "Toko Berkah Mandiri E2E"
 $storePhone = "6281298765432"
 
 # Register store contact in Dunning
@@ -132,25 +133,36 @@ try {
 Step "4/8" "Order Placement with Hard Credit Gate Evaluation"
 
 $invoiceId = "INV-FMCG-$((Get-Date).Ticks)"
-$orderPayload = @{
-    customer_id         = $storeId
-    customer_name       = $storeName
-    destination_address = "Jl. Raya Pasar Induk No. 88, Jakarta Timur"
-    items = @(
-        @{
-            product_sku       = "SKU-MINYAK-2L"
-            product_name      = "Minyak Goreng Sawit 2L"
-            qty_ordered       = 20
-            unit_price_cents  = 3500000
-            weight_kg_per_unit = 2.0
-        }
-    )
-} | ConvertTo-Json -Depth 5 -Compress
-
 try {
+    $prodList = Invoke-RestMethod -Uri "$orderUrl/v1/order/products" -Method GET -Headers $authHeaders
+    $productId = if ($prodList -and $prodList.Count -gt 0) { $prodList[0].id } else {
+        $newProd = Invoke-RestMethod -Uri "$orderUrl/v1/order/products" -Method POST -Headers $authHeaders -Body (@{
+            sku = "SKU-TEST-$((Get-Date).Ticks)"
+            name = "Test SKU"
+            category = "SEMBAKO"
+            unit = "DUS"
+            weight_grams = 1000
+        } | ConvertTo-Json -Compress)
+        $newProd.id
+    }
+
+    $orderPayload = @{
+        customer_id         = $storeUuid
+        customer_name       = $storeName
+        customer_tier       = "GROSIR"
+        destination_address = "Jl. Raya Pasar Induk No. 88, Jakarta Timur"
+        items = @(
+            @{
+                product_id = $productId
+                quantity   = 20
+            }
+        )
+    } | ConvertTo-Json -Depth 5 -Compress
+
     $orderRes = Invoke-RestMethod -Uri "$orderUrl/v1/order/orders" -Method POST -Headers $authHeaders -Body $orderPayload
-    Success "Order placed successfully in OMS: ID=$($orderRes.data.id), Status=$($orderRes.data.status)"
-    $createdOrderId = $orderRes.data.id
+    $orderHeader = if ($orderRes.order) { $orderRes.order } elseif ($orderRes.data.order) { $orderRes.data.order } else { $orderRes }
+    Success "Order placed successfully in OMS: ID=$($orderHeader.id), Status=$($orderHeader.status)"
+    $createdOrderId = $orderHeader.id
 } catch {
     Warn "Direct OMS order simulated (Endpoint response: $($_.Exception.Message))"
     $createdOrderId = [guid]::NewGuid().ToString()
@@ -162,7 +174,8 @@ try {
 Step "5/8" "Dispatching Delivery Order & Digital Proof of Delivery in Fleet"
 
 $doPayload = @{
-    customer_id         = [guid]::NewGuid().ToString()
+    do_number           = "DO/FMCG/$((Get-Date).Ticks)"
+    customer_id         = $storeUuid
     customer_name       = $storeName
     destination_address = "Jl. Raya Pasar Induk No. 88"
     items = @(
@@ -177,7 +190,8 @@ $doPayload = @{
 
 try {
     $doRes = Invoke-RestMethod -Uri "$fleetUrl/v1/fleet/delivery-orders" -Method POST -Headers $authHeaders -Body $doPayload
-    Success "Delivery Order generated in Fleet: DO=$($doRes.data.do_number)"
+    $doObj = if ($doRes.data) { $doRes.data } else { $doRes }
+    Success "Delivery Order generated in Fleet: DO=$($doObj.do_number)"
 } catch {
     Warn "Fleet Delivery Order dispatch simulated"
 }
@@ -208,7 +222,7 @@ try {
     if ($schedules.Count -eq 5) {
         Success ("Generated exactly 5 dunning stages for " + $invoiceId + ":")
         foreach ($s in $schedules) {
-            Write-Host "      ??? $($s.stage) -> $($s.scheduled_at)" -ForegroundColor DarkCyan
+            Write-Host "      -> $($s.stage) -> $($s.scheduled_at)" -ForegroundColor DarkCyan
         }
     } else {
         Failure "Expected 5 schedules, got $($schedules.Count)"

@@ -42,7 +42,7 @@ INSERT INTO accounts (
 		_, err := pgxTx.Exec(ctx, q,
 			account.ID, account.Code, account.Name, string(account.Type),
 			string(account.Status), account.Currency, account.CachedBalance.Minor(),
-			account.OwnerID, account.TenantID, jsonRaw(account.Metadata),
+			stringToUUIDPtr(account.OwnerID), account.TenantID, jsonRaw(account.Metadata),
 		)
 		if err != nil {
 			if isUniqueViolation(err) {
@@ -185,7 +185,7 @@ WHERE id = $1
 		tag, err = pgxTx.Exec(ctx, q,
 			account.ID, account.Code, account.Name, string(account.Type),
 			string(account.Status), account.Currency, account.CachedBalance.Minor(),
-			account.OwnerID, jsonRaw(account.Metadata),
+			stringToUUIDPtr(account.OwnerID), jsonRaw(account.Metadata),
 		)
 		return err
 	})
@@ -264,4 +264,16 @@ func uuidPtrToString(p *uuid.UUID) string {
 		return ""
 	}
 	return p.String()
+}
+
+// stringToUUIDPtr safely converts an optional string to *uuid.UUID or nil.
+func stringToUUIDPtr(s string) *uuid.UUID {
+	if s == "" {
+		return nil
+	}
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return nil
+	}
+	return &u
 }

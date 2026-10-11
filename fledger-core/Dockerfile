@@ -54,10 +54,12 @@ WORKDIR /app
 COPY --from=builder /out/api /app/api
 COPY --from=builder /out/worker /app/worker
 COPY --from=builder /out/migrator /app/migrator
+COPY web/public /app/web/public
+ENV WEB_DIR=/app/web/public
 
 # Default command runs the API; override for worker/migrator
 ENTRYPOINT ["/app/api"]
 
 # Health check via HTTP probe (k8s/Docker HEALTHCHECK)
 # Distroless lacks curl/wget; healthcheck handled by orchestrator
-EXPOSE 8080
+EXPOSE 8081

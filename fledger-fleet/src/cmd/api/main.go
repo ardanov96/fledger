@@ -158,6 +158,9 @@ func run() error {
 		}
 		if stat, err := os.Stat(filepath.Join(dir, "index.html")); err == nil && !stat.IsDir() {
 			fs := http.FileServer(http.Dir(dir))
+			r.Get("/web", func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
+			})
 			r.Handle("/web/*", http.StripPrefix("/web", fs))
 			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 				http.ServeFile(w, r, filepath.Join(dir, "index.html"))

@@ -12,6 +12,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -258,23 +259,69 @@ func Load() (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	appPort := v.GetInt("APP_PORT")
+	if p := v.GetInt("PORT"); p > 0 {
+		appPort = p
+	}
+
+	dbHost := v.GetString("DB_HOST")
+	dbPort := v.GetInt("DB_PORT")
+	dbName := v.GetString("DB_NAME")
+	dbUser := v.GetString("DB_USER")
+	dbPass := v.GetString("DB_PASSWORD")
+	dbSSL := v.GetString("DB_SSLMODE")
+
+	if dbURL := v.GetString("DATABASE_URL"); dbURL != "" {
+		if u, err := url.Parse(dbURL); err == nil {
+			if u.Hostname() != "" {
+				dbHost = u.Hostname()
+			}
+			if u.Port() != "" {
+				if p, err := strconv.Atoi(u.Port()); err == nil {
+					dbPort = p
+				}
+			}
+			if len(u.Path) > 1 {
+				dbName = strings.TrimPrefix(u.Path, "/")
+			}
+			if u.User != nil {
+				dbUser = u.User.Username()
+				if pass, ok := u.User.Password(); ok {
+					dbPass = pass
+				}
+			}
+			if ssl := u.Query().Get("sslmode"); ssl != "" {
+				dbSSL = ssl
+			}
+		}
+	}
+
+	redisAddr := v.GetString("REDIS_ADDR")
+	if rURL := v.GetString("REDIS_URL"); rURL != "" {
+		if u, err := url.Parse(rURL); err == nil {
+			if u.Host != "" {
+				redisAddr = u.Host
+			}
+		}
+	}
+
 	cfg := &Config{
 		App: AppConfig{
 			Name:      v.GetString("APP_NAME"),
 			Env:       v.GetString("APP_ENV"),
-			Port:      v.GetInt("APP_PORT"),
+			Port:      appPort,
 			Version:   v.GetString("APP_VERSION"),
 			LogLevel:  v.GetString("APP_LOG_LEVEL"),
 			LogFormat: v.GetString("APP_LOG_FORMAT"),
 			Timezone:  v.GetString("APP_TZ"),
 		},
 		DB: DBConfig{
-			Host:             v.GetString("DB_HOST"),
-			Port:             v.GetInt("DB_PORT"),
-			Name:             v.GetString("DB_NAME"),
-			User:             v.GetString("DB_USER"),
-			Password:         v.GetString("DB_PASSWORD"),
-			SSLMode:          v.GetString("DB_SSLMODE"),
+			Host:             dbHost,
+			Port:             dbPort,
+			Name:             dbName,
+			User:             dbUser,
+			Password:         dbPass,
+			SSLMode:          dbSSL,
 			MaxConns:         int32(v.GetInt("DB_MAX_CONNS")),
 			MinConns:         int32(v.GetInt("DB_MIN_CONNS")),
 			MaxConnLifetime:  v.GetDuration("DB_MAX_CONN_LIFETIME"),
@@ -282,7 +329,7 @@ func Load() (*Config, error) {
 			StatementTimeout: v.GetDuration("DB_STATEMENT_TIMEOUT"),
 		},
 		Redis: RedisConfig{
-			Addr:     v.GetString("REDIS_ADDR"),
+			Addr:     redisAddr,
 			Password: v.GetString("REDIS_PASSWORD"),
 			DB:       v.GetInt("REDIS_DB"),
 			PoolSize: v.GetInt("REDIS_POOL_SIZE"),

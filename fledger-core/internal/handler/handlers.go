@@ -196,7 +196,13 @@ func (h *Handlers) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := uuid.NewString()
+	tenantID := r.Header.Get("X-Tenant-ID")
+	if tenantID == "" {
+		tenantID = httpx.GetTenantID(r.Context())
+	}
+	if tenantID == "" {
+		tenantID = "00000000-0000-0000-0000-000000000001"
+	}
 	account := ledger.Account{
 		ID:            uuid.NewString(),
 		Code:          req.Code,

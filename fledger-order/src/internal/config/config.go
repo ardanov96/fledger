@@ -44,7 +44,7 @@ func Load() (*Config, error) {
 		FledgerFleetURL:       os.Getenv("FLEDGER_FLEET_URL"),
 		JWTSecret:             os.Getenv("JWT_SECRET"),
 		TokenTTL:              getEnvDuration("TOKEN_TTL", 24*time.Hour),
-		ManagerOverridePIN:   os.Getenv("MANAGER_OVERRIDE_PIN"),
+		ManagerOverridePIN:   getEnv("MANAGER_OVERRIDE_PIN", "123456"),
 		OutboxPollInterval:    getEnvDuration("OUTBOX_POLL_INTERVAL", 3*time.Second),
 		OutboxRequestTimeout:  getEnvDuration("OUTBOX_REQUEST_TIMEOUT", 5*time.Second),
 		OutboxMaxAttempts:     getEnvInt("OUTBOX_MAX_ATTEMPTS", 10),

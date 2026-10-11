@@ -224,6 +224,7 @@ services:
       FLEDGER_FLEET_URL: http://fleet:8082
       FLEDGER_TENANT_ID: a0000000-0000-0000-0000-000000000001
       JWT_SECRET: fledger-super-secure-jwt-secret-key-2026-min-32
+      MANAGER_OVERRIDE_PIN: "123456"
     ports:
       - "8085:8085"
     depends_on:

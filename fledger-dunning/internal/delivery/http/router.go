@@ -93,7 +93,7 @@ func devLogin(cfg *config.Config) http.HandlerFunc {
 			tenantID = tenantFallback
 		}
 		tok, err := signer.Sign(jwt.Claims{
-			UserID: "dev-user",
+			UserID: "00000000-0000-0000-0000-000000000002",
 			Tenant: tenantID,
 			Role:   "admin",
 			Scopes: []string{"dunning:write", "dunning:read"},

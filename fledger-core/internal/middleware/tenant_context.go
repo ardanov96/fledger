@@ -95,16 +95,14 @@ func infoFromPrincipal(p *Principal) (*tenantctx.Info, error) {
 	if err != nil {
 		return nil, errors.New("principal tenant_id is not a valid UUID")
 	}
-	// UserID may be empty for service-account tokens — treat as zero-UUID
-	// rather than failing. RLS policy still gets a value (zero UUID will
-	// just never match any real user_id).
+	// UserID may be empty or non-UUID (e.g. dev-user, service accounts) —
+	// treat as zero-UUID rather than failing with 500. RLS policy still gets
+	// a value (zero UUID will just never match any real user_id).
 	userID := uuid.Nil
 	if p.UserID != "" {
-		parsed, err := uuid.Parse(p.UserID)
-		if err != nil {
-			return nil, errors.New("principal user_id is not a valid UUID")
+		if parsed, err := uuid.Parse(p.UserID); err == nil {
+			userID = parsed
 		}
-		userID = parsed
 	}
 	return &tenantctx.Info{
 		TenantID:   tenantID,

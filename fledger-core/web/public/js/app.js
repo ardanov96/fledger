@@ -167,7 +167,9 @@
       if (opts.body !== undefined && opts.body !== null) {
         fetchOpts.body = typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body);
       }
-      const res = await fetch(path, fetchOpts);
+      const subpath = location.pathname.startsWith('/core') ? '/core' : '';
+      const url = subpath + path;
+      const res = await fetch(url, fetchOpts);
       const ct = res.headers.get('content-type') || '';
       const body = ct.includes('json') ? await res.json() : await res.text();
       if (!res.ok) {
@@ -241,7 +243,8 @@
 
     async ping() {
       try {
-        const res = await fetch('/healthz');
+        const subpath = location.pathname.startsWith('/core') ? '/core' : '';
+        const res = await fetch(subpath + '/healthz');
         return res.ok ? '🟢 Connected' : '🔴 Disconnected';
       } catch (e) { return '🔴 Unreachable'; }
     },

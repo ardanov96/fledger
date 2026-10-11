@@ -4,9 +4,9 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Initial State & API Client
-  const defaultBaseUrl = window.location.origin.includes('8082') 
-    ? window.location.origin 
+  const subpath = window.location.pathname.startsWith('/fleet') ? '/fleet' : '';
+  const defaultBaseUrl = (window.location.origin && window.location.origin !== 'null')
+    ? (window.location.origin + subpath)
     : 'http://localhost:8082';
 
   const client = new FledgerFleetClient(defaultBaseUrl);

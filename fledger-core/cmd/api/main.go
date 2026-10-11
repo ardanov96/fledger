@@ -434,6 +434,11 @@ func resolveRBACPaths() (string, string) {
 	dir := os.Getenv("RBAC_POLICY_DIR")
 	if dir == "" {
 		dir = defaultDir
+		if _, err := os.Stat(filepath.Join(dir, modelFile)); err != nil {
+			if _, err2 := os.Stat(filepath.Join("fledger-core", defaultDir, modelFile)); err2 == nil {
+				dir = filepath.Join("fledger-core", defaultDir)
+			}
+		}
 	}
 	abs, _ := filepath.Abs(dir)
 	return filepath.Join(abs, modelFile), filepath.Join(abs, policyFile)
@@ -483,6 +488,29 @@ func buildRouter(
 
 	if cfg.Telemetry.MetricsEnabled {
 		r.Method(http.MethodGet, cfg.Telemetry.MetricsPath, prometheusHandler())
+	}
+
+	// Web Portal static files (Sprint 20 / Fase 8 Dashboard)
+	webDirs := []string{
+		os.Getenv("WEB_DIR"),
+		"web/public",
+		"../web/public",
+		"../../web/public",
+		"fledger-core/web/public",
+	}
+	for _, dir := range webDirs {
+		if dir == "" {
+			continue
+		}
+		if stat, err := os.Stat(filepath.Join(dir, "index.html")); err == nil && !stat.IsDir() {
+			fs := http.FileServer(http.Dir(dir))
+			r.Get("/web", func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
+			})
+			r.Handle("/web/*", http.StripPrefix("/web", fs))
+			log.Info("serving web portal", "dir", dir)
+			break
+		}
 	}
 
 	// Root endpoint: friendly hello with service info + endpoint list.
