@@ -39,7 +39,6 @@ func NewRouter(cfg *config.Config, h *handler.Handlers, verifier jwt.Verifier) h
 	// Web portal (Sprint 5) served from embedded bundle.
 	wu := webui.Handler()
 	r.Mount("/web", http.StripPrefix("/web", wu))
-	r.Get("/", wu.ServeHTTP)
 
 	if cfg.AppEnv == "development" {
 		r.Post("/v1/dev/login", devLogin(cfg))
@@ -76,6 +75,9 @@ func NewRouter(cfg *config.Config, h *handler.Handlers, verifier jwt.Verifier) h
 			r.Post("/webhooks/pay", h.PayWebhook(&handler.Config{PayWebhookSecret: cfg.PayWebhookSecret}))
 		})
 	})
+
+	// Fallback to embedded web UI for all other paths (root, CSS, JS, etc.)
+	r.Handle("/*", wu)
 
 	return r
 }

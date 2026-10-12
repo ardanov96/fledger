@@ -9,13 +9,33 @@
 <body>
   <header id="topbar" hidden>
     <div class="brand">
-      <span class="logo">💰</span>
+      <div class="logo-icon" style="width:30px;height:30px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" x2="21" y1="22" y2="22"/>
+          <line x1="6" x2="6" y1="18"/>
+          <line x1="10" x2="10" y1="18"/>
+          <line x1="14" x2="14" y1="18"/>
+          <line x1="18" x2="18" y1="18"/>
+          <polygon points="12 2 20 7 4 7"/>
+        </svg>
+      </div>
       <h1>FMCG Wallet</h1>
     </div>
     <nav id="nav"></nav>
-    <div class="user-menu">
-      <span id="user-info"></span>
-      <button id="logout-btn" class="btn-secondary" title="Logout">Logout</button>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <nav class="ecosystem-nav" style="display:flex;gap:4px;background:rgba(0,0,0,0.3);padding:3px;border-radius:6px;border:1px solid rgba(255,255,255,0.08);">
+        <a href="http://localhost:8000" style="font-size:0.72rem;color:#94a3b8;text-decoration:none;padding:3px 6px;border-radius:4px;">Hub :8000</a>
+        <a href="http://localhost:8081/web/" style="font-size:0.72rem;color:#60a5fa;background:rgba(59,130,246,0.2);text-decoration:none;padding:3px 6px;border-radius:4px;font-weight:600;">Core :8081</a>
+        <a href="http://localhost:8082" style="font-size:0.72rem;color:#94a3b8;text-decoration:none;padding:3px 6px;border-radius:4px;">Fleet :8082</a>
+        <a href="http://localhost:8083" style="font-size:0.72rem;color:#94a3b8;text-decoration:none;padding:3px 6px;border-radius:4px;">Pay :8083</a>
+        <a href="http://localhost:8084" style="font-size:0.72rem;color:#94a3b8;text-decoration:none;padding:3px 6px;border-radius:4px;">Force :8084</a>
+        <a href="http://localhost:8085" style="font-size:0.72rem;color:#94a3b8;text-decoration:none;padding:3px 6px;border-radius:4px;">Order :8085</a>
+        <a href="http://localhost:8086" style="font-size:0.72rem;color:#94a3b8;text-decoration:none;padding:3px 6px;border-radius:4px;">Dunning :8086</a>
+      </nav>
+      <div class="user-menu">
+        <span id="user-info"></span>
+        <button id="logout-btn" class="btn-secondary" title="Logout">Logout</button>
+      </div>
     </div>
   </header>
 
@@ -24,12 +44,21 @@
     <!-- ==================== LOGIN ==================== -->
     <section id="view-login" class="view">
       <div class="login-card">
-        <h2>🔐 Sign in</h2>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-bottom:12px;background:rgba(0,0,0,0.25);padding:4px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);">
+          <a href="http://localhost:8000" style="font-size:0.7rem;color:#94a3b8;text-decoration:none;padding:2px 6px;">Hub :8000</a>
+          <a href="http://localhost:8081/web/" style="font-size:0.7rem;color:#60a5fa;text-decoration:none;padding:2px 6px;font-weight:600;">Core :8081</a>
+          <a href="http://localhost:8082" style="font-size:0.7rem;color:#94a3b8;text-decoration:none;padding:2px 6px;">Fleet :8082</a>
+          <a href="http://localhost:8083" style="font-size:0.7rem;color:#94a3b8;text-decoration:none;padding:2px 6px;">Pay :8083</a>
+          <a href="http://localhost:8084" style="font-size:0.7rem;color:#94a3b8;text-decoration:none;padding:2px 6px;">Force :8084</a>
+          <a href="http://localhost:8085" style="font-size:0.7rem;color:#94a3b8;text-decoration:none;padding:2px 6px;">Order :8085</a>
+          <a href="http://localhost:8086" style="font-size:0.7rem;color:#94a3b8;text-decoration:none;padding:2px 6px;">Dunning :8086</a>
+        </div>
+        <h2>Sign in</h2>
         <p class="muted">FMCG Wallet Dashboard</p>
         <form id="login-form" autocomplete="off">
           <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <button type="button" class="btn-secondary" id="fill-admin-btn" style="flex:1;font-size:0.85rem;padding:6px 8px;">👑 Admin HQ</button>
-            <button type="button" class="btn-secondary" id="fill-sales-btn" style="flex:1;font-size:0.85rem;padding:6px 8px;">💼 Sales Joni</button>
+            <button type="button" class="btn-secondary" id="fill-admin-btn" style="flex:1;font-size:0.85rem;padding:6px 8px;">Admin HQ</button>
+            <button type="button" class="btn-secondary" id="fill-sales-btn" style="flex:1;font-size:0.85rem;padding:6px 8px;">Sales Joni</button>
           </div>
           <label>Tenant ID
             <input type="text" name="tenant_id" id="login-tenant" required
@@ -46,7 +75,12 @@
           <label>Password
             <div class="password-wrap">
               <input type="password" name="password" id="password" value="DemoTest1234!" required>
-              <button type="button" class="btn-eye" id="toggle-pw" tabindex="-1">👁</button>
+              <button type="button" class="btn-eye" id="toggle-pw" tabindex="-1">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
             </div>
           </label>
           <button type="submit" class="btn-primary" id="login-submit">Sign in</button>
@@ -66,7 +100,7 @@
 
     <!-- ==================== DASHBOARD ==================== -->
     <section id="view-dashboard" class="view" hidden>
-      <h2>📊 Dashboard</h2>
+      <h2>Dashboard</h2>
       <div id="dashboard-cards" class="card-grid"></div>
       <div class="grid-2col">
         <div class="card">
@@ -84,7 +118,7 @@
     <!-- ==================== ACCOUNTS ==================== -->
     <section id="view-accounts" class="view" hidden>
       <div class="view-header">
-        <h2>🏦 Accounts</h2>
+        <h2>Accounts</h2>
         <button class="btn-primary" id="new-account-btn">+ New Account</button>
       </div>
       <div class="filter-bar">
@@ -112,7 +146,7 @@
 
     <!-- ==================== TRANSFERS ==================== -->
     <section id="view-transfers" class="view" hidden>
-      <h2>💸 Transfers</h2>
+      <h2>Transfers</h2>
       <form id="transfer-form" class="form-card">
         <h3>New Transfer</h3>
         <div class="form-row">
@@ -152,7 +186,7 @@
     <!-- ==================== INVOICES ==================== -->
     <section id="view-invoices" class="view" hidden>
       <div class="view-header">
-        <h2>📄 Invoices</h2>
+        <h2>Invoices</h2>
         <button class="btn-primary" id="new-invoice-btn">+ New Invoice</button>
       </div>
       <div class="filter-bar">
@@ -179,12 +213,12 @@
 
     <!-- ==================== AGING ==================== -->
     <section id="view-aging" class="view" hidden>
-      <h2>📅 Aging Summary</h2>
+      <h2>Aging Summary</h2>
       <div class="filter-bar">
         <label>Customer
           <select id="aging-customer-select"><option value="">Loading...</option></select>
         </label>
-        <button class="btn-secondary" id="aging-refresh-btn">🔄 Refresh</button>
+        <button class="btn-secondary" id="aging-refresh-btn">Refresh</button>
       </div>
       <div id="aging-summary-cards" class="card-grid"></div>
       <table id="aging-table" class="data-table">
@@ -200,7 +234,7 @@
 
     <!-- ==================== PERIODS ==================== -->
     <section id="view-periods" class="view" hidden>
-      <h2>🔄 Periods</h2>
+      <h2>Periods</h2>
       <table id="periods-table" class="data-table">
         <thead><tr>
           <th>ID</th><th>Period Start</th><th>Period End</th>
@@ -214,7 +248,7 @@
     <section id="view-reconciler" class="view" hidden>
       <div class="view-header">
         <div>
-          <h2>🔍 Rekonsiliasi Buku Besar (Reconciler)</h2>
+          <h2>Rekonsiliasi Buku Besar (Reconciler)</h2>
           <p class="muted">Validasi keseimbangan neraca saldo (Debit = Kredit) serta audit keutuhan kriptografi seluruh entri mutasi.</p>
         </div>
       </div>
@@ -223,7 +257,11 @@
         <!-- TRIGGER CARD -->
         <form id="reconciler-form" class="card reconciler-card">
           <div class="reconciler-card-header">
-            <div class="reconciler-icon-badge">⚡</div>
+            <div class="reconciler-icon-badge">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </div>
             <div>
               <h3>Jalankan Rekonsiliasi Periode</h3>
               <p class="text-sm muted">Pilih periode akuntansi untuk memverifikasi apakah seluruh transaksi seimbang (Imbalance = 0).</p>
@@ -239,7 +277,7 @@
             <div class="select-wrapper">
               <select name="period_id" id="reconciler-period-select" class="form-control" required></select>
             </div>
-            <span class="field-hint">💡 Transaksi dalam rentang tanggal periode ini yang akan dihitung dan direkonsiliasi.</span>
+            <span class="field-hint">Transaksi dalam rentang tanggal periode ini yang akan dihitung dan direkonsiliasi.</span>
           </div>
 
           <!-- OPTION: HASH CHAIN AUDIT BOX -->
@@ -256,7 +294,11 @@
                   Berfungsi untuk membuktikan secara matematis bahwa tidak ada transaksi yang dimanipulasi, diselipkan, atau dihapus langsung di database.
                 </p>
                 <div class="audit-option-notice">
-                  <span class="notice-icon">⏱</span>
+                  <span class="notice-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  </span>
                   <span><strong>Waktu proses lebih lama:</strong> Sistem akan menghitung dan memvalidasi hash kriptografi berantai pada seluruh mutasi periode ini.</span>
                 </div>
               </div>
@@ -275,17 +317,17 @@
 
         <!-- INFO / EXPLAINER CARD -->
         <div class="card reconciler-guide-card">
-          <h4>📖 Indikator & Status Rekonsiliasi</h4>
+          <h4>Indikator &amp; Status Rekonsiliasi</h4>
           <div class="guide-item">
-            <div class="guide-badge badge-balanced">✅ BALANCED</div>
+            <div class="guide-badge badge-balanced">BALANCED</div>
             <p>Total Debit sama dengan Total Kredit (selisih = Rp 0). Buku besar sehat dan siap untuk tutup buku (Period Closing).</p>
           </div>
           <div class="guide-item">
-            <div class="guide-badge badge-imbalanced">⚠️ IMBALANCED</div>
+            <div class="guide-badge badge-imbalanced">IMBALANCED</div>
             <p>Ditemukan selisih (Imbalance ≠ 0). Terdapat jurnal tidak seimbang yang harus diinvestigasi sebelum periode ditutup.</p>
           </div>
           <div class="guide-item">
-            <div class="guide-badge badge-tampered">🚨 TAMPERED</div>
+            <div class="guide-badge badge-tampered">TAMPERED</div>
             <p>Terdeteksi rantai hash kriptografi terputus atau tidak cocok. Menandakan data di database telah dimanipulasi langsung.</p>
           </div>
         </div>
@@ -316,7 +358,7 @@
     <section id="view-currencies" class="view" hidden>
       <div class="view-header">
         <div>
-          <h2>💱 Mata Uang & Kurs Valas (Currencies & FX)</h2>
+          <h2>Mata Uang &amp; Kurs Valas (Currencies &amp; FX)</h2>
           <p class="muted">Master mata uang yang didukung dalam pembukuan serta simulator konversi nilai kurs valas (FX Rate) secara real-time.</p>
         </div>
       </div>
@@ -325,7 +367,11 @@
         <!-- REGISTERED CURRENCIES CARD -->
         <div class="card fx-card">
           <div class="card-header-styled">
-            <div class="card-icon-badge">🌐</div>
+            <div class="card-icon-badge">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+            </div>
             <div>
               <h3>Mata Uang Terdaftar</h3>
               <p class="text-sm muted">Mata uang aktif yang digunakan untuk rekening kas, piutang, dan invoice.</p>
@@ -340,15 +386,19 @@
             </tr></thead>
             <tbody></tbody>
           </table>
-          <div class="card-footer-hint">
-            <span>💡 <strong>Mata Uang Utama:</strong> <code>IDR</code> (Rupiah) bertindak sebagai mata uang dasar pelaporan keuangan tenant.</span>
+              <div class="card-footer-hint">
+            <span><strong>Mata Uang Utama:</strong> <code>IDR</code> (Rupiah) bertindak sebagai mata uang dasar pelaporan keuangan tenant.</span>
           </div>
         </div>
 
         <!-- FX CONVERTER CARD -->
         <div class="card fx-card">
           <div class="card-header-styled">
-            <div class="card-icon-badge">💱</div>
+            <div class="card-icon-badge">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </div>
             <div>
               <h3>Kalkulator Kurs Valas (FX Converter)</h3>
               <p class="text-sm muted">Simulasi konversi antar mata uang berdasarkan kurs valuta asing aktif di sistem.</p>
@@ -400,12 +450,19 @@
                 <button type="button" class="chip-btn" data-preset="100">+100</button>
                 <button type="button" class="chip-btn" data-preset="1000">+1.000</button>
               </div>
-              <span class="field-hint" id="convert-amount-hint">💡 Masukkan nominal dalam satuan mata uang utama (contoh: 100 USD akan dikonversi ke minor 10.000 sen).</span>
+              <span class="field-hint" id="convert-amount-hint">Masukkan nominal dalam satuan mata uang utama (contoh: 100 USD akan dikonversi ke minor 10.000 sen).</span>
             </div>
 
             <div class="form-actions">
               <button type="submit" id="btn-convert-submit" class="btn-primary btn-run">
-                <span class="btn-icon">🔄</span>
+                <span class="btn-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                    <path d="M16 16h5v5"/>
+                  </svg>
+                </span>
                 <span class="btn-text">Hitung Konversi Kurs</span>
               </button>
             </div>
@@ -418,7 +475,7 @@
 
     <!-- ==================== AUDIT ==================== -->
     <section id="view-audit" class="view" hidden>
-      <h2>📋 Audit Log</h2>
+      <h2>Audit Log</h2>
       <div class="filter-bar">
         <label>Resource type
           <select id="filter-audit-resource">
@@ -444,7 +501,7 @@
   </main>
 
   <footer id="status-bar">
-    <span id="api-status">⏳ Connecting…</span>
+    <span id="api-status">Connecting…</span>
     <span id="user-status"></span>
   </footer>
 

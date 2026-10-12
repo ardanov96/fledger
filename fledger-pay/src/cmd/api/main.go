@@ -117,15 +117,7 @@ func run() error {
 	// Both "/" and "/web/*" route to the same handler.
 	webuiHandler := webui.Handler()
 	r.Mount("/web", http.StripPrefix("/web", webuiHandler))
-	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/index.html"
-		webuiHandler.ServeHTTP(w, r2)
-	})
+	r.Handle("/*", webuiHandler)
 
 	// Dev login (APP_ENV=development)
 	if cfg.AppEnv == "development" {

@@ -98,9 +98,9 @@
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;
     el.innerHTML = `<span class="toast-icon">${
-      type === 'success' ? '✅' :
-      type === 'error' ? '❌' :
-      type === 'warning' ? '⚠️' : 'ℹ️'
+      type === 'success' ? '✓' :
+      type === 'error' ? '✕' :
+      type === 'warning' ? '!' : 'ℹ'
     }</span><span class="toast-msg">${escapeHTML(msg)}</span>`;
     container.appendChild(el);
     setTimeout(() => el.classList.add('toast-out'), duration - 200);
@@ -245,8 +245,8 @@
       try {
         const subpath = location.pathname.startsWith('/core') ? '/core' : '';
         const res = await fetch(subpath + '/healthz');
-        return res.ok ? '🟢 Connected' : '🔴 Disconnected';
-      } catch (e) { return '🔴 Unreachable'; }
+        return res.ok ? 'Connected' : 'Disconnected';
+      } catch (e) { return 'Unreachable'; }
     },
   };
 
@@ -275,15 +275,15 @@
     },
     buildNav() {
       const nav = [
-        ['dashboard', '📊 Dashboard'],
-        ['accounts', '🏦 Accounts'],
-        ['transfers', '💸 Transfers'],
-        ['invoices', '📄 Invoices'],
-        ['aging', '📅 Aging'],
-        ['periods', '🔄 Periods'],
-        ['reconciler', '🔍 Reconciler'],
-        ['currencies', '💱 Currencies'],
-        ['audit', '📋 Audit'],
+        ['dashboard', 'Dashboard'],
+        ['accounts', 'Accounts'],
+        ['transfers', 'Transfers'],
+        ['invoices', 'Invoices'],
+        ['aging', 'Aging'],
+        ['periods', 'Periods'],
+        ['reconciler', 'Reconciler'],
+        ['currencies', 'Currencies'],
+        ['audit', 'Audit'],
       ];
       const el = document.getElementById('nav');
       el.innerHTML = nav.map(([v, l]) => `<a href="#${v}" data-view="${v}">${l}</a>`).join('');

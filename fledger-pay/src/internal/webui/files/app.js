@@ -1,4 +1,4 @@
-// Fledger Pay Simulator — UI controller.
+// Fledger Pay Simulator — UI controller (Enhanced Launch UI Style).
 (function () {
   'use strict';
 
@@ -32,6 +32,7 @@
   }
 
   function setStatus(el, msg, kind) {
+    if (!el) return;
     el.className = 'status ' + (kind || '');
     el.textContent = msg;
   }
@@ -52,14 +53,15 @@
       enabled_banks: banks,
       enable_qris: $('enable_qris').checked,
     };
-    setStatus($('create-status'), 'Membuat payment request…', '');
+    setStatus($('create-status'), 'Membuat permintaan pembayaran B2B…', '');
     try {
       const out = await PayClient.createRequest(body);
-      setStatus($('create-status'), 'Created: ' + out.request.request_number, 'ok');
+      setStatus($('create-status'), '✓ Berhasil Dibuat: Nomor ' + out.request.request_number, 'ok');
       renderDetail(out);
       refreshOutbox();
+      $('detail-card').scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
-      setStatus($('create-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
+      setStatus($('create-status'), 'Gagal: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
     }
   }
 
@@ -70,39 +72,113 @@
     $('d_amount').textContent = fmtIDR(out.request.amount);
     $('d_expires').textContent = fmtUTC(out.request.expires_at);
 
-    // VA table
-    const tbody = $('va-table').querySelector('tbody');
-    tbody.innerHTML = '';
+    // Render Virtual Account Cards
+    const vaContainer = $('va-cards-container');
+    vaContainer.innerHTML = '';
     (out.virtual_accounts || []).forEach((va) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><strong>${va.bank_code}</strong></td>
-        <td class="va-number">${va.va_number}</td>
-        <td>${va.va_name}</td>
-        <td><button class="copy-btn" data-copy="${va.va_number}">Salin</button></td>
+      const card = document.createElement('div');
+      card.className = 'va-card';
+      card.innerHTML = `
+        <div>
+          <div class="va-card-header">
+            <span class="bank-badge ${va.bank_code}">${va.bank_code}</span>
+            <span style="font-size:0.75rem; color:#94a3b8;">Virtual Account</span>
+          </div>
+          <div class="va-number-box">
+            <span class="va-number">${va.va_number}</span>
+            <button type="button" class="copy-btn" data-copy="${va.va_number}">Salin</button>
+          </div>
+        </div>
+        <div class="va-customer">Nama: <strong>${va.va_name}</strong></div>
       `;
-      tbody.appendChild(tr);
+      vaContainer.appendChild(card);
     });
-    tbody.querySelectorAll('.copy-btn').forEach((btn) => {
+
+    vaContainer.querySelectorAll('.copy-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         navigator.clipboard.writeText(btn.dataset.copy);
-        btn.textContent = 'Disalin ✓';
-        setTimeout(() => { btn.textContent = 'Salin'; }, 1500);
+        btn.textContent = 'Tersalin ✓';
+        btn.style.color = '#34d399';
+        setTimeout(() => { btn.textContent = 'Salin'; btn.style.color = ''; }, 1500);
       });
     });
 
     // QRIS
-    $('qr-string').textContent = out.qris ? out.qris.qr_string : '(QRIS tidak diaktifkan)';
+    const qrisWrap = $('qris-wrapper');
+    if (out.qris && out.qris.qr_string) {
+      qrisWrap.hidden = false;
+      $('qris-store-display').textContent = out.request.customer_name || 'Toko Sumber Rezeki';
+      $('qris-amount-display').textContent = fmtIDR(out.request.amount);
+      $('qr-string').textContent = out.qris.qr_string;
+      drawQRISCanvas($('qris-canvas'), out.qris.qr_string);
+    } else {
+      qrisWrap.hidden = true;
+    }
 
     // Update settle amount default
     $('settle_amount').value = out.request.amount;
     window._lastRequest = out;
   }
 
+  // Draw clean visual QR pattern on canvas
+  function drawQRISCanvas(canvas, str) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    // Simple pseudo-random but deterministic matrix generator based on string hash
+    const matrixSize = 25;
+    const cellSize = Math.floor((width - 20) / matrixSize);
+    const offset = Math.floor((width - cellSize * matrixSize) / 2);
+
+    let seed = 0;
+    for (let i = 0; i < str.length; i++) {
+      seed = ((seed << 5) - seed) + str.charCodeAt(i);
+      seed |= 0;
+    }
+
+    function pseudoRand() {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    }
+
+    ctx.fillStyle = '#0f172a';
+
+    // Draw position finder patterns (top-left, top-right, bottom-left)
+    function drawFinder(r, c) {
+      const x = offset + c * cellSize;
+      const y = offset + r * cellSize;
+      ctx.fillRect(x, y, 7 * cellSize, 7 * cellSize);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + cellSize, y + cellSize, 5 * cellSize, 5 * cellSize);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(x + 2 * cellSize, y + 2 * cellSize, 3 * cellSize, 3 * cellSize);
+    }
+
+    drawFinder(0, 0);
+    drawFinder(0, matrixSize - 7);
+    drawFinder(matrixSize - 7, 0);
+
+    // Fill data grid
+    for (let r = 0; r < matrixSize; r++) {
+      for (let c = 0; c < matrixSize; c++) {
+        // Skip finder areas
+        if ((r < 8 && c < 8) || (r < 8 && c >= matrixSize - 8) || (r >= matrixSize - 8 && c < 8)) {
+          continue;
+        }
+        if (pseudoRand() > 0.45) {
+          ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize - 1, cellSize - 1);
+        }
+      }
+    }
+  }
+
   async function onSettle(ev) {
     ev.preventDefault();
     if (!window._lastRequest) {
-      setStatus($('settle-status'), 'Belum ada payment request aktif', 'err');
+      setStatus($('settle-status'), 'Belum ada payment request aktif untuk diselesaikan.', 'err');
       return;
     }
     const body = {
@@ -111,20 +187,20 @@
       amount: parseInt($('settle_amount').value, 10),
       payer_name: $('settle_payer').value.trim(),
     };
-    setStatus($('settle-status'), 'Mengirim settlement…', '');
+    setStatus($('settle-status'), 'Mengirimkan sinyal pelunasan pembayaran & webhook…', '');
     try {
       const out = await PayClient.simulateSettle(body);
-      const msg = 'SETTLED ✓\n' +
-        'tx_id: ' + out.transaction_id + '\n' +
-        'invoice: ' + out.fledger_invoice_id + '\n' +
-        'outbox: ' + out.outbox_status;
+      const msg = `✓ PEMBAYARAN BERHASIL DISELESAIKAN (SETTLED)!\n` +
+        `• Transaction ID: ${out.transaction_id}\n` +
+        `• Fledger Invoice ID: ${out.fledger_invoice_id}\n` +
+        `• Status Outbox: ${out.outbox_status}\n` +
+        `Sistem telah memicu auto-settlement ke Core Ledger dan auto-cancellation antrean Dunning.`;
       setStatus($('settle-status'), msg, 'ok');
-      // Refresh detail to show new status
       const updated = await PayClient.getRequest(window._lastRequest.request.id);
       renderDetail(updated);
       refreshOutbox();
     } catch (err) {
-      setStatus($('settle-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
+      setStatus($('settle-status'), 'Gagal: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
     }
   }
 
@@ -132,16 +208,14 @@
     PayClient.outboxCounts()
       .then((c) => {
         $('outbox-counts').innerHTML = `
-          <div class="kv">
-            <div><strong>Pending:</strong> <span>${c.pending}</span></div>
-            <div><strong>Processing:</strong> <span>${c.processing}</span></div>
-            <div><strong>Sent:</strong> <span>${c.sent}</span></div>
-            <div><strong>Failed:</strong> <span>${c.failed}</span></div>
-          </div>
+          <div class="kpi-card pending"><div class="kpi-title">Pending</div><div class="kpi-value">${c.pending ?? 0}</div></div>
+          <div class="kpi-card processing"><div class="kpi-title">Processing</div><div class="kpi-value">${c.processing ?? 0}</div></div>
+          <div class="kpi-card sent"><div class="kpi-title">Sent</div><div class="kpi-value">${c.sent ?? 0}</div></div>
+          <div class="kpi-card failed"><div class="kpi-title">Failed</div><div class="kpi-value">${c.failed ?? 0}</div></div>
         `;
       })
       .catch((err) => {
-        $('outbox-counts').textContent = 'ERR: ' + err.message;
+        $('outbox-counts').innerHTML = `<div style="color:#ef4444; padding:12px;">Gagal memuat outbox: ${err.message}</div>`;
       });
   }
 

@@ -109,11 +109,7 @@ func run() error {
 	// Embedded PWA (Sprint 5). / serves index.html, /web/* serves subpaths.
 	webuiHandler := webui.Handler()
 	r.Mount("/web", http.StripPrefix("/web", webuiHandler))
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/index.html"
-		webuiHandler.ServeHTTP(w, r2)
-	})
+	r.Handle("/*", webuiHandler)
 
 	if cfg.AppEnv == "development" {
 		r.Post("/v1/dev/login", func(w http.ResponseWriter, r *http.Request) {

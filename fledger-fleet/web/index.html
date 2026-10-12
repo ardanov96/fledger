@@ -3,31 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fledger Fleet — Dispatcher & Digital POD Portal</title>
+  <title>Fledger Fleet — Dispatcher &amp; Digital POD Portal</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Ambient background glow & grid -->
+  <div class="ambient-glow"></div>
+  <div class="bg-dot-matrix"></div>
+
   <div class="app-layout">
     <!-- Header -->
     <header class="app-header">
       <div class="brand">
-        <div class="logo-icon">🚚</div>
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>
+            <path d="M15 18H9"/>
+            <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
+            <circle cx="17" cy="18" r="2"/>
+            <circle cx="7" cy="18" r="2"/>
+          </svg>
+        </div>
         <div>
           <h1>FLEDGER FLEET</h1>
-          <p class="tagline">The Ledger-First Logistics, Dispatching & Digital POD Engine</p>
+          <p class="tagline">The Ledger-First Logistics, Dispatching &amp; Digital POD Engine</p>
         </div>
       </div>
       
       <div class="header-actions">
+        <nav class="ecosystem-nav">
+          <a href="http://localhost:8000" class="ecosystem-link" title="Unified API Gateway">Hub :8000</a>
+          <a href="http://localhost:8081/web/" class="ecosystem-link" title="Fledger Core Ledger">Core :8081</a>
+          <a href="http://localhost:8082" class="ecosystem-link active" title="Fledger Fleet Logistics">Fleet :8082</a>
+          <a href="http://localhost:8083" class="ecosystem-link" title="Fledger Pay Checkout">Pay :8083</a>
+          <a href="http://localhost:8084" class="ecosystem-link" title="Fledger Force SFA">Force :8084</a>
+          <a href="http://localhost:8085" class="ecosystem-link" title="Fledger Order Credit Gate">Order :8085</a>
+          <a href="http://localhost:8086" class="ecosystem-link" title="Fledger Dunning">Dunning :8086</a>
+        </nav>
         <div class="status-indicator" id="coreHealthIndicator">
           <span class="dot online"></span>
           <span class="label">Fleet API :8082</span>
         </div>
         <button id="btnQuickLogin" class="btn btn-secondary">
-          <span class="icon">⚡</span> Dev Token Auto-Login
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <span>Dev Token Auto-Login</span>
         </button>
       </div>
     </header>
@@ -35,13 +59,29 @@
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
       <button class="nav-tab active" data-tab="driver-tab">
-        <span class="icon">📱</span> Mode Supir (Digital POD)
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
+          <path d="M12 18h.01"/>
+        </svg>
+        <span>Mode Supir (Digital POD)</span>
       </button>
       <button class="nav-tab" data-tab="dispatcher-tab">
-        <span class="icon">🗺️</span> Dispatcher & Trip Hub
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
+          <line x1="9" x2="9" y1="3" y2="18"/>
+          <line x1="15" x2="15" y1="6" y2="21"/>
+        </svg>
+        <span>Dispatcher &amp; Trip Hub</span>
       </button>
       <button class="nav-tab" data-tab="master-tab">
-        <span class="icon">🚛</span> Master Data & DO
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>
+          <path d="M15 18H9"/>
+          <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
+          <circle cx="17" cy="18" r="2"/>
+          <circle cx="7" cy="18" r="2"/>
+        </svg>
+        <span>Master Data &amp; DO</span>
       </button>
     </nav>
 
@@ -56,7 +96,15 @@
           <div class="card trip-sidebar">
             <div class="card-header">
               <h2>Surat Jalan Hari Ini</h2>
-              <button id="btnRefreshDriver" class="btn btn-sm btn-outline">🔄 Muat Ulang</button>
+              <button id="btnRefreshDriver" class="btn btn-sm btn-outline">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                  <path d="M16 16h5v5"/>
+                </svg>
+                <span>Muat Ulang</span>
+              </button>
             </div>
             <div class="trip-info-box" id="activeTripBox">
               <span class="badge badge-info">Memuat data trip...</span>
@@ -69,12 +117,19 @@
           <!-- Right: Digital POD Form -->
           <div class="card pod-workspace">
             <div class="card-header">
-              <h2>Serah Terima Barang & Bukti Digital (POD)</h2>
+              <h2>Serah Terima Barang &amp; Bukti Digital (POD)</h2>
               <span class="badge" id="selectedDOBadge">Pilih DO dari sebelah kiri</span>
             </div>
 
             <div id="noDOSelectedState" class="empty-state">
-              <div class="empty-icon">📦</div>
+              <div class="empty-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m7.5 4.27 9 5.15"/>
+                  <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                  <path d="m3.3 7 8.7 5 8.7-5"/>
+                  <path d="M12 22V12"/>
+                </svg>
+              </div>
               <h3>Belum ada Surat Jalan yang dipilih</h3>
               <p>Pilih salah satu Surat Jalan dari daftar tugas di sebelah kiri untuk mengisi bukti serah terima digital.</p>
             </div>
@@ -84,14 +139,14 @@
                 <div class="outlet-name" id="podCustomerName">Toko Sumber Rezeki</div>
                 <div class="outlet-address" id="podCustomerAddress">Jl. Raya Daan Mogot No. 45</div>
                 <div class="outlet-meta">
-                  <span>Nomor DO: <strong id="podDONumber">DO-202610-0089</strong></span>
-                  <span>Total Pesanan: <strong id="podNominalOrdered">Rp 0</strong></span>
+                  <span>Nomor DO: <strong id="podDONumber" class="tabular">DO-202610-0089</strong></span>
+                  <span>Total Pesanan: <strong id="podNominalOrdered" class="tabular">Rp 0</strong></span>
                 </div>
               </div>
 
               <!-- Item Checking Table -->
               <div class="form-section">
-                <h3>1. Verifikasi Fisik SKU & Retur Lapangan</h3>
+                <h3>1. Verifikasi Fisik SKU &amp; Retur Lapangan</h3>
                 <div class="table-container">
                   <table class="items-table" id="podItemsTable">
                     <thead>
@@ -113,7 +168,7 @@
                 <div class="clean-nominal-banner">
                   <div>
                     <span>Total Nominal Bersih Terkirim:</span>
-                    <strong class="clean-nominal-amount" id="podCleanNominal">Rp 0</strong>
+                    <strong class="clean-nominal-amount tabular" id="podCleanNominal">Rp 0</strong>
                   </div>
                   <div class="settlement-note">
                     *Nominal ini yang akan otomatis diterbitkan sebagai faktur bersih di <strong>Fledger Core</strong> tanpa sengketa.
@@ -141,7 +196,7 @@
                 </div>
                 <div class="canvas-container">
                   <canvas id="signatureCanvas" width="500" height="180"></canvas>
-                  <div class="canvas-hint">Tanda tangani di area ini (mendukung layar sentuh & mouse)</div>
+                  <div class="canvas-hint">Tanda tangani di area ini (mendukung layar sentuh &amp; mouse)</div>
                 </div>
                 <div class="grid-2col mt-2">
                   <div>
@@ -150,7 +205,7 @@
                   </div>
                   <div>
                     <label>Nomor HP Penerima</label>
-                    <input type="tel" id="podRecipientPhone" class="form-control" placeholder="081298765432">
+                    <input type="tel" id="podRecipientPhone" class="form-control tabular" placeholder="081298765432">
                   </div>
                 </div>
                 <div class="mt-2">
@@ -162,20 +217,28 @@
               <!-- Submit Button -->
               <div class="form-actions">
                 <button type="submit" id="btnSubmitPOD" class="btn btn-primary btn-lg">
-                  <span class="icon">⚡</span> Submit POD & Terbitkan Faktur ke Fledger Core
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                  <span>Submit POD &amp; Terbitkan Faktur ke Fledger Core</span>
                 </button>
               </div>
             </form>
 
             <!-- POD Result Success Card -->
             <div id="podSuccessCard" class="success-card hidden">
-              <div class="success-icon">✅</div>
+              <div class="success-icon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="m9 12 2 2 4-4"/>
+                </svg>
+              </div>
               <h3>Proof of Delivery Berhasil Diserahkan!</h3>
               <p id="podSuccessMsg">Status DO telah diperbarui dan faktur bersih berhasil diterbitkan.</p>
               <div class="invoice-box">
                 <div>Status: <span class="badge badge-success" id="resStatus">DELIVERED</span></div>
-                <div>Nominal Faktur: <strong id="resNominal">Rp 0</strong></div>
-                <div>Fledger Core Invoice ID: <code id="resInvoiceId">-</code></div>
+                <div>Nominal Faktur: <strong id="resNominal" class="tabular">Rp 0</strong></div>
+                <div>Fledger Core Invoice ID: <code id="resInvoiceId" class="tabular">-</code></div>
               </div>
               <button id="btnBackToDOList" class="btn btn-secondary mt-3">Selesaikan DO Berikutnya</button>
             </div>
@@ -190,13 +253,13 @@
           <!-- Dispatch Form -->
           <div class="card">
             <div class="card-header">
-              <h2>Buat & Berangkatkan Trip Perjalanan Baru</h2>
+              <h2>Buat &amp; Berangkatkan Trip Perjalanan Baru</h2>
             </div>
             <form id="tripForm" class="trip-form">
               <div class="grid-2col">
                 <div>
                   <label>Nomor Surat Tugas (Trip Number) *</label>
-                  <input type="text" id="tripNumber" class="form-control" required placeholder="TRIP-202610-001">
+                  <input type="text" id="tripNumber" class="form-control tabular" required placeholder="TRIP-202610-001">
                 </div>
                 <div>
                   <label>Pilih Armada Kendaraan *</label>
@@ -225,20 +288,24 @@
               <!-- Weight Meter -->
               <div class="capacity-meter-box mt-3">
                 <div class="capacity-labels">
-                  <span>Estimasi Muatan: <strong id="estWeightKg">0</strong> kg</span>
-                  <span>Kapasitas Truk: <strong id="maxCapacityKg">0</strong> kg</span>
+                  <span>Estimasi Muatan: <strong id="estWeightKg" class="tabular">0</strong> kg</span>
+                  <span>Kapasitas Truk: <strong id="maxCapacityKg" class="tabular">0</strong> kg</span>
                 </div>
                 <div class="progress-bar-bg">
                   <div class="progress-bar-fill" id="weightProgressFill" style="width: 0%"></div>
                 </div>
                 <div id="capacityWarning" class="capacity-warning hidden">
-                  ⚠️ Muatan melebihi kapasitas kendaraan! Kurangi jumlah DO.
+                  [PERINGATAN] Muatan melebihi kapasitas kendaraan! Kurangi jumlah DO.
                 </div>
               </div>
 
               <div class="form-actions mt-3">
                 <button type="submit" id="btnCreateTrip" class="btn btn-primary">
-                  ➕ Buat Trip (DRAFT)
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" x2="12" y1="5" y2="19"/>
+                    <line x1="5" x2="19" y1="12" y2="12"/>
+                  </svg>
+                  <span>Buat Trip (DRAFT)</span>
                 </button>
               </div>
             </form>
@@ -248,7 +315,15 @@
           <div class="card">
             <div class="card-header">
               <h2>Daftar Trip Pengiriman Berjalan</h2>
-              <button id="btnRefreshTrips" class="btn btn-sm btn-outline">🔄 Refresh</button>
+              <button id="btnRefreshTrips" class="btn btn-sm btn-outline">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                  <path d="M16 16h5v5"/>
+                </svg>
+                <span>Refresh</span>
+              </button>
             </div>
             <div class="trip-table-container">
               <table class="table" id="tripsTable">
@@ -271,9 +346,9 @@
             <div class="outbox-monitor mt-3">
               <h3>Status Antrean Outbox (Retry ke Core)</h3>
               <div class="stats-row">
-                <div class="stat-pill"><span class="stat-num" id="outboxPending">0</span> Pending</div>
-                <div class="stat-pill"><span class="stat-num" id="outboxSent">0</span> Terkirim</div>
-                <div class="stat-pill"><span class="stat-num" id="outboxFailed">0</span> Gagal</div>
+                <div class="stat-pill"><span class="stat-num tabular" id="outboxPending">0</span> Pending</div>
+                <div class="stat-pill"><span class="stat-num tabular" id="outboxSent">0</span> Terkirim</div>
+                <div class="stat-pill"><span class="stat-num tabular" id="outboxFailed">0</span> Gagal</div>
               </div>
             </div>
           </div>
@@ -302,7 +377,7 @@
                   <option value="BLIND_VAN">Blind Van (800 kg)</option>
                   <option value="MOTOR_CARGO">Motor Cargo (200 kg)</option>
                 </select>
-                <input type="number" id="vCapacity" class="form-control" placeholder="Kapasitas KG" value="1500" required>
+                <input type="number" id="vCapacity" class="form-control tabular" placeholder="Kapasitas KG" value="1500" required>
                 <button type="submit" class="btn btn-sm btn-primary">Simpan Truk</button>
               </form>
             </div>
@@ -312,7 +387,7 @@
               <h3>Tambah Supir Ekspedisi</h3>
               <form id="driverForm" class="inline-form">
                 <input type="text" id="dName" class="form-control" placeholder="Nama Lengkap" required>
-                <input type="tel" id="dPhone" class="form-control" placeholder="No HP: 0812..." required>
+                <input type="tel" id="dPhone" class="form-control tabular" placeholder="No HP: 0812..." required>
                 <input type="text" id="dSim" class="form-control" placeholder="SIM: SIM-B1-..." required>
                 <button type="submit" class="btn btn-sm btn-primary">Simpan Supir</button>
               </form>
@@ -322,7 +397,13 @@
             <div class="sub-section mt-3">
               <h3>Penerbitan Surat Jalan Demo (Quick DO)</h3>
               <button id="btnGenerateDemoDO" class="btn btn-secondary w-full">
-                📦 Terbitkan 1 Surat Jalan Demo (Minyak Goreng & Mie Instan)
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m7.5 4.27 9 5.15"/>
+                  <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                  <path d="m3.3 7 8.7 5 8.7-5"/>
+                  <path d="M12 22V12"/>
+                </svg>
+                <span>Terbitkan 1 Surat Jalan Demo (Minyak Goreng &amp; Mie Instan)</span>
               </button>
             </div>
           </div>
@@ -330,7 +411,7 @@
           <!-- Master Lists Overview -->
           <div class="card">
             <div class="card-header">
-              <h2>Overview Surat Jalan & Kendaraan</h2>
+              <h2>Overview Surat Jalan &amp; Kendaraan</h2>
             </div>
             <div class="tabs-subnav">
               <button class="subtab-btn active" data-subtab="subtab-dos">Surat Jalan (DO)</button>

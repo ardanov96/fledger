@@ -2,122 +2,251 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fledger Pay — Simulator Pembayaran</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#090d16">
+  <title>Fledger Pay — B2B Payment Gateway &amp; Auto-Settlement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="hero">
-    <div class="container">
-      <h1>Fledger Pay — Payment Simulator</h1>
-      <p class="subtitle">B2B Payment Gateway &amp; Auto-Settlement Sandbox</p>
-      <p class="env"><span id="base-url">http://localhost:8083</span></p>
+  <!-- Ambient background glow & grid -->
+  <div class="ambient-glow"></div>
+  <div class="bg-dot-matrix"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo-badge">
+        <!-- Lucide CreditCard SVG -->
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="20" height="14" x="2" y="5" rx="2"/>
+          <line x1="2" x2="22" y1="10" y2="10"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Fledger Pay</h1>
+        <small>B2B Payment Gateway &amp; Auto-Settlement Simulator</small>
+      </div>
+    </div>
+    <div class="nav-meta">
+      <nav class="ecosystem-nav">
+        <a href="http://localhost:8000" class="ecosystem-link">Hub :8000</a>
+        <a href="http://localhost:8081/web/" class="ecosystem-link">Core :8081</a>
+        <a href="http://localhost:8082" class="ecosystem-link">Fleet :8082</a>
+        <a href="http://localhost:8083" class="ecosystem-link active">Pay :8083</a>
+        <a href="http://localhost:8084" class="ecosystem-link">Force :8084</a>
+        <a href="http://localhost:8085" class="ecosystem-link">Order :8085</a>
+        <a href="http://localhost:8086" class="ecosystem-link">Dunning :8086</a>
+      </nav>
+      <span class="status-pill">Sandbox Active</span>
+      <span class="env-pill" id="base-url">http://localhost:8083</span>
     </div>
   </header>
 
   <main class="container">
-    <!-- STEP 1: Create payment request -->
+    <!-- STEP 1: CREATE PAYMENT REQUEST -->
     <section class="card">
-      <h2>1. Buat Permintaan Pembayaran</h2>
+      <div class="card-header-row">
+        <div>
+          <h2>1. Penerbitan Tagihan Pembayaran B2B</h2>
+          <p class="desc">Generate Virtual Account multi-bank dan Dynamic B2B QRIS untuk faktur Core Ledger.</p>
+        </div>
+      </div>
       <form id="create-form">
         <div class="grid">
           <label>
             Fledger Invoice ID
-            <input type="text" id="fledger_invoice_id" required>
+            <input type="text" id="fledger_invoice_id" class="tabular-nums" required>
           </label>
           <label>
             Customer ID (UUID)
-            <input type="text" id="customer_id" required>
+            <input type="text" id="customer_id" class="tabular-nums" required>
           </label>
           <label>
-            Nama Toko
+            Nama Toko / Debitur
             <input type="text" id="customer_name" value="Toko Sumber Rezeki" required>
           </label>
           <label>
-            No HP (untuk VA)
-            <input type="text" id="customer_phone" value="081298765432">
+            No HP (untuk Notifikasi VA)
+            <input type="text" id="customer_phone" class="tabular-nums" value="081298765432">
           </label>
           <label>
-            Nominal (Rp)
-            <input type="number" id="amount" value="4000000" required>
+            Nominal Tagihan (Rp)
+            <input type="number" id="amount" class="tabular-nums" value="4000000" required>
           </label>
           <label>
-            Expiry (menit)
-            <input type="number" id="expiry_minutes" value="1440">
+            Masa Berlaku (Menit)
+            <input type="number" id="expiry_minutes" class="tabular-nums" value="1440">
           </label>
           <label class="span2">
-            Bank
-            <select id="enabled_banks" multiple size="3">
-              <option value="BCA" selected>BCA</option>
-              <option value="MANDIRI">MANDIRI</option>
-              <option value="BRI">BRI</option>
+            Pilihan Bank Virtual Account
+            <select id="enabled_banks" multiple size="3" style="height:80px;">
+              <option value="BCA" selected>BCA Virtual Account</option>
+              <option value="MANDIRI" selected>Mandiri Virtual Account</option>
+              <option value="BRI" selected>BRI Virtual Account</option>
             </select>
-            <small>(Ctrl+klik untuk multi-select. Kosongkan untuk default: BCA)</small>
+            <small style="color:var(--muted); font-size:0.75rem;">(Tahan Ctrl / Cmd untuk memilih beberapa bank)</small>
           </label>
-          <label class="cb">
-            <input type="checkbox" id="enable_qris" checked> Aktifkan QRIS Dinamis
+          <label class="span2 checkbox-row">
+            <input type="checkbox" id="enable_qris" checked>
+            <span>Aktifkan Dynamic B2B QRIS (National Standard QR)</span>
           </label>
         </div>
-        <button type="submit" class="primary">Buat Payment Request</button>
+        <div style="display:flex; justify-content:flex-end;">
+          <button type="submit" class="primary" style="padding:11px 22px;">
+            <!-- Lucide Zap SVG -->
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span>Terbitkan Tagihan Pembayaran (VA &amp; QRIS)</span>
+          </button>
+        </div>
         <div id="create-status" class="status"></div>
       </form>
     </section>
 
-    <!-- STEP 2: Show VA + QRIS -->
+    <!-- STEP 2: PAYMENT DETAILS & SIMULATOR -->
     <section class="card" id="detail-card" hidden>
-      <h2>2. Detail Pembayaran</h2>
-      <div class="kv">
-        <div><strong>Request Number:</strong> <span id="d_request_number">-</span></div>
-        <div><strong>Status:</strong> <span id="d_status">-</span></div>
-        <div><strong>Nominal:</strong> <span id="d_amount">-</span></div>
-        <div><strong>Expired:</strong> <span id="d_expires">-</span></div>
+      <div class="card-header-row">
+        <div>
+          <h2>2. Tagihan Aktif &amp; Media Pembayaran</h2>
+          <p class="desc">Virtual Account dan QR Code yang disajikan kepada pihak toko untuk pelunasan.</p>
+        </div>
       </div>
 
-      <h3>Virtual Account</h3>
-      <table class="va-table" id="va-table">
-        <thead><tr><th>Bank</th><th>Nomor VA</th><th>Nama</th><th>Salin</th></tr></thead>
-        <tbody></tbody>
-      </table>
-
-      <h3>QRIS Dinamis</h3>
-      <pre class="qr-string" id="qr-string"></pre>
-
-      <h3>3. Simulasi Pembayaran (Sandbox)</h3>
-      <form id="settle-form">
-        <div class="grid">
-          <label>
-            Channel
-            <select id="settle_channel">
-              <option value="VA_BCA">VA BCA</option>
-              <option value="VA_MANDIRI">VA MANDIRI</option>
-              <option value="VA_BRI">VA BRI</option>
-              <option value="QRIS">QRIS</option>
-              <option value="MANUAL_TRANSFER">MANUAL_TRANSFER</option>
-            </select>
-          </label>
-          <label>
-            Nominal Bayar (Rp)
-            <input type="number" id="settle_amount" value="4000000" required>
-          </label>
-          <label class="span2">
-            Nama Pembayar (opsional)
-            <input type="text" id="settle_payer" value="Ibu Siti Fatimah">
-          </label>
+      <!-- Summary metrics -->
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="summary-label">Nomor Request</div>
+          <div class="summary-value tabular-nums" id="d_request_number" style="font-family:'JetBrains Mono', monospace; font-size:0.92rem;">-</div>
         </div>
-        <button type="submit" class="primary">⚡ Bayar Sekarang (Sandbox)</button>
-        <div id="settle-status" class="status"></div>
-      </form>
+        <div class="summary-card">
+          <div class="summary-label">Status Pembayaran</div>
+          <div class="summary-value" id="d_status" style="color:#38bdf8;">-</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Total Tagihan</div>
+          <div class="summary-value tabular-nums" id="d_amount" style="color:#10b981;">-</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Batas Waktu Bayar</div>
+          <div class="summary-value tabular-nums" id="d_expires" style="font-size:0.85rem;">-</div>
+        </div>
+      </div>
+
+      <!-- Virtual Account Cards -->
+      <h3 style="display:flex; align-items:center; gap:8px;">
+        <!-- Lucide Landmark SVG -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" x2="21" y1="22" y2="22"/>
+          <line x1="6" x2="6" y1="18" y2="11"/>
+          <line x1="10" x2="10" y1="18" y2="11"/>
+          <line x1="14" x2="14" y1="18" y2="11"/>
+          <line x1="18" x2="18" y1="18" y2="11"/>
+          <polygon points="12 2 20 7 4 7"/>
+        </svg>
+        Pilihan Virtual Account Multi-Bank (1-Click Copy)
+      </h3>
+      <div class="va-cards-grid" id="va-cards-container"></div>
+
+      <!-- Hidden table for script backward compatibility -->
+      <table id="va-table" style="display:none;"><tbody></tbody></table>
+
+      <!-- QRIS Visual Card -->
+      <div id="qris-wrapper" style="margin-top:20px;">
+        <h3 style="display:flex; align-items:center; gap:8px;">
+          <!-- Lucide QrCode SVG -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="5" height="5" x="3" y="3" rx="1"/>
+            <rect width="5" height="5" x="16" y="3" rx="1"/>
+            <rect width="5" height="5" x="3" y="16" rx="1"/>
+            <path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
+            <path d="M21 21v.01"/>
+            <path d="M12 7v3a2 2 0 0 1-2 2H7"/>
+            <path d="M3 12h.01"/>
+            <path d="M12 3h.01"/>
+            <path d="M12 16v.01"/>
+            <path d="M16 12h1"/>
+            <path d="M21 12v.01"/>
+            <path d="M12 21v-1"/>
+          </svg>
+          QRIS Dinamis (National Standard QR)
+        </h3>
+        <div class="qris-container">
+          <div class="qris-header">
+            <span class="qris-logo">QRIS</span>
+            <span class="gpn-badge">GPN</span>
+          </div>
+          <div class="qris-store-name" id="qris-store-display">Toko Sumber Rezeki</div>
+          <div class="qris-amount-tag tabular-nums" id="qris-amount-display">Rp 4.000.000</div>
+          <div class="qris-canvas-frame">
+            <canvas id="qris-canvas" width="200" height="200"></canvas>
+          </div>
+          <small style="color:#64748b; font-size:0.75rem;">Mendukung BCA Mobile, Livin, BRImo, GoPay, OVO, Dana</small>
+        </div>
+        <div class="qr-raw-preview tabular-nums" id="qr-string"></div>
+      </div>
+
+      <!-- STEP 3: EXECUTE SANDBOX PAYMENT -->
+      <div style="border-top:1px solid var(--card-border); margin-top:28px; padding-top:20px;">
+        <h3>3. Simulasi Eksekusi Pelunasan Toko (Sandbox)</h3>
+        <p class="desc" style="margin-bottom:16px;">Pilih kanal dan klik eksekusi untuk mentrigger webhook, auto-settlement Core, dan pembatalan dunning.</p>
+        <form id="settle-form">
+          <div class="grid">
+            <label>
+              Kanal Pembayaran Digunakan
+              <select id="settle_channel">
+                <option value="VA_BCA">Virtual Account BCA</option>
+                <option value="VA_MANDIRI">Virtual Account Mandiri</option>
+                <option value="VA_BRI">Virtual Account BRI</option>
+                <option value="QRIS">QRIS Dinamis (GPN)</option>
+                <option value="MANUAL_TRANSFER">Transfer Manual Bank</option>
+              </select>
+            </label>
+            <label>
+              Nominal yang Dibayarkan (Rp)
+              <input type="number" id="settle_amount" class="tabular-nums" value="4000000" required>
+            </label>
+            <label class="span2">
+              Nama Pembayar / Rekening Pengirim
+              <input type="text" id="settle_payer" value="Bpk. Hendra Gunawan" required>
+            </label>
+          </div>
+          <div style="display:flex; justify-content:flex-end;">
+            <button type="submit" class="primary" style="background:linear-gradient(180deg, #10b981 0%, #059669 100%); border-top:1px solid rgba(255,255,255,0.4); padding:11px 22px;">
+              <!-- Lucide CheckCircle SVG -->
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              <span>Eksekusi Pelunasan &amp; Kirim Webhook Settlement</span>
+            </button>
+          </div>
+          <div id="settle-status" class="status"></div>
+        </form>
+      </div>
     </section>
 
-    <!-- STEP 3: Outbox counts -->
+    <!-- STEP 4: SETTLEMENT OUTBOX TELEMETRY -->
     <section class="card">
-      <h2>4. Outbox Settlement → Fledger Core</h2>
-      <div id="outbox-counts">Memuat...</div>
+      <div class="card-header-row">
+        <div>
+          <h2>4. Antrean Outbox Auto-Settlement</h2>
+          <p class="desc">Event outbox yang mendistribusikan pelunasan ke Core Ledger dan Dunning Engine secara asinkron.</p>
+        </div>
+      </div>
+      <div id="outbox-counts" class="outbox-kpi-grid">
+        <div class="kpi-card pending"><div class="kpi-title">Pending</div><div class="kpi-value tabular-nums">-</div></div>
+        <div class="kpi-card processing"><div class="kpi-title">Processing</div><div class="kpi-value tabular-nums">-</div></div>
+        <div class="kpi-card sent"><div class="kpi-title">Sent / Dispatched</div><div class="kpi-value tabular-nums">-</div></div>
+        <div class="kpi-card failed"><div class="kpi-title">Failed</div><div class="kpi-value tabular-nums">-</div></div>
+      </div>
     </section>
   </main>
 
   <footer>
-    <small>Fledger Pay — Demo &amp; E2E Sandbox. Tidak ada transfer uang riil.</small>
+    <small>Fledger Pay &bull; B2B Payment Gateway &bull; Powered by Go &amp; PostgreSQL 16.</small>
   </footer>
 
   <script src="pay-client.js"></script>

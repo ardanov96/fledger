@@ -7,4 +7,5 @@ use (
 	./fledger-force/src
 	./fledger-order/src
 	./fledger-dunning
+	./deployments/gateway
 )

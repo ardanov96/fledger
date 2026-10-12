@@ -4,7 +4,7 @@
 
 Write-Host "Stopping all local Fledger OS processes..." -ForegroundColor Yellow
 
-$ports = @(8081, 8082, 8083, 8084, 8085, 8086)
+$ports = @(8000, 8081, 8082, 8083, 8084, 8085, 8086)
 
 foreach ($port in $ports) {
     try {
