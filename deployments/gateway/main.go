@@ -26,6 +26,9 @@ var demoHTML []byte
 //go:embed simulator.html
 var simulatorHTML []byte
 
+//go:embed logo-preview.html
+var logoPreviewHTML []byte
+
 //go:embed assets/*
 var assetsFS embed.FS
 
@@ -201,6 +204,17 @@ func main() {
 			return
 		}
 		w.Write(simulatorHTML)
+	})
+
+	// Logo Identity Exploration & Selection Studio
+	mux.HandleFunc("/logo-preview", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		if data, err := os.ReadFile("logo-preview.html"); err == nil {
+			w.Write(data)
+			return
+		}
+		w.Write(logoPreviewHTML)
 	})
 
 	// Static Assets with 1-Year Immutable Caching & Native Range Request Support
