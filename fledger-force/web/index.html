@@ -3,151 +3,357 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1d4ed8">
-  <title>Fledger Force — PWA Salesman & Kasir</title>
+  <meta name="theme-color" content="#090d16">
+  <title>Fledger Force — SFA &amp; Anti-Cash Kitting PWA</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Ambient background glow & grid -->
+  <div class="ambient-glow"></div>
+  <div class="bg-dot-matrix"></div>
+
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🛵</span>
+      <div class="logo-badge">
+        <!-- Lucide Navigation SVG -->
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+        </svg>
+      </div>
       <div>
         <h1>Fledger Force</h1>
-        <small id="who">SFA &amp; Anti-Cash Kitting</small>
+        <small id="who">Sales Force Automation &amp; Anti-Cash Kitting</small>
+        <span class="offline-badge" id="offline-badge">OFFLINE</span>
       </div>
     </div>
+
+    <!-- Ecosystem Navigation -->
+    <nav class="ecosystem-nav">
+      <a href="http://localhost:8000" class="ecosystem-link" title="Unified API Gateway">Hub :8000</a>
+      <a href="http://localhost:8081/web/" class="ecosystem-link" title="Fledger Core Ledger">Core :8081</a>
+      <a href="http://localhost:8082" class="ecosystem-link" title="Fledger Fleet Logistics">Fleet :8082</a>
+      <a href="http://localhost:8083" class="ecosystem-link" title="Fledger Pay Checkout">Pay :8083</a>
+      <a href="http://localhost:8084" class="ecosystem-link active" title="Fledger Force SFA">Force :8084</a>
+      <a href="http://localhost:8085" class="ecosystem-link" title="Fledger Order Credit Gate">Order :8085</a>
+      <a href="http://localhost:8086" class="ecosystem-link" title="Fledger Dunning">Dunning :8086</a>
+    </nav>
+
+    <!-- Role Mode Switcher (Launch UI Segmented Control) -->
     <nav class="mode">
-      <button class="mode-btn active" data-mode="salesman">Salesman</button>
-      <button class="mode-btn" data-mode="cashier">Kasir</button>
+      <button class="mode-btn active" data-mode="salesman">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+        </svg>
+        <span>Salesman Lapangan</span>
+      </button>
+      <button class="mode-btn" data-mode="cashier">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" x2="21" y1="22" y2="22"/>
+          <line x1="6" x2="6" y1="18"/>
+          <line x1="10" x2="10" y1="18"/>
+          <line x1="14" x2="14" y1="18"/>
+          <line x1="18" x2="18" y1="18"/>
+          <polygon points="12 2 20 7 4 7"/>
+        </svg>
+        <span>Meja Kasir Gudang</span>
+      </button>
     </nav>
   </header>
 
   <main class="content">
+    <!-- PWA Install Promotion Banner -->
+    <div id="pwa-install-banner" class="pwa-banner" style="display:none;">
+      <div class="pwa-banner-left">
+        <div class="pwa-banner-icon">
+          <img src="icon.svg" width="22" height="22" alt="Fledger Icon">
+        </div>
+        <div>
+          <div class="pwa-banner-title">Install Fledger Force PWA</div>
+          <div class="pwa-banner-desc">Pasang di layar utama HP untuk akses cepat &amp; mode offline</div>
+        </div>
+      </div>
+      <button type="button" class="btn-install-pwa" id="pwa-install-btn">Install App</button>
+    </div>
+
     <!-- ============================================================ -->
-    <!-- SALESMAN MODE                                                -->
+    <!-- SALESMAN MODE PANE                                           -->
     <!-- ============================================================ -->
     <section id="mode-salesman" class="mode-pane active">
+      <!-- 1. BEAT PLAN -->
       <div class="card">
-        <h2>1. Cek Rute Hari Ini</h2>
-        <button id="load-today" class="primary">Muat Rute (Today)</button>
-        <div id="beat-list" class="list"></div>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>
+              </svg>
+              <span>1. Rute Kunjungan Toko Hari Ini (Beat Plan)</span>
+            </h2>
+            <p class="desc">Rencana rute harian yang diverifikasi secara geofenced per titik toko.</p>
+          </div>
+          <button id="load-today" class="primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+            </svg>
+            <span>Muat Rute Hari Ini</span>
+          </button>
+        </div>
+        <div id="beat-list" class="beat-plan-list">
+          <em class="muted" style="color:var(--muted); font-size:0.85rem;">Klik tombol "Muat Rute Hari Ini" untuk menampilkan beat plan aktif.</em>
+        </div>
       </div>
 
+      <!-- 2. GEOFENCE CHECK-IN -->
       <div class="card">
-        <h2>2. Check-In Toko (GPS Geofence)</h2>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span>2. Check-In Toko (Geofence GPS Radius 100m)</span>
+            </h2>
+            <p class="desc">Verifikasi posisi salesman via formula Haversine untuk mencegah check-in fiktif.</p>
+          </div>
+        </div>
+        <div class="radar-banner">
+          <span class="radar-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+            </svg>
+          </span>
+          <div>
+            <strong style="color:#34d399; font-size:0.85rem;">GPS Geofence Guard Aktif</strong>
+            <p style="color:var(--muted); font-size:0.75rem;">Sistem memastikan sales berada dalam radius &le; 100 meter dari koordinat toko resmi.</p>
+          </div>
+        </div>
         <form id="checkin-form" class="grid">
           <label>
             Beat Plan ID
-            <input type="text" id="beat_plan_id" required>
+            <input type="text" id="beat_plan_id" class="tabular-nums" required>
           </label>
           <label>
-            Store ID
-            <input type="text" id="store_id" required>
+            Store ID (UUID)
+            <input type="text" id="store_id" class="tabular-nums" required>
           </label>
           <label>
-            Latitude
-            <input type="number" step="any" id="latitude" required>
+            Latitude GPS
+            <input type="number" step="any" id="latitude" class="tabular-nums" required>
           </label>
           <label>
-            Longitude
-            <input type="number" step="any" id="longitude" required>
+            Longitude GPS
+            <input type="number" step="any" id="longitude" class="tabular-nums" required>
           </label>
-          <label class="span2">
-            <button type="button" class="secondary" id="gps-btn">📍 Ambil GPS HP (Mock)</button>
-            <small>Demo: klik untuk isi lat/lng otomatis. Pada produksi: navigator.geolocation</small>
-          </label>
-          <button type="submit" class="primary span2">Check-In Sekarang</button>
+          <div class="span2" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <button type="button" class="secondary" id="gps-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/>
+              </svg>
+              <span>Ambil GPS Perangkat</span>
+            </button>
+            <button type="submit" class="primary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              <span>Konfirmasi Check-In di Toko</span>
+            </button>
+          </div>
         </form>
         <div id="checkin-status" class="status"></div>
       </div>
 
+      <!-- 3. MOBILE CASH COLLECTION -->
       <div class="card">
-        <h2>3. Terima Pembayaran Tunai</h2>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>
+              </svg>
+              <span>3. Penagihan Kas di Lapangan (Cash Collection)</span>
+            </h2>
+            <p class="desc">Beban kas piutang toko otomatis dialihkan ke dompet digital salesman di Core Ledger.</p>
+          </div>
+        </div>
         <form id="collect-form" class="grid">
           <label>
-            Visit ID (opsional)
-            <input type="text" id="collect_visit_id">
+            Visit ID (Opsional)
+            <input type="text" id="collect_visit_id" class="tabular-nums">
           </label>
           <label>
             Store ID
-            <input type="text" id="collect_store_id" required>
+            <input type="text" id="collect_store_id" class="tabular-nums" required>
           </label>
           <label>
             Fledger Invoice ID
-            <input type="text" id="collect_invoice_id" required>
+            <input type="text" id="collect_invoice_id" class="tabular-nums" required>
           </label>
           <label>
-            Nominal (Rp)
-            <input type="number" id="collect_amount" value="2500000" required>
+            Nominal Diterima (Rp)
+            <input type="number" id="collect_amount" class="tabular-nums" value="2500000" required>
           </label>
+          <div class="quick-chips">
+            <button type="button" class="chip-btn" data-amt="500000">Rp 500rb</button>
+            <button type="button" class="chip-btn" data-amt="1000000">Rp 1 Jt</button>
+            <button type="button" class="chip-btn" data-amt="2500000">Rp 2.5 Jt</button>
+            <button type="button" class="chip-btn" data-amt="5000000">Rp 5 Jt</button>
+          </div>
           <label>
-            Nama Pembayar
+            Nama Pembayar / Pemilik Toko
             <input type="text" id="collect_payer" value="Ibu Siti Fatimah">
           </label>
           <label>
-            No HP Pembayar
-            <input type="text" id="collect_payer_phone" value="081298765432">
+            No HP Pembayar (WhatsApp Kwitansi)
+            <input type="text" id="collect_payer_phone" class="tabular-nums" value="081298765432">
           </label>
-          <button type="submit" class="primary span2">⚡ Terima Kas &amp; Terbitkan Kwitansi</button>
+          <div class="span2" style="display:flex; justify-content:flex-end;">
+            <button type="submit" class="primary" style="background:linear-gradient(180deg, #059669 0%, #10b981 100%); border-bottom-color:#047857;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>
+              </svg>
+              <span>Terima Kas &amp; Terbitkan Tanda Terima Digital</span>
+            </button>
+          </div>
         </form>
         <div id="collect-status" class="status"></div>
       </div>
 
+      <!-- 4. SALDO KAS SALESMAN -->
       <div class="card">
-        <h2>4. Kas yang Saya Bawa Hari Ini</h2>
-        <div id="rep-cash">Memuat...</div>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>
+              </svg>
+              <span>4. Saldo Kas Fisik yang Dipegang Salesman</span>
+            </h2>
+            <p class="desc">Akumulasi uang tunai yang harus disetorkan ke kasir gudang di sore hari.</p>
+          </div>
+        </div>
+        <div id="rep-cash">
+          <em class="muted" style="color:var(--muted); font-size:0.85rem;">Memuat ringkasan saldo kas salesman…</em>
+        </div>
       </div>
     </section>
 
     <!-- ============================================================ -->
-    <!-- CASHIER MODE                                                 -->
+    <!-- CASHIER MODE PANE                                            -->
     <!-- ============================================================ -->
     <section id="mode-cashier" class="mode-pane">
+      <!-- 1. INQUIRY SALDO SALESMAN -->
       <div class="card">
-        <h2>Inquiry Setoran (Salesman)</h2>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/>
+              </svg>
+              <span>1. Meja Kasir: Inquiry Setoran Salesman</span>
+            </h2>
+            <p class="desc">Periksa total penerimaan uang tunai yang wajib disetorkan sebelum penutupan hari.</p>
+          </div>
+        </div>
         <form id="inquiry-form" class="grid">
           <label class="span2">
-            Salesman ID (UUID)
-            <input type="text" id="inquiry_rep_id" required>
+            Sales Rep ID (UUID)
+            <input type="text" id="inquiry_rep_id" class="tabular-nums" required>
           </label>
-          <button type="submit" class="primary span2">Cek Saldo Wajib Setor</button>
+          <div class="span2" style="display:flex; justify-content:flex-end;">
+            <button type="submit" class="primary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/>
+              </svg>
+              <span>Cek Rekap Kas Salesman</span>
+            </button>
+          </div>
         </form>
         <div id="inquiry-result" class="status"></div>
       </div>
 
+      <!-- 2. DAILY SETTLEMENT LOCK -->
       <div class="card">
-        <h2>Konfirmasi Setoran EOD</h2>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <span>2. Daily Settlement Lock (Meja Setor Sore Hari)</span>
+            </h2>
+            <p class="desc">Kasir gudang menghitung fisik uang dan mengunci mutasi harian untuk membuka operasional esok hari.</p>
+          </div>
+        </div>
         <form id="settle-form" class="grid">
+          <label>
+            Sales Rep ID
+            <input type="text" id="settle_rep_id" class="tabular-nums" required>
+          </label>
+          <label>
+            Uang Fisik yang Diterima Kasir (Rp)
+            <input type="number" id="settle_physical" class="tabular-nums" value="2500000" required>
+          </label>
           <label class="span2">
-            Salesman ID (UUID)
-            <input type="text" id="settle_rep_id" required>
+            Catatan Rekonsiliasi Kasir
+            <input type="text" id="settle_notes" value="Setoran utuh sesuai kwitansi penerimaan toko">
           </label>
-          <label>
-            Uang Fisik Diterima (Rp)
-            <input type="number" id="settle_physical" required>
-          </label>
-          <label>
-            Catatan Kasir
-            <input type="text" id="settle_notes" value="Uang fisik pas">
-          </label>
-          <button type="submit" class="primary span2">✅ Konfirmasi Setoran EOD</button>
+          <div class="span2" style="display:flex; justify-content:flex-end;">
+            <button type="submit" class="primary" style="background:linear-gradient(180deg, #059669 0%, #10b981 100%); border-bottom-color:#047857;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <span>Konfirmasi Setoran &amp; Buka Kunci Operasional</span>
+            </button>
+          </div>
         </form>
         <div id="settle-status" class="status"></div>
       </div>
 
+      <!-- 3. OUTBOX STATUS -->
       <div class="card">
-        <h2>Outbox → Fledger Core</h2>
-        <div id="outbox-counts">Memuat...</div>
+        <div class="card-header-row">
+          <div>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              <span>3. Outbox Jurnal Kas &rarr; Fledger Core</span>
+            </h2>
+            <p class="desc">Status pemindahan beban kas dari dompet salesman ke Kas Utama HQ.</p>
+          </div>
+        </div>
+        <div id="outbox-counts" class="outbox-kpi-grid">
+          <div class="kpi-card pending"><div class="kpi-title">Pending</div><div class="kpi-value tabular-nums">-</div></div>
+          <div class="kpi-card processing"><div class="kpi-title">Processing</div><div class="kpi-value tabular-nums">-</div></div>
+          <div class="kpi-card sent"><div class="kpi-title">Sent</div><div class="kpi-value tabular-nums">-</div></div>
+          <div class="kpi-card failed"><div class="kpi-title">Failed</div><div class="kpi-value tabular-nums">-</div></div>
+        </div>
       </div>
     </section>
   </main>
 
   <footer>
-    <small>Fledger Force — PWA Sandbox (mode development).</small>
+    <small>Fledger Force &bull; Anti-Cash Kitting Engine &bull; Powered by Go &amp; PostgreSQL 16.</small>
   </footer>
 
   <script src="force-client.js"></script>
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then((reg) => {
+          console.log('[PWA] Service Worker registered with scope:', reg.scope);
+        }).catch((err) => {
+          console.warn('[PWA] Service Worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

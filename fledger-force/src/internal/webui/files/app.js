@@ -49,6 +49,7 @@
     $('longitude').value = 106.827153;
 
     bindEvents();
+    initPWA();
     refreshOutbox();
     setInterval(refreshOutbox, 5000);
   });
@@ -60,6 +61,55 @@
     $('collect-form').addEventListener('submit', onCollect);
     $('inquiry-form').addEventListener('submit', onInquiry);
     $('settle-form').addEventListener('submit', onSettle);
+
+    // Quick cash chips
+    document.querySelectorAll('.chip-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const inp = $('collect_amount');
+        if (inp && btn.dataset.amt) {
+          inp.value = btn.dataset.amt;
+        }
+      });
+    });
+  }
+
+  function initPWA() {
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const banner = $('pwa-install-banner');
+      if (banner) banner.style.display = 'flex';
+    });
+
+    const installBtn = $('pwa-install-btn');
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          if (choice.outcome === 'accepted') {
+            const banner = $('pwa-install-banner');
+            if (banner) banner.style.display = 'none';
+          }
+          deferredPrompt = null;
+        }
+      });
+    }
+
+    function updateOnlineStatus() {
+      const badge = $('offline-badge');
+      if (badge) {
+        if (navigator.onLine) {
+          badge.classList.remove('is-offline');
+        } else {
+          badge.classList.add('is-offline');
+        }
+      }
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
   }
 
   async function loadToday() {

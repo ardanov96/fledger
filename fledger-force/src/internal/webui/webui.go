@@ -39,13 +39,31 @@ func Handler() http.Handler {
 			return
 		}
 		defer f.Close()
+
+		if upath == "sw.js" {
+			w.Header().Set("Service-Worker-Allowed", "/")
+		}
 		w.Header().Set("Content-Type", mimeByExt(path.Ext(upath)))
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		_, _ = io.Copy(w, f)
 	})
 }
 
 func mimeByExt(ext string) string {
+	switch ext {
+	case ".json", ".webmanifest":
+		return "application/manifest+json"
+	case ".js":
+		return "application/javascript; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".png":
+		return "image/png"
+	}
 	if t := mime.TypeByExtension(ext); t != "" {
 		return t
 	}

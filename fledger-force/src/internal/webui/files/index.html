@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#090d16">
   <title>Fledger Force — SFA &amp; Anti-Cash Kitting PWA</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -27,6 +28,7 @@
       <div>
         <h1>Fledger Force</h1>
         <small id="who">Sales Force Automation &amp; Anti-Cash Kitting</small>
+        <span class="offline-badge" id="offline-badge">OFFLINE</span>
       </div>
     </div>
 
@@ -64,6 +66,20 @@
   </header>
 
   <main class="content">
+    <!-- PWA Install Promotion Banner -->
+    <div id="pwa-install-banner" class="pwa-banner" style="display:none;">
+      <div class="pwa-banner-left">
+        <div class="pwa-banner-icon">
+          <img src="icon.svg" width="22" height="22" alt="Fledger Icon">
+        </div>
+        <div>
+          <div class="pwa-banner-title">Install Fledger Force PWA</div>
+          <div class="pwa-banner-desc">Pasang di layar utama HP untuk akses cepat &amp; mode offline</div>
+        </div>
+      </div>
+      <button type="button" class="btn-install-pwa" id="pwa-install-btn">Install App</button>
+    </div>
+
     <!-- ============================================================ -->
     <!-- SALESMAN MODE PANE                                           -->
     <!-- ============================================================ -->
@@ -182,6 +198,12 @@
             Nominal Diterima (Rp)
             <input type="number" id="collect_amount" class="tabular-nums" value="2500000" required>
           </label>
+          <div class="quick-chips">
+            <button type="button" class="chip-btn" data-amt="500000">Rp 500rb</button>
+            <button type="button" class="chip-btn" data-amt="1000000">Rp 1 Jt</button>
+            <button type="button" class="chip-btn" data-amt="2500000">Rp 2.5 Jt</button>
+            <button type="button" class="chip-btn" data-amt="5000000">Rp 5 Jt</button>
+          </div>
           <label>
             Nama Pembayar / Pemilik Toko
             <input type="text" id="collect_payer" value="Ibu Siti Fatimah">
@@ -322,5 +344,16 @@
 
   <script src="force-client.js"></script>
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then((reg) => {
+          console.log('[PWA] Service Worker registered with scope:', reg.scope);
+        }).catch((err) => {
+          console.warn('[PWA] Service Worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

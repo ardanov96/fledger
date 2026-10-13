@@ -1,21 +1,13 @@
-// Fledger Force PWA — UI controller.
+// Fledger Force PWA — UI controller (Enhanced Launch UI Style).
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const fmtIDR = (n) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Number(n) || 0);
 
   function setStatus(el, msg, kind) {
+    if (!el) return;
     el.className = 'status ' + (kind || '');
     el.textContent = msg;
-  }
-
-  function setKv(target, pairs) {
-    let html = '<div class="kv">';
-    for (const [k, v] of pairs) {
-      html += `<div><strong>${k}:</strong> <span>${v}</span></div>`;
-    }
-    html += '</div>';
-    target.innerHTML = html;
   }
 
   function uuid() {
@@ -37,12 +29,11 @@
       });
     });
 
-    // Login (sets cookie-free JWT in subsequent calls; we just demonstrate the flow)
     try {
       const r = await Force.login();
-      $('who').textContent = 'Token expires ' + new Date(r.expires_at).toLocaleString('id-ID');
+      $('who').textContent = 'Token aktif (berakhir ' + new Date(r.expires_at).toLocaleTimeString('id-ID') + ')';
     } catch (e) {
-      $('who').textContent = 'PWA (token required via dev login)';
+      $('who').textContent = 'Dev Mode (Local)';
     }
 
     // Initial placeholders
@@ -53,11 +44,12 @@
     $('inquiry_rep_id').value = uuid();
     $('settle_rep_id').value = uuid();
 
-    // Default: -6.175392, 106.827153 (Monas, Jakarta Pusat)
+    // Default: Monas, Jakarta Pusat
     $('latitude').value = -6.175392;
     $('longitude').value = 106.827153;
 
     bindEvents();
+    initPWA();
     refreshOutbox();
     setInterval(refreshOutbox, 5000);
   });
@@ -69,15 +61,63 @@
     $('collect-form').addEventListener('submit', onCollect);
     $('inquiry-form').addEventListener('submit', onInquiry);
     $('settle-form').addEventListener('submit', onSettle);
+
+    // Quick cash chips
+    document.querySelectorAll('.chip-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const inp = $('collect_amount');
+        if (inp && btn.dataset.amt) {
+          inp.value = btn.dataset.amt;
+        }
+      });
+    });
+  }
+
+  function initPWA() {
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const banner = $('pwa-install-banner');
+      if (banner) banner.style.display = 'flex';
+    });
+
+    const installBtn = $('pwa-install-btn');
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          if (choice.outcome === 'accepted') {
+            const banner = $('pwa-install-banner');
+            if (banner) banner.style.display = 'none';
+          }
+          deferredPrompt = null;
+        }
+      });
+    }
+
+    function updateOnlineStatus() {
+      const badge = $('offline-badge');
+      if (badge) {
+        if (navigator.onLine) {
+          badge.classList.remove('is-offline');
+        } else {
+          badge.classList.add('is-offline');
+        }
+      }
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
   }
 
   async function loadToday() {
-    setStatus($('checkin-status'), 'Memuat rute…', '');
-    const repID = $('collect_store_id').value || uuid(); // no rep yet, fetch all
+    setStatus($('checkin-status'), 'Memuat rute kunjungan salesman hari ini…', '');
     try {
       const reps = await Force.listReps();
       if (reps.length === 0) {
-        setStatus($('checkin-status'), 'Belum ada salesman. Buat lewat POST /v1/force/sales-reps.', 'err');
+        setStatus($('checkin-status'), 'Belum ada salesman terdaftar dalam sistem.', 'err');
         return;
       }
       const repId = reps[0].id;
@@ -85,11 +125,29 @@
       $('beat_plan_id').value = plans[0] ? plans[0].id : uuid();
       $('inquiry_rep_id').value = repId;
       $('settle_rep_id').value = repId;
-      const list = plans.map((p) => `<div class="list-item"><strong>${p.plan_number}</strong> — ${p.territory} (${p.plan_date}) — ${p.status}<br><small>rep: ${p.sales_rep_id}</small></div>`).join('');
-      $('beat-list').innerHTML = list || '<em>Tidak ada beat plan hari ini untuk salesman pertama.</em>';
-      setStatus($('checkin-status'), 'OK — Rep dipilih: ' + reps[0].name, 'ok');
+
+      if (!plans.length) {
+        $('beat-list').innerHTML = '<div style="padding:16px; color:#94a3b8;">Tidak ada beat plan aktif hari ini untuk salesman pertama.</div>';
+      } else {
+        $('beat-list').innerHTML = plans.map((p) => `
+          <div class="beat-item">
+            <div>
+              <strong style="color:#f8fafc; font-size:0.95rem;">${p.plan_number}</strong>
+              <div style="color:#94a3b8; font-size:0.8rem; margin-top:2px;">
+                Wilayah: <strong>${p.territory}</strong> • Tanggal: <strong>${p.plan_date}</strong>
+              </div>
+            </div>
+            <span style="background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.3); font-size:0.75rem; font-weight:600; padding:4px 10px; border-radius:999px;">
+              ${p.status}
+            </span>
+          </div>
+        `).join('');
+      }
+
+      refreshRepCash(repId);
+      setStatus($('checkin-status'), '✓ Data Salesman Dimuat: ' + reps[0].name + ' (' + reps[0].employee_code + ')', 'ok');
     } catch (err) {
-      setStatus($('checkin-status'), 'ERR: ' + err.message, 'err');
+      setStatus($('checkin-status'), 'Gagal memuat rute: ' + err.message, 'err');
     }
   }
 
@@ -98,10 +156,11 @@
       navigator.geolocation.getCurrentPosition((pos) => {
         $('latitude').value = pos.coords.latitude.toFixed(6);
         $('longitude').value = pos.coords.longitude.toFixed(6);
+        setStatus($('checkin-status'), `GPS Terkunci: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`, 'ok');
       }, () => {
-        // Mock fallback: Monas, Jakarta
         $('latitude').value = -6.175392;
         $('longitude').value = 106.827153;
+        setStatus($('checkin-status'), 'Menggunakan koordinat demo: Monas, Jakarta Pusat', '');
       });
     } else {
       $('latitude').value = -6.175392;
@@ -117,23 +176,27 @@
       latitude: parseFloat($('latitude').value),
       longitude: parseFloat($('longitude').value),
     };
-    // For demo, attribute the check-in to the first rep in the system.
+
     let repId;
     try {
       const reps = await Force.listReps();
-      if (reps.length === 0) { setStatus($('checkin-status'), 'Tidak ada salesman', 'err'); return; }
+      if (reps.length === 0) { setStatus($('checkin-status'), 'Tidak ada data salesman.', 'err'); return; }
       repId = reps[0].id;
-    } catch (err) { setStatus($('checkin-status'), 'ERR: ' + err.message, 'err'); return; }
+    } catch (err) { setStatus($('checkin-status'), 'Error: ' + err.message, 'err'); return; }
 
-    setStatus($('checkin-status'), 'Mengirim check-in…', '');
+    setStatus($('checkin-status'), 'Memverifikasi koordinat GPS check-in…', '');
     try {
       const out = await Force.checkIn(repId, body);
-      const tag = out.geofence_verified ? 'ok' : 'warn';
+      const pass = out.geofence_verified;
+      const tag = pass ? 'ok' : 'err';
       setStatus($('checkin-status'),
-        `Check-in ${out.status}\nStore: ${out.store_name}\nJarak: ${out.distance_meters} m\nGeofence: ${out.geofence_verified ? 'PASS' : 'OUT OF RADIUS'}`,
+        `Check-in ${out.status}!\n` +
+        `• Toko: ${out.store_name}\n` +
+        `• Jarak dari Titik Toko: ${out.distance_meters} meter\n` +
+        `• Status Geofence: ${pass ? '[VERIFIED] DALAM RADIUS (Lolos)' : '[ALERT] DI LUAR RADIUS (>100m)'}`,
         tag);
     } catch (err) {
-      setStatus($('checkin-status'), 'ERR: ' + err.message, 'err');
+      setStatus($('checkin-status'), 'Check-in gagal: ' + err.message, 'err');
     }
   }
 
@@ -142,9 +205,9 @@
     let repId;
     try {
       const reps = await Force.listReps();
-      if (reps.length === 0) { setStatus($('collect-status'), 'Tidak ada salesman', 'err'); return; }
+      if (reps.length === 0) { setStatus($('collect-status'), 'Tidak ada salesman terdaftar.', 'err'); return; }
       repId = reps[0].id;
-    } catch (err) { setStatus($('collect-status'), 'ERR: ' + err.message, 'err'); return; }
+    } catch (err) { setStatus($('collect-status'), 'Error: ' + err.message, 'err'); return; }
 
     const body = {
       visit_id: $('collect_visit_id').value || null,
@@ -154,16 +217,20 @@
       payer_name: $('collect_payer').value,
       payer_phone: $('collect_payer_phone').value,
     };
-    setStatus($('collect-status'), 'Mencatat kas…', '');
+    setStatus($('collect-status'), 'Mencatat penerimaan kas & mentransfer liability ke dompet sales…', '');
     try {
       const out = await Force.collect(repId, body);
       const cash = out.sales_rep_current_cash_held;
       setStatus($('collect-status'),
-        `Kwitansi: ${out.collection.receipt_number}\nNominal: ${fmtIDR(out.collection.amount)}\nSaldo kas salesman: ${fmtIDR(cash)}\nWA: ${out.wa_receipt_payload.message}`,
+        `✓ Kas Berhasil Diterima!\n` +
+        `• No Kwitansi: ${out.collection.receipt_number}\n` +
+        `• Nominal: ${fmtIDR(out.collection.amount)}\n` +
+        `• Saldo Kas Salesman Saat Ini: ${fmtIDR(cash)}\n` +
+        `• WhatsApp Receipt: ${out.wa_receipt_payload ? out.wa_receipt_payload.message : 'Terkirim'}`,
         'ok');
       refreshRepCash(repId);
     } catch (err) {
-      setStatus($('collect-status'), 'ERR: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
+      setStatus($('collect-status'), 'Gagal: ' + err.message + '\n' + JSON.stringify(err.body || {}, null, 2), 'err');
     }
   }
 
@@ -171,31 +238,56 @@
     if (!repId) return;
     try {
       const rep = await Force.getRep(repId);
-      $('rep-cash').innerHTML = `<div class="kv">
-        <div><strong>Nama:</strong> <span>${rep.name}</span></div>
-        <div><strong>Employee Code:</strong> <span>${rep.employee_code}</span></div>
-        <div><strong>Saldo Kas Saat Ini:</strong> <span>${fmtIDR(rep.current_cash_held)}</span></div>
-        <div><strong>Plafon Maks:</strong> <span>${fmtIDR(rep.max_cash_limit)}</span></div>
-        <div><strong>Status:</strong> <span>${rep.status}</span></div>
-        <div><strong>Wallet (Core):</strong> <span>${rep.fledger_wallet_account_id}</span></div>
-      </div>`;
+      $('rep-cash').innerHTML = `
+        <div class="kv-grid">
+          <div class="kv-item">
+            <div class="kv-label">Nama Salesman</div>
+            <div class="kv-val">${rep.name}</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">Employee Code</div>
+            <div class="kv-val" style="font-family:'JetBrains Mono', monospace;">${rep.employee_code}</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">Saldo Kas Dipegang</div>
+            <div class="kv-val" style="color:#10b981;">${fmtIDR(rep.current_cash_held)}</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">Plafon Kas Maksimal</div>
+            <div class="kv-val" style="color:#38bdf8;">${fmtIDR(rep.max_cash_limit)}</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">Status Operasional</div>
+            <div class="kv-val" style="color:${rep.status === 'ACTIVE' ? '#10b981' : '#f59e0b'};">${rep.status}</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">Wallet ID (Core Ledger)</div>
+            <div class="kv-val" style="font-size:0.75rem; font-family:'JetBrains Mono', monospace; color:#94a3b8;">${rep.fledger_wallet_account_id}</div>
+          </div>
+        </div>
+      `;
     } catch (err) {
-      $('rep-cash').textContent = 'ERR: ' + err.message;
+      $('rep-cash').innerHTML = `<div style="color:#ef4444; padding:12px;">Gagal memuat kas: ${err.message}</div>`;
     }
   }
 
   async function onInquiry(ev) {
     ev.preventDefault();
     const repId = $('inquiry_rep_id').value;
-    setStatus($('inquiry-result'), 'Mencari saldo salesman…', '');
+    setStatus($('inquiry-result'), 'Memeriksa rekap penerimaan kas salesman…', '');
     try {
       const out = await Force.inquiry(repId);
       setStatus($('inquiry-result'),
-        `Salesman: ${out.sales_rep_name} (${out.employee_code})\nWajib setor: ${fmtIDR(out.total_cash_held)}\nKwitansi tertunda: ${out.collections_count}`,
+        `Rekap Setoran Salesman:\n` +
+        `• Salesman: ${out.sales_rep_name} (${out.employee_code})\n` +
+        `• Total Kas Wajib Setor: ${fmtIDR(out.total_cash_held)}\n` +
+        `• Jumlah Kwitansi Tertunda: ${out.collections_count} transaksi`,
         'ok');
+      $('settle_rep_id').value = repId;
+      $('settle_physical').value = out.total_cash_held;
       refreshRepCash(repId);
     } catch (err) {
-      setStatus($('inquiry-result'), 'ERR: ' + err.message, 'err');
+      setStatus($('inquiry-result'), 'Gagal inquiry: ' + err.message, 'err');
     }
   }
 
@@ -206,29 +298,37 @@
       physical_cash_received: parseInt($('settle_physical').value, 10),
       cashier_notes: $('settle_notes').value,
     };
-    setStatus($('settle-status'), 'Memvalidasi setoran…', '');
+    setStatus($('settle-status'), 'Memproses validasi setoran & membandingkan dengan buku besar…', '');
     try {
       const out = await Force.settle(body);
+      const isBalanced = out.discrepancy_amount === 0;
       setStatus($('settle-status'),
-        `Settlement: ${out.settlement.settlement_number}\nDiscrepancy: ${fmtIDR(out.discrepancy_amount)}\nSalesman baru: kas=${fmtIDR(out.sales_rep_new_cash_held)}, status=${out.sales_rep_status}\nOutbox: ${out.outbox_status}`,
-        out.discrepancy_amount === 0 ? 'ok' : 'warn');
+        `✓ DAILY SETTLEMENT SELESAI!\n` +
+        `• No Settlement: ${out.settlement.settlement_number}\n` +
+        `• Selisih Fisik vs Sistem: ${fmtIDR(out.discrepancy_amount)} ${isBalanced ? '(SEIMBANG/BALANCED)' : '(ADA SELISIH)'}\n` +
+        `• Saldo Kas Salesman Baru: ${fmtIDR(out.sales_rep_new_cash_held)}\n` +
+        `• Status Salesman: ${out.sales_rep_status} (Kunci Dibuka)\n` +
+        `• Outbox Status: ${out.outbox_status}`,
+        isBalanced ? 'ok' : 'err');
       refreshRepCash(body.sales_rep_id);
       refreshOutbox();
     } catch (err) {
-      setStatus($('settle-status'), 'ERR: ' + err.message, 'err');
+      setStatus($('settle-status'), 'Settlement gagal: ' + err.message, 'err');
     }
   }
 
   function refreshOutbox() {
     Force.outboxCounts()
       .then((c) => {
-        $('outbox-counts').innerHTML = `<div class="kv">
-          <div><strong>Pending:</strong> <span>${c.pending}</span></div>
-          <div><strong>Processing:</strong> <span>${c.processing}</span></div>
-          <div><strong>Sent:</strong> <span>${c.sent}</span></div>
-          <div><strong>Failed:</strong> <span>${c.failed}</span></div>
-        </div>`;
+        $('outbox-counts').innerHTML = `
+          <div class="kpi-card pending"><div class="kpi-title">Pending</div><div class="kpi-value">${c.pending ?? 0}</div></div>
+          <div class="kpi-card processing"><div class="kpi-title">Processing</div><div class="kpi-value">${c.processing ?? 0}</div></div>
+          <div class="kpi-card sent"><div class="kpi-title">Sent</div><div class="kpi-value">${c.sent ?? 0}</div></div>
+          <div class="kpi-card failed"><div class="kpi-title">Failed</div><div class="kpi-value">${c.failed ?? 0}</div></div>
+        `;
       })
-      .catch((err) => { $('outbox-counts').textContent = 'ERR: ' + err.message; });
+      .catch((err) => {
+        $('outbox-counts').innerHTML = `<div style="color:#ef4444; padding:12px;">Gagal memuat outbox: ${err.message}</div>`;
+      });
   }
 })();
