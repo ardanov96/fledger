@@ -444,7 +444,8 @@
   </main>
 
   <footer>
-    <p>Fledger OS &copy; 2026 &bull; Automated Accounts Receivable Dunning Microservice &bull; Port :8086</p>
+    <p>Fledger OS &copy; <span id="dunning-copy-year"></span> &bull; Automated Accounts Receivable Dunning Microservice &bull; Port :8086</p>
+    <script>document.getElementById('dunning-copy-year').textContent = new Date().getFullYear();</script>
   </footer>
 
   <script src="dunning-client.js"></script>

@@ -1098,7 +1098,8 @@
   </main>
 
   <footer>
-    <p>FLEDGER OS &copy; 2026 &bull; Central API Gateway on Port :8000 &bull; Running locally on Go 1.26 + PostgreSQL 16</p>
+    <p>FLEDGER OS &copy; <span id="hub-copy-year"></span> &bull; Central API Gateway on Port :8000 &bull; Running locally on Go 1.26 + PostgreSQL 16</p>
+    <script>document.getElementById('hub-copy-year').textContent = new Date().getFullYear();</script>
   </footer>
 
   <script>

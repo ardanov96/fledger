@@ -5697,7 +5697,8 @@
 
     <!-- Footer Bottom Bar -->
     <div class="footer-bottom">
-      <span>&copy; 2026 PT Fledger Tekno Solusi. All rights reserved.</span>
+      <span>&copy; <span id="copyright-year"></span> PT Fledger Tekno Solusi. All rights reserved.</span>
+      <script>document.getElementById('copyright-year').textContent = new Date().getFullYear();</script>
       <div class="footer-legal-links">
         <button type="button" class="footer-legal-btn" onclick="openLegalModal('terms')">Syarat &amp; Ketentuan</button>
         <button type="button" class="footer-legal-btn" onclick="openLegalModal('privacy')">Kebijakan Privasi</button>
@@ -5711,6 +5712,12 @@
   <script>
     (function () {
       'use strict';
+
+      // Dynamic Copyright Year
+      const copyYearEl = document.getElementById('copyright-year');
+      if (copyYearEl) {
+        copyYearEl.textContent = new Date().getFullYear();
+      }
 
       // --- 1. Pipeline Interactive Stepper Controller (Clean Mobile App Mockups) ---
       const stepsData = [
