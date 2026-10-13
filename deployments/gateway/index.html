@@ -407,7 +407,8 @@
       font-size: 3.6rem;
       font-weight: 800;
       letter-spacing: -0.04em;
-      line-height: 1.12;
+      line-height: 1.15;
+      text-wrap: balance;
       background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 65%, #cbd5e1 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -419,6 +420,19 @@
       background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+    }
+
+    .hero-br {
+      display: inline;
+    }
+
+    @media (max-width: 768px) {
+      .hero-heading {
+        font-size: 2.25rem;
+      }
+      .hero-br {
+        display: none;
+      }
     }
 
     .hero-desc {
@@ -3553,7 +3567,8 @@
       </div>
 
       <h1 class="hero-heading">
-        Putar Modal Kerja Lebih Cepat <span class="gradient-highlight">dengan Nol Kebocoran Kas dan Piutang Tertagih Otomatis</span>
+        Putar Modal Kerja Lebih Cepat<br class="hero-br">
+        <span class="gradient-highlight">Tanpa Kebocoran Kas &amp; Piutang Tertagih Otomatis</span>
       </h1>
 
       <p class="hero-desc">
