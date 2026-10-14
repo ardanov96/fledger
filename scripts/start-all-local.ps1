@@ -128,7 +128,9 @@ $services = @(
             FLEDGER_TENANT_ID     = "a0000000-0000-0000-0000-000000000001"
             JWT_SECRET            = "fledger-super-secure-jwt-secret-key-2026-min-32"
             PAY_WEBHOOK_SECRET    = "dunning-super-secret-key-2026"
-            WA_PROVIDER           = "MOCK"
+            WA_PROVIDER           = if ($env:WA_PROVIDER) { $env:WA_PROVIDER } else { "FONNTE" }
+            FONNTE_TOKEN          = if ($env:FONNTE_TOKEN) { $env:FONNTE_TOKEN } else { "EM8i5t8sWe11CpqBhLTx" }
+            FONNTE_BASE_URL       = if ($env:FONNTE_BASE_URL) { $env:FONNTE_BASE_URL } else { "https://api.fonnte.com" }
             WA_JITTER_MIN_SECONDS = "0"
             WA_JITTER_MAX_SECONDS = "1"
         }

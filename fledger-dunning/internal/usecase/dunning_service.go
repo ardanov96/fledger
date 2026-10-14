@@ -410,17 +410,38 @@ func (s *DunningService) DispatchOneByID(ctx context.Context, tenantID, id strin
 // Contacts exposes the contact repo for the handler.
 func (s *DunningService) Contacts() *postgres.StoreContactRepo { return s.contacts }
 
+// Provider returns the current active WhatsApp provider.
+func (s *DunningService) Provider() whatsapp.Provider {
+	return s.providers
+}
+
+// SetProvider sets the active WhatsApp provider dynamically.
+func (s *DunningService) SetProvider(p whatsapp.Provider) {
+	s.providers = p
+}
+
 // SessionStatus returns the current WhatsApp session.
 func (s *DunningService) SessionStatus(ctx context.Context, tenantID string) (*domain.Session, error) {
-	// Fall back to provider status if DB row is missing.
 	sess, err := s.sessions.Get(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if sess.ConnectionStatus == domain.SessionDisconnected {
-		provider, perr := s.providers.GetStatus(ctx, tenantID)
-		if perr == nil && provider.ConnectionStatus != "" {
-			sess.ConnectionStatus = provider.ConnectionStatus
+	if s.providers != nil {
+		providerSess, perr := s.providers.GetStatus(ctx, tenantID)
+		if perr == nil && providerSess != nil {
+			if s.providers.Name() == "FONNTE" {
+				sess.ConnectionStatus = providerSess.ConnectionStatus
+				sess.SessionName = providerSess.SessionName
+				if providerSess.PhoneConnected != "" {
+					sess.PhoneConnected = providerSess.PhoneConnected
+				}
+				_, _ = s.sessions.Upsert(ctx, tenantID, sess.SessionName, string(sess.ConnectionStatus), "", sess.PhoneConnected)
+			} else if sess.ConnectionStatus == domain.SessionDisconnected && providerSess.ConnectionStatus != "" {
+				sess.ConnectionStatus = providerSess.ConnectionStatus
+				if providerSess.PhoneConnected != "" {
+					sess.PhoneConnected = providerSess.PhoneConnected
+				}
+			}
 		}
 	}
 	return &sess, nil

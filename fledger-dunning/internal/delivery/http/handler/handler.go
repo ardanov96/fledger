@@ -20,6 +20,7 @@ import (
 	"github.com/fledger/fledger-dunning/internal/middleware"
 	apperrors "github.com/fledger/fledger-dunning/internal/platform/errors"
 	"github.com/fledger/fledger-dunning/internal/platform/httpx"
+	"github.com/fledger/fledger-dunning/internal/platform/whatsapp"
 	"github.com/fledger/fledger-dunning/internal/usecase"
 )
 
@@ -27,11 +28,12 @@ type Handlers struct {
 	Validator *validator.Validate
 	Dunning   *usecase.DunningService
 	Statement *usecase.StatementService
+	Services  *usecase.Services
 	DBPinger  func() error
 }
 
 func NewHandlers(v *validator.Validate, srv *usecase.Services, pinger func() error) *Handlers {
-	return &Handlers{Validator: v, Dunning: srv.Dunning, Statement: srv.Statement, DBPinger: pinger}
+	return &Handlers{Validator: v, Dunning: srv.Dunning, Statement: srv.Statement, Services: srv, DBPinger: pinger}
 }
 
 // =============================================================================
@@ -65,7 +67,80 @@ func (h *Handlers) GetWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, httpx.EnvelopeOK{Status: "success", Data: sess})
+	provName := "MOCK"
+	if h.Dunning.Provider() != nil {
+		provName = h.Dunning.Provider().Name()
+	}
+	data := map[string]any{
+		"id":                sess.ID,
+		"tenant_id":         sess.TenantID,
+		"session_name":      sess.SessionName,
+		"connection_status": sess.ConnectionStatus,
+		"qr_code_data":      sess.QRCodeData,
+		"phone_connected":   sess.PhoneConnected,
+		"last_heartbeat":    sess.LastHeartbeat,
+		"updated_at":        sess.UpdatedAt,
+		"provider":          provName,
+	}
+	httpx.JSON(w, http.StatusOK, httpx.EnvelopeOK{Status: "success", Data: data})
+}
+
+type ConfigureWARequest struct {
+	Provider string `json:"provider" validate:"required"`
+	Token    string `json:"token"`
+	BaseURL  string `json:"base_url"`
+}
+
+func (h *Handlers) ConfigureWA(w http.ResponseWriter, r *http.Request) {
+	var req ConfigureWARequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
+		return
+	}
+	if err := h.Validator.Struct(&req); err != nil {
+		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": err.Error()})
+		return
+	}
+	tenantID := middleware.TenantFromRequest(r)
+
+	if strings.EqualFold(req.Provider, "FONNTE") {
+		baseURL := req.BaseURL
+		if baseURL == "" {
+			baseURL = "https://api.fonnte.com"
+		}
+		p := whatsapp.NewFonnteProvider(req.Token, baseURL, nil)
+		if h.Services != nil {
+			h.Services.SetProvider(p)
+		} else {
+			h.Dunning.SetProvider(p)
+			h.Statement.SetProvider(p)
+		}
+		sess, _ := h.Dunning.SessionStatus(r.Context(), tenantID)
+		httpx.JSON(w, http.StatusOK, httpx.EnvelopeOK{
+			Status: "success",
+			Data: map[string]any{
+				"provider": "FONNTE",
+				"session":  sess,
+			},
+		})
+		return
+	}
+
+	p := whatsapp.NewMockProvider(nil)
+	if h.Services != nil {
+		h.Services.SetProvider(p)
+	} else {
+		h.Dunning.SetProvider(p)
+		h.Statement.SetProvider(p)
+	}
+	sess, _ := h.Dunning.SessionStatus(r.Context(), tenantID)
+	httpx.JSON(w, http.StatusOK, httpx.EnvelopeOK{
+		Status: "success",
+		Data: map[string]any{
+			"provider": "MOCK",
+			"session":  sess,
+		},
+	})
 }
 
 type GenerateQRRequest struct {

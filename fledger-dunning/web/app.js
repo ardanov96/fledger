@@ -78,6 +78,7 @@
     $('who').textContent = 'Fledger Dunning Tenant: ' + (FD.tenant || 'Default');
 
     // Attach button listeners
+    if ($('btn-save-fonnte')) $('btn-save-fonnte').addEventListener('click', onSaveFonnte);
     $('btn-pair').addEventListener('click', onPair);
     $('btn-test-send').addEventListener('click', onTestSend);
     $('btn-disconnect').addEventListener('click', onDisconnect);
@@ -135,11 +136,11 @@
   async function refreshWhatsApp() {
     try {
       const s = await FD.whatsappStatus();
-      const prov = s.data ? s.data.session_name || 'MOCK' : 'MOCK';
-      const phone = s.data && s.data.phone_connected ? s.data.phone_connected : '6281198765432 (Simulated)';
+      const prov = (s.data && s.data.provider) || 'MOCK';
+      const phone = s.data && s.data.phone_connected ? s.data.phone_connected : (prov === 'FONNTE' ? '(Belum terhubung)' : '6281198765432 (Simulated)');
       const st = s.data ? s.data.connection_status : 'CONNECTED';
 
-      $('wa-provider').textContent = prov;
+      $('wa-provider').textContent = prov === 'FONNTE' ? 'FONNTE (api.fonnte.com)' : 'MOCK Engine';
       $('wa-session').textContent = s.data ? s.data.session_name || 'official-distributor-wa' : 'official-distributor-wa';
       $('wa-phone').textContent = phone;
       $('wa-status').textContent = st;
@@ -149,7 +150,7 @@
       const cls = st === 'CONNECTED' ? 'on' : st === 'SCAN_QR' ? 'scan' : 'off';
 
       pill.className = 'pill ' + cls;
-      pill.textContent = st;
+      pill.textContent = st === 'CONNECTED' && prov === 'FONNTE' ? 'FONNTE ONLINE' : st;
       if (badge) {
         badge.className = 'pill ' + cls;
         badge.textContent = st;
@@ -227,13 +228,44 @@
     } catch (e) {}
   }
 
+  async function onSaveFonnte() {
+    const token = ($('f-fonnte-token').value || '').trim();
+    if (!token) {
+      if (confirm('Kosongkan token dan kembali ke mode simulasi (MOCK)?')) {
+        try {
+          await FD.whatsappConfigure({ provider: 'MOCK' });
+          setStatus($('ingest-status'), 'Mode WhatsApp Gateway diatur ke MOCK Simulation.', 'ok');
+          await refreshWhatsApp();
+        } catch (e) {
+          setStatus($('ingest-status'), 'Gagal: ' + e.message, 'err');
+        }
+      }
+      return;
+    }
+
+    setStatus($('ingest-status'), 'Menghubungkan ke Fonnte API Gateway...', '');
+    try {
+      await FD.whatsappConfigure({ provider: 'FONNTE', token: token });
+      setStatus($('ingest-status'), '✅ Berhasil menghubungkan Fonnte WhatsApp Gateway! Status terverifikasi.', 'ok');
+      await refreshWhatsApp();
+    } catch (e) {
+      setStatus($('ingest-status'), 'Gagal menghubungkan Fonnte: ' + e.message, 'err');
+    }
+  }
+
   async function onPair() {
     setStatus($('ingest-status'), 'Membuat QR code pairing WhatsApp...', '');
     try {
       const r = await FD.whatsappQR('official-distributor-wa');
       const qr = r.data ? r.data.qr_code : '2@WACADENCE_DEMO_QR_CODE_' + Date.now();
       $('qr-area').classList.remove('hidden');
-      $('qr-token').textContent = qr;
+      const canvas = $('qr-canvas');
+      if (canvas && (qr.startsWith('data:image') || qr.startsWith('http'))) {
+        canvas.innerHTML = `<img src="${qr}" alt="WhatsApp QR Code" style="width:200px; height:200px; border-radius:8px; object-fit:contain; background:#fff; padding:6px; box-shadow:0 4px 12px rgba(0,0,0,0.3);" />`;
+        $('qr-token').textContent = 'Scan QR di atas menggunakan aplikasi WhatsApp pada HP distributor';
+      } else {
+        $('qr-token').textContent = qr;
+      }
       $('status-pill').textContent = 'SCAN_QR';
       $('status-pill').className = 'pill scan';
       setStatus($('ingest-status'), 'QR Pairing siap! Scan menggunakan aplikasi WhatsApp pada HP distributor.', 'ok');

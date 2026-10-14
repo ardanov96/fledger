@@ -18,6 +18,7 @@ dist/
 coverage.txt
 coverage.html
 *.coverprofile
+deployments/gateway/wa-qr.png
 
 # --- Local Environment & Secrets ---
 .env

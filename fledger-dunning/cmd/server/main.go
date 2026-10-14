@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -57,8 +58,15 @@ func run() error {
 	logs := postgres.NewMessageLogRepo(pool)
 	audits := postgres.NewAuditRepo(pool)
 
-	// WhatsApp provider (mock by default).
-	provider := whatsapp.NewMockProvider(logger)
+	// WhatsApp provider (Fonnte if configured or requested, else Mock).
+	var provider whatsapp.Provider
+	if strings.EqualFold(cfg.WAProvider, "FONNTE") || cfg.FonnteToken != "" {
+		logger.Info("using Fonnte WhatsApp provider", "base_url", cfg.FonnteBaseURL, "has_token", cfg.FonnteToken != "")
+		provider = whatsapp.NewFonnteProvider(cfg.FonnteToken, cfg.FonnteBaseURL, logger)
+	} else {
+		logger.Info("using Mock WhatsApp provider")
+		provider = whatsapp.NewMockProvider(logger)
+	}
 
 	signer := jwt.NewSigner(jwt.StaticSecret{Value: []byte(cfg.JWTSecret)})
 	verifier := jwt.NewVerifier(jwt.StaticSecret{Value: []byte(cfg.JWTSecret)})

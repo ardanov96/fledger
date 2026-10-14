@@ -33,6 +33,7 @@
     cronRun: () => call('POST', '/v1/dunning/queues/cron-run'),
     queueCounts: () => call('GET', '/v1/dunning/outbox/counts'),
     whatsappStatus: () => call('GET', '/v1/dunning/whatsapp/status'),
+    whatsappConfigure: (body) => call('POST', '/v1/dunning/whatsapp/configure', body),
     whatsappQR: (sessionName) => call('POST', '/v1/dunning/whatsapp/qr/generate', { session_name: sessionName }),
     whatsappDisconnect: () => call('POST', '/v1/dunning/whatsapp/disconnect', {}),
     whatsappTestSend: (body) => call('POST', '/v1/dunning/whatsapp/test-send', body),

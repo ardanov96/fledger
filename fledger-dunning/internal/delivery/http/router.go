@@ -50,6 +50,7 @@ func NewRouter(cfg *config.Config, h *handler.Handlers, verifier jwt.Verifier) h
 				r.Use(middleware.RequireAuth(verifier))
 				// WhatsApp
 				r.Get("/whatsapp/status", h.GetWhatsAppStatus)
+				r.Post("/whatsapp/configure", h.ConfigureWA)
 				r.Post("/whatsapp/qr/generate", h.GenerateQR)
 				r.Post("/whatsapp/disconnect", h.DisconnectWA)
 				r.Post("/whatsapp/test-send", h.TestSend)

@@ -50,6 +50,11 @@ func (s *StatementService) SetLogger(l *slog.Logger) {
 	}
 }
 
+// SetProvider sets the active WhatsApp provider dynamically.
+func (s *StatementService) SetProvider(p whatsapp.Provider) {
+	s.provider = p
+}
+
 // GenerateInput is the body of POST /v1/dunning/statements/generate.
 type GenerateInput struct {
 	TenantID       string

@@ -253,7 +253,9 @@ services:
       FLEDGER_TENANT_ID: a0000000-0000-0000-0000-000000000001
       JWT_SECRET: fledger-super-secure-jwt-secret-key-2026-min-32
       PAY_WEBHOOK_SECRET: dunning-super-secret-key-2026
-      WA_PROVIDER: MOCK
+      WA_PROVIDER: ${WA_PROVIDER:-FONNTE}
+      FONNTE_TOKEN: ${FONNTE_TOKEN:-EM8i5t8sWe11CpqBhLTx}
+      FONNTE_BASE_URL: ${FONNTE_BASE_URL:-https://api.fonnte.com}
       WA_JITTER_MIN_SECONDS: 1
       WA_JITTER_MAX_SECONDS: 3
     ports:

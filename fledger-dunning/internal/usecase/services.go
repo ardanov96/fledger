@@ -36,3 +36,9 @@ func NewServices(d Deps) *Services {
 	)
 	return &Services{Dunning: dunning, Statement: statement}
 }
+
+// SetProvider dynamically switches the WhatsApp provider across both services.
+func (s *Services) SetProvider(p whatsapp.Provider) {
+	s.Dunning.SetProvider(p)
+	s.Statement.SetProvider(p)
+}

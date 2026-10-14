@@ -18,6 +18,8 @@ type Config struct {
 	TokenTTL           time.Duration
 	PayWebhookSecret   string
 	WAProvider         string
+	FonnteToken        string
+	FonnteBaseURL      string
 	WAJitterMinSeconds int
 	WAJitterMaxSeconds int
 	CoreBaseURL        string
@@ -36,6 +38,8 @@ func Load() (*Config, error) {
 		TokenTTL:           getEnvDuration("TOKEN_TTL", 24*time.Hour),
 		PayWebhookSecret:   getEnv("PAY_WEBHOOK_SECRET", getEnv("WEBHOOK_SECRET", "dunning-super-secret-key-2026")),
 		WAProvider:         getEnv("WA_PROVIDER", "MOCK"),
+		FonnteToken:        getEnv("FONNTE_TOKEN", ""),
+		FonnteBaseURL:      getEnv("FONNTE_BASE_URL", "https://api.fonnte.com"),
 		WAJitterMinSeconds: getEnvInt("WA_JITTER_MIN_SECONDS", 3),
 		WAJitterMaxSeconds: getEnvInt("WA_JITTER_MAX_SECONDS", 8),
 		CoreBaseURL:        getEnv("CORE_BASE_URL", getEnv("FLEDGER_CORE_URL", "http://localhost:8081")),
