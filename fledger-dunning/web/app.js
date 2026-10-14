@@ -273,6 +273,23 @@
 
   async function onPair() {
     const statusEl = $('gateway-status') || $('ingest-status');
+
+    // If device is already connected, inform user
+    const currentStatus = ($('wa-status') && $('wa-status').textContent) || '';
+    const phoneConnected = ($('wa-phone') && $('wa-phone').textContent) || '';
+    if (currentStatus === 'CONNECTED' && phoneConnected && !phoneConnected.includes('Simulasi') && !phoneConnected.includes('Belum')) {
+      const confirmed = confirm(
+        `Perangkat WhatsApp saat ini SUDAH TERHUBUNG AKTIF dengan nomor:\n` +
+        `📱 ${phoneConnected}\n\n` +
+        `Anda tidak perlu melakukan scan QR lagi untuk mengirim pesan.\n\n` +
+        `Apakah Anda ingin MEMUTUSKAN koneksi (Disconnect) perangkat ini untuk menautkan nomor WhatsApp yang baru?`
+      );
+      if (confirmed) {
+        await onDisconnect();
+      }
+      return;
+    }
+
     setStatus(statusEl, 'Membuat QR code pairing WhatsApp...', '');
     try {
       const r = await FD.whatsappQR('official-distributor-wa');
@@ -290,7 +307,14 @@
       setStatus(statusEl, 'QR Pairing siap! Buka WhatsApp di HP > Perangkat Tertaut > Tautkan Perangkat lalu scan QR.', 'ok');
       await refreshWhatsApp();
     } catch (e) {
-      const errDetail = (e.body && e.body.error) || (e.body && e.body.message) || e.message || 'Unknown error';
+      const errDetail = (e.body && (e.body.message || e.body.error)) || e.message || 'Unknown error';
+      if (errDetail.toLowerCase().includes('already connect') || errDetail.toLowerCase().includes('sudah terhubung')) {
+        const infoMsg = 'Perangkat WhatsApp saat ini sudah terhubung aktif. Tidak perlu melakukan scan QR lagi.';
+        setStatus(statusEl, '✅ ' + infoMsg, 'ok');
+        alert(infoMsg);
+        await refreshWhatsApp();
+        return;
+      }
       setStatus(statusEl, 'Gagal generate QR: ' + errDetail, 'err');
       alert('Gagal generate QR:\n' + errDetail);
     }

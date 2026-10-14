@@ -457,8 +457,14 @@ func (s *DunningService) GenerateQR(ctx context.Context, tenantID, sessionName s
 	return qr, nil
 }
 
-// Disconnect marks the session as DISCONNECTED.
+// Disconnect marks the session as DISCONNECTED and unpairs upstream gateway.
 func (s *DunningService) Disconnect(ctx context.Context, tenantID, actorID, ip string) error {
+	type disconnector interface {
+		Disconnect(ctx context.Context) error
+	}
+	if disc, ok := s.providers.(disconnector); ok {
+		_ = disc.Disconnect(ctx)
+	}
 	_, err := s.sessions.Upsert(ctx, tenantID, "default", string(domain.SessionDisconnected), "", "")
 	if err != nil {
 		return err

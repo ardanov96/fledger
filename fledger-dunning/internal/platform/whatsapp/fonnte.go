@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/fledger/fledger-dunning/internal/domain"
+	apperrors "github.com/fledger/fledger-dunning/internal/platform/errors"
 )
 
 // FonnteDeviceDetail provides extended device metrics returned by Fonnte.
@@ -426,11 +427,47 @@ func (f *FonnteProvider) GetStatus(ctx context.Context, tenantID string) (*domai
 	return sess, nil
 }
 
+// Disconnect unlinks the WhatsApp session via POST /disconnect.
+func (f *FonnteProvider) Disconnect(ctx context.Context) error {
+	token := f.GetToken()
+	if token == "" {
+		return nil
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		f.baseURL+"/disconnect",
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("whatsapp gateway: create disconnect request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", token)
+
+	resp, err := f.client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("whatsapp gateway: disconnect error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	f.mu.Lock()
+	if f.cachedStatus != nil {
+		f.cachedStatus.ConnectionStatus = domain.SessionDisconnected
+		f.cachedStatus.PhoneConnected = ""
+	}
+	f.lastCheck = time.Now()
+	f.mu.Unlock()
+
+	return nil
+}
+
 // GenerateQR requests pairing QR from POST /qr.
 func (f *FonnteProvider) GenerateQR(ctx context.Context, tenantID, sessionName string) (string, error) {
 	token := f.GetToken()
 	if token == "" {
-		return "", errors.New("fonnte: token not configured (set FONNTE_TOKEN)")
+		return "", apperrors.New(http.StatusBadRequest, "token_unset", "WhatsApp Gateway token belum dikonfigurasi.")
 	}
 
 	data := url.Values{}
@@ -443,7 +480,7 @@ func (f *FonnteProvider) GenerateQR(ctx context.Context, tenantID, sessionName s
 		strings.NewReader(data.Encode()),
 	)
 	if err != nil {
-		return "", fmt.Errorf("fonnte: create qr request: %w", err)
+		return "", fmt.Errorf("whatsapp gateway: create qr request: %w", err)
 	}
 
 	httpReq.Header.Set("Authorization", token)
@@ -451,7 +488,7 @@ func (f *FonnteProvider) GenerateQR(ctx context.Context, tenantID, sessionName s
 
 	resp, err := f.client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("fonnte: fetch qr error: %w", err)
+		return "", fmt.Errorf("whatsapp gateway: fetch qr error: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -464,11 +501,19 @@ func (f *FonnteProvider) GenerateQR(ctx context.Context, tenantID, sessionName s
 	}
 
 	if err := json.Unmarshal(bodyBytes, &res); err != nil {
-		return "", fmt.Errorf("fonnte: invalid qr response: %s", string(bodyBytes))
+		return "", fmt.Errorf("whatsapp gateway: invalid qr response: %s", string(bodyBytes))
 	}
 
 	if !res.Status {
-		return "", fmt.Errorf("fonnte: generate qr failed: %s", res.Reason)
+		if strings.Contains(strings.ToLower(res.Reason), "already connect") {
+			f.mu.Lock()
+			if f.cachedStatus != nil {
+				f.cachedStatus.ConnectionStatus = domain.SessionConnected
+			}
+			f.mu.Unlock()
+			return "", apperrors.New(http.StatusBadRequest, "device_already_connected", "Perangkat WhatsApp saat ini sudah terhubung aktif. Anda tidak perlu scan QR lagi. Jika ingin mengganti nomor, silakan klik Disconnect terlebih dahulu.")
+		}
+		return "", apperrors.New(http.StatusBadRequest, "qr_generation_failed", res.Reason)
 	}
 
 	qrPayload := res.URL
