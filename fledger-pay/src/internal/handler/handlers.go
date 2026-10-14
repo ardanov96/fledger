@@ -317,6 +317,23 @@ func (h *Handlers) SimulatorSettle(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
 		return
 	}
+	req.Channel = strings.ToUpper(strings.TrimSpace(req.Channel))
+	switch req.Channel {
+	case "BCA_VA", "BCA", "VA-BCA":
+		req.Channel = "VA_BCA"
+	case "MANDIRI_VA", "MANDIRI", "VA-MANDIRI":
+		req.Channel = "VA_MANDIRI"
+	case "BRI_VA", "BRI", "VA-BRI":
+		req.Channel = "VA_BRI"
+	case "BNI_VA", "BNI", "VA-BNI":
+		req.Channel = "VA_BNI"
+	case "PERMATA_VA", "PERMATA", "VA-PERMATA":
+		req.Channel = "VA_PERMATA"
+	case "QRIS_GPN", "QRIS_STATIC", "QRIS_DYNAMIC":
+		req.Channel = "QRIS"
+	case "TRANSFER", "BANK_TRANSFER":
+		req.Channel = "MANUAL_TRANSFER"
+	}
 	if err := h.Validator.Struct(&req); err != nil {
 		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": err.Error()})
 		return

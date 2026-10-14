@@ -2,6 +2,7 @@
 package pod
 
 import (
+	"strings"
 	"time"
 
 	"github.com/fledger/fledger-fleet/internal/domain/delivery_order"
@@ -50,6 +51,27 @@ func ValidRejectionReasons() map[string]struct{} {
 		ReasonExpired:       {},
 		ReasonWrongItem:     {},
 		ReasonStoreRejected: {},
+		"KEMASAN_RUSAK":     {},
+		"KADALUWARSA":       {},
+		"SALAH_BARANG":      {},
+		"TOKO_TUTUP":        {},
+		"TOKO_MENOLAK":      {},
+	}
+}
+
+// NormalizeRejectionReason maps UI reason labels to canonical domain codes.
+func NormalizeRejectionReason(code string) string {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "KEMASAN_RUSAK", "DAMAGED_LEAK", "RUSAK", "PECAH":
+		return ReasonDamagedLeak
+	case "KADALUWARSA", "EXPIRED":
+		return ReasonExpired
+	case "SALAH_BARANG", "WRONG_ITEM", "SALAH":
+		return ReasonWrongItem
+	case "TOKO_TUTUP", "TOKO_MENOLAK", "STORE_REJECTED", "MENOLAK":
+		return ReasonStoreRejected
+	default:
+		return strings.ToUpper(strings.TrimSpace(code))
 	}
 }
 

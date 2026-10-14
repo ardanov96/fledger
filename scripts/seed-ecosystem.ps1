@@ -137,6 +137,52 @@ foreach ($s in $forceStores) {
     }
 }
 
+# Ensure sales rep Budi Santoso has standard 50jt limit
+$repBody = @{
+    employee_code  = "SLS-DEMO-001"
+    name           = "Budi Santoso"
+    phone          = "081298765432"
+    role           = "CANVASSER"
+    max_cash_limit = 50000000
+} | ConvertTo-Json -Depth 3 -Compress
+try {
+    Invoke-RestMethod -Method POST -Uri "$ForceUrl/v1/force/sales-reps" -Headers $authHeaders -Body $repBody | Out-Null
+    Ok "sales rep Budi Santoso registered (limit: Rp 50 Jt)"
+} catch {
+    $psql = "C:\Program Files\PostgreSQL\17\bin\psql.exe"
+    if (Test-Path $psql) {
+        $env:PGPASSWORD = "fmcg_dev_password"
+        & $psql -h localhost -U fmcg -d fledger_force -c "UPDATE force_sales_reps SET max_cash_limit = 50000000, current_cash_held = 0, status = 'ACTIVE' WHERE employee_code = 'SLS-DEMO-001';" 2>&1 | Out-Null
+    }
+    Ok "sales rep Budi Santoso limit verified (limit: Rp 50 Jt)"
+}
+
+# Ensure today's beat plan exists for Budi Santoso
+try {
+    $reps = Invoke-RestMethod -Method GET -Uri "$ForceUrl/v1/force/sales-reps" -Headers $authHeaders
+    $budi = $reps | Where-Object { $_.employee_code -eq "SLS-DEMO-001" } | Select-Object -First 1
+    if ($budi) {
+        $todayStr = (Get-Date).ToString("yyyy-MM-dd")
+        $todayPlans = Invoke-RestMethod -Method GET -Uri "$ForceUrl/v1/force/beat-plans/today?sales_rep_id=$($budi.id)" -Headers $authHeaders
+        if (!$todayPlans -or $todayPlans.Count -eq 0) {
+            $bpBody = @{
+                plan_number         = "BP-" + (Get-Date).ToString("yyyyMMdd") + "-01"
+                sales_rep_id        = $budi.id
+                plan_date           = $todayStr
+                territory           = "DKI Jakarta FMCG Route"
+                target_stores_count = 5
+                notes               = "Rute Kunjungan Toko FMCG Harian"
+            } | ConvertTo-Json -Depth 3 -Compress
+            Invoke-RestMethod -Method POST -Uri "$ForceUrl/v1/force/beat-plans" -Headers $authHeaders -Body $bpBody | Out-Null
+            Ok "beat plan for today seeded ($($budi.name))"
+        } else {
+            Ok "beat plan for today already active ($($todayPlans[0].plan_number))"
+        }
+    }
+} catch {
+    Warn "beat plan seeding skipped: $($_.Exception.Message)"
+}
+
 # ----------------------------------------------------------------------------
 # 5) Fledger Order — FMCG catalog
 # ----------------------------------------------------------------------------

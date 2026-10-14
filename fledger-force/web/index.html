@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#090d16">
   <title>Fledger Force — SFA &amp; Anti-Cash Kitting PWA</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,9 +21,11 @@
   <header class="topbar">
     <div class="brand">
       <div class="logo-badge">
-        <!-- Lucide Navigation SVG -->
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+        <!-- Kinetic 'F' Monogram SVG -->
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+          <rect x="6" y="6" width="5.5" height="20" rx="2.75" fill="#ffffff"/>
+          <rect x="14.5" y="6" width="12" height="5.5" rx="2.75" fill="#38bdf8"/>
+          <rect x="14.5" y="14.5" width="8" height="5.5" rx="2.75" fill="#34d399"/>
         </svg>
       </div>
       <div>
@@ -120,7 +123,7 @@
           </div>
         </div>
         <div class="radar-banner">
-          <span class="radar-icon">
+          <span>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
             </svg>
@@ -132,12 +135,14 @@
         </div>
         <form id="checkin-form" class="grid">
           <label>
-            Beat Plan ID
-            <input type="text" id="beat_plan_id" class="tabular-nums" required>
+            Beat Plan Rute Hari Ini
+            <select id="beat_plan_select" class="tabular-nums"></select>
+            <input type="hidden" id="beat_plan_id" required>
           </label>
           <label>
-            Store ID (UUID)
-            <input type="text" id="store_id" class="tabular-nums" required>
+            Pilih Titik Toko Kunjungan
+            <select id="store_select" class="tabular-nums" required></select>
+            <input type="hidden" id="store_id" required>
           </label>
           <label>
             Latitude GPS
@@ -148,12 +153,20 @@
             <input type="number" step="any" id="longitude" class="tabular-nums" required>
           </label>
           <div class="span2" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <button type="button" class="secondary" id="gps-btn">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/>
-              </svg>
-              <span>Ambil GPS Perangkat</span>
-            </button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="secondary" id="btn-exact-store-gps" title="Gunakan koordinat tepat di titik toko agar pasti lolos geofence">
+                📍 Titik Toko (100% Lolos)
+              </button>
+              <button type="button" class="secondary" id="gps-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/>
+                </svg>
+                <span>GPS Perangkat</span>
+              </button>
+              <button type="button" class="secondary" id="btn-far-gps" style="color:#f59e0b; border-color:rgba(245,158,11,0.3);" title="Simulasikan posisi >500m dari toko untuk menguji deteksi audit geofence">
+                ⚠️ Uji Luar Radius (&gt;100m)
+              </button>
+            </div>
             <button type="submit" class="primary">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
@@ -181,15 +194,19 @@
         <form id="collect-form" class="grid">
           <label>
             Visit ID (Opsional)
-            <input type="text" id="collect_visit_id" class="tabular-nums">
+            <input type="text" id="collect_visit_id" class="tabular-nums" placeholder="Terisi otomatis setelah Check-In">
           </label>
           <label>
-            Store ID
-            <input type="text" id="collect_store_id" class="tabular-nums" required>
+            Pilih Toko yang Membayar
+            <select id="collect_store_select" class="tabular-nums" required></select>
+            <input type="hidden" id="collect_store_id" required>
           </label>
           <label>
             Fledger Invoice ID
-            <input type="text" id="collect_invoice_id" class="tabular-nums" required>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="collect_invoice_id" class="tabular-nums" required style="flex:1;">
+              <button type="button" class="secondary" id="btn-new-inv" style="padding:0 12px; font-size:0.75rem;" title="Generate UUID Faktur Baru">ID Baru</button>
+            </div>
           </label>
           <label>
             Nominal Diterima (Rp)
@@ -203,11 +220,11 @@
           </div>
           <label>
             Nama Pembayar / Pemilik Toko
-            <input type="text" id="collect_payer" value="Ibu Siti Fatimah">
+            <input type="text" id="collect_payer" value="Pak Herman">
           </label>
           <label>
             No HP Pembayar (WhatsApp Kwitansi)
-            <input type="text" id="collect_payer_phone" class="tabular-nums" value="081298765432">
+            <input type="text" id="collect_payer_phone" class="tabular-nums" value="6281234560001">
           </label>
           <div class="span2" style="display:flex; justify-content:flex-end;">
             <button type="submit" class="primary" style="background:linear-gradient(180deg, #059669 0%, #10b981 100%); border-bottom-color:#047857;">
@@ -346,6 +363,7 @@
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').then((reg) => {
           console.log('[PWA] Service Worker registered with scope:', reg.scope);
+          reg.update();
         }).catch((err) => {
           console.warn('[PWA] Service Worker registration failed:', err);
         });

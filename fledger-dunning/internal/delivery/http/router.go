@@ -55,10 +55,12 @@ func NewRouter(cfg *config.Config, h *handler.Handlers, verifier jwt.Verifier) h
 				r.Post("/whatsapp/test-send", h.TestSend)
 				// Queues
 				r.Get("/queues", h.ListQueues)
+				r.Get("/queues/counts", h.QueueCounts)
 				r.Post("/queues/ingest-invoice", h.IngestInvoice)
 				r.Post("/queues/cancel-invoice", h.CancelInvoice)
 				r.Post("/queues/{id}/dispatch", h.DispatchOne)
 				r.Post("/queues/cron-run", h.CronRun)
+				r.Post("/cron/run", h.CronRun)
 				r.Get("/queues/{id}", h.GetQueueByID)
 				// Contacts
 				r.Get("/contacts", h.ListContacts)

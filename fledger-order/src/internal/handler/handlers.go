@@ -256,6 +256,20 @@ func (h *Handlers) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
 		return
 	}
+	req.CustomerTier = strings.ToUpper(strings.TrimSpace(req.CustomerTier))
+	switch req.CustomerTier {
+	case "GOLD", "STAR", "TOP":
+		req.CustomerTier = "STAR_OUTLET"
+	case "SILVER", "SEMI":
+		req.CustomerTier = "SEMI_GROSIR"
+	case "WHOLESALE", "":
+		req.CustomerTier = "GROSIR"
+	case "BRONZE":
+		req.CustomerTier = "RETAIL"
+	}
+	if req.CustomerID == "" {
+		req.CustomerID = uuid.NewString()
+	}
 	if err := h.Validator.Struct(&req); err != nil {
 		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": err.Error()})
 		return

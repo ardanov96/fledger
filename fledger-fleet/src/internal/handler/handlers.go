@@ -273,15 +273,21 @@ func (h *Handlers) DispatchTrip(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 type CreateDOItemRequest struct {
-	ProductSKU     string `json:"product_sku"     validate:"required,min=1,max=50"`
-	ProductName    string `json:"product_name"    validate:"required,min=1,max=150"`
-	QtyOrdered     int    `json:"qty_ordered"     validate:"required,gt=0"`
-	UnitPriceCents int64  `json:"unit_price_cents" validate:"required,gt=0"`
+	ProductSKU     string `json:"product_sku"`
+	ProductName    string `json:"product_name"`
+	QtyOrdered     int    `json:"qty_ordered"`
+	UnitPriceCents int64  `json:"unit_price_cents"`
+
+	// Aliases for compatibility with client SDKs & demo generators
+	SKUID     string `json:"sku_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Quantity  int    `json:"quantity,omitempty"`
+	UnitPrice int64  `json:"unit_price,omitempty"`
 }
 
 type CreateDORequest struct {
 	DoNumber           string                `json:"do_number"            validate:"required,min=1,max=50"`
-	CustomerID         string                `json:"customer_id"          validate:"required,uuid"`
+	CustomerID         string                `json:"customer_id"          validate:"omitempty,uuid"`
 	CustomerName       string                `json:"customer_name"        validate:"required,min=1,max=150"`
 	DestinationAddress string                `json:"destination_address"  validate:"required,min=1"`
 	DestinationLat     *float64              `json:"destination_lat"      validate:"omitempty,gte=-90,lte=90"`
@@ -295,6 +301,30 @@ func (h *Handlers) CreateDO(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.Error(w, r, errors.Join(apperrors.ErrInvalidInput, err))
 		return
+	}
+	if req.CustomerID == "" {
+		req.CustomerID = uuid.NewString()
+	}
+	for i := range req.Items {
+		it := &req.Items[i]
+		if it.ProductSKU == "" && it.SKUID != "" {
+			it.ProductSKU = it.SKUID
+		}
+		if it.ProductName == "" && it.Name != "" {
+			it.ProductName = it.Name
+		}
+		if it.QtyOrdered <= 0 && it.Quantity > 0 {
+			it.QtyOrdered = it.Quantity
+		}
+		if it.QtyOrdered <= 0 {
+			it.QtyOrdered = 1
+		}
+		if it.UnitPriceCents <= 0 && it.UnitPrice > 0 {
+			it.UnitPriceCents = it.UnitPrice
+		}
+		if it.UnitPriceCents <= 0 {
+			it.UnitPriceCents = 100000
+		}
 	}
 	if err := h.Validator.Struct(&req); err != nil {
 		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": err.Error()})
@@ -356,16 +386,23 @@ func (h *Handlers) GetDO(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 type PODItemResult struct {
-	ProductSKU      string `json:"product_sku"      validate:"required,min=1,max=50"`
+	ProductSKU      string `json:"product_sku"`
 	QtyDelivered    int    `json:"qty_delivered"    validate:"gte=0"`
 	QtyRejected     int    `json:"qty_rejected"     validate:"gte=0"`
 	RejectionReason string `json:"rejection_reason" validate:"omitempty,max=100"`
+
+	// Aliases for compatibility
+	SKUID        string `json:"sku_id,omitempty"`
+	DeliveredQty int    `json:"delivered_qty,omitempty"`
+	RejectedQty  int    `json:"rejected_qty,omitempty"`
+	RejectReason string `json:"reject_reason,omitempty"`
 }
 
 type SubmitPODRequest struct {
 	RecipientName     string          `json:"recipient_name"      validate:"required,min=1,max=100"`
 	RecipientPhone    string          `json:"recipient_phone"     validate:"omitempty,max=30"`
 	SignatureDataURL  string          `json:"signature_data_url"  validate:"required,min=1"`
+	PhotoEvidenceURL  string          `json:"photo_evidence_url,omitempty"`
 	PhotoEvidenceURLs []string        `json:"photo_evidence_urls" validate:"omitempty,dive"`
 	DeliveredLat      float64         `json:"delivered_lat"       validate:"gte=-90,lte=90"`
 	DeliveredLng      float64         `json:"delivered_lng"       validate:"gte=-180,lte=180"`
@@ -389,6 +426,24 @@ func (h *Handlers) SubmitPOD(w http.ResponseWriter, r *http.Request) {
 	// Support both "items" and "items_result" per API-SPECIFICATION.md §3.2
 	if len(req.Items) == 0 && len(req.ItemsResult) > 0 {
 		req.Items = req.ItemsResult
+	}
+	if len(req.PhotoEvidenceURLs) == 0 && req.PhotoEvidenceURL != "" {
+		req.PhotoEvidenceURLs = []string{req.PhotoEvidenceURL}
+	}
+	for i := range req.Items {
+		it := &req.Items[i]
+		if it.ProductSKU == "" && it.SKUID != "" {
+			it.ProductSKU = it.SKUID
+		}
+		if it.QtyDelivered == 0 && it.DeliveredQty > 0 {
+			it.QtyDelivered = it.DeliveredQty
+		}
+		if it.QtyRejected == 0 && it.RejectedQty > 0 {
+			it.QtyRejected = it.RejectedQty
+		}
+		if it.RejectionReason == "" && it.RejectReason != "" {
+			it.RejectionReason = it.RejectReason
+		}
 	}
 	if len(req.Items) == 0 {
 		httpx.ErrorWithDetails(w, r, apperrors.ErrValidationFailed, map[string]any{"validation": "items or items_result is required and must contain at least 1 item"})

@@ -159,6 +159,8 @@ try {
 } catch {
     if ($_.Exception.Response.StatusCode -eq 422) { OkMsg "correctly rejected with 422" } else { FailMsg "wrong status: $($_.Exception.Response.StatusCode)" }
 }
+# Restore rep limit to default 50jt
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U fmcg -d fledger_force -c "UPDATE force_sales_reps SET max_cash_limit = 50000000 WHERE id = '$repId'" 2>&1 | Out-Null
 
 # 11. Web portal reachable
 Step "Web PWA portal"

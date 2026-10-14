@@ -52,6 +52,30 @@ func (r *VisitRepo) InsertBeatPlan(ctx context.Context, p beatplan.Plan) (beatpl
 	return out, nil
 }
 
+// GetBeatPlanByID checks if a beat plan exists.
+func (r *VisitRepo) GetBeatPlanByID(ctx context.Context, tenantID, id string) (beatplan.Plan, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, plan_number, sales_rep_id, plan_date, territory,
+		       target_stores_count, visited_stores_count, status, notes,
+		       created_at, updated_at
+		  FROM force_beat_plans
+		 WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	var p beatplan.Plan
+	var status string
+	if err := row.Scan(
+		&p.ID, &p.TenantID, &p.PlanNumber, &p.SalesRepID, &p.PlanDate,
+		&p.Territory, &p.TargetStoresCount, &p.VisitedStoresCount,
+		&status, &p.Notes, &p.CreatedAt, &p.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return beatplan.Plan{}, apperrors.ErrNotFound
+		}
+		return beatplan.Plan{}, err
+	}
+	p.Status = beatplan.Status(status)
+	return p, nil
+}
+
 // ListBeatPlansForRepDate returns the rep's plan for a specific date.
 func (r *VisitRepo) ListBeatPlansForRepDate(ctx context.Context, tenantID, repID string, date time.Time) ([]beatplan.Plan, error) {
 	rows, err := r.pool.Query(ctx, `

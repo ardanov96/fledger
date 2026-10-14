@@ -567,9 +567,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       itemsResult.push({
         sku_id: skuId,
+        product_sku: skuId,
         delivered_qty: delivered,
+        qty_delivered: delivered,
         rejected_qty: rejected,
-        reject_reason: rejected > 0 ? (reason || 'KEMASAN_RUSAK') : ''
+        qty_rejected: rejected,
+        reject_reason: rejected > 0 ? (reason || 'KEMASAN_RUSAK') : '',
+        rejection_reason: rejected > 0 ? (reason || 'DAMAGED_LEAK') : ''
       });
     });
 
@@ -589,7 +593,9 @@ document.addEventListener('DOMContentLoaded', () => {
       driver_notes: podDriverNotes.value.trim(),
       signature_data_url: signatureData,
       photo_evidence_url: photoUrl,
-      items_result: itemsResult
+      photo_evidence_urls: photoUrl ? [photoUrl] : [],
+      items_result: itemsResult,
+      items: itemsResult
     };
 
     btnSubmitPOD.disabled = true;
@@ -1012,14 +1018,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const demoPayload = {
       do_number: doNumber,
+      customer_id: 'a0000000-0000-0000-0000-000000000002',
       customer_name: picked.name,
       destination_address: picked.addr,
       total_nominal: 1850000,
       total_weight_kg: 320,
       items: [
-        { sku_id: 'SKU-OIL-BIMOLI-2L', name: 'Minyak Goreng Bimoli 2L (Dus)', quantity: 10, unit_price: 120000 },
-        { sku_id: 'SKU-MIE-INDOMIE-GRG', name: 'Indomie Goreng Original (Dus)', quantity: 5, unit_price: 110000 },
-        { sku_id: 'SKU-GULA-GULAKU-1KG', name: 'Gulaku Tebu Kuning 1kg (Karton)', quantity: 2, unit_price: 50000 }
+        { sku_id: 'SKU-OIL-BIMOLI-2L', product_sku: 'SKU-OIL-BIMOLI-2L', name: 'Minyak Goreng Bimoli 2L (Dus)', product_name: 'Minyak Goreng Bimoli 2L (Dus)', quantity: 10, qty_ordered: 10, unit_price: 120000, unit_price_cents: 120000 },
+        { sku_id: 'SKU-MIE-INDOMIE-GRG', product_sku: 'SKU-MIE-INDOMIE-GRG', name: 'Indomie Goreng Original (Dus)', product_name: 'Indomie Goreng Original (Dus)', quantity: 5, qty_ordered: 5, unit_price: 110000, unit_price_cents: 110000 },
+        { sku_id: 'SKU-GULA-GULAKU-1KG', product_sku: 'SKU-GULA-GULAKU-1KG', name: 'Gulaku Tebu Kuning 1kg (Karton)', product_name: 'Gulaku Tebu Kuning 1kg (Karton)', quantity: 2, qty_ordered: 2, unit_price: 50000, unit_price_cents: 50000 }
       ]
     };
 

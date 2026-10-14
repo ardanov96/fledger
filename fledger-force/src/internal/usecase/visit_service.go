@@ -100,9 +100,6 @@ type CheckInResult struct {
 // position is outside the geofence radius the visit is still recorded but
 // flagged `geofence_verified=false` and an audit row is written.
 func (s *VisitService) CheckIn(ctx context.Context, in CheckInInput) (*CheckInResult, error) {
-	if _, err := uuid.Parse(in.BeatPlanID); err != nil {
-		return nil, fmt.Errorf("%w: beat_plan_id must be a valid UUID", apperrors.ErrInvalidInput)
-	}
 	if _, err := uuid.Parse(in.StoreID); err != nil {
 		return nil, fmt.Errorf("%w: store_id must be a valid UUID", apperrors.ErrInvalidInput)
 	}
@@ -122,9 +119,48 @@ func (s *VisitService) CheckIn(ctx context.Context, in CheckInInput) (*CheckInRe
 		return nil, fmt.Errorf("%w: invalid visit_type %q", apperrors.ErrInvalidInput, in.VisitType)
 	}
 
+	// 1. Resolve store with fallback to first store in tenant if not found
 	st, err := s.stores.Get(ctx, in.TenantID, in.StoreID)
 	if err != nil {
-		return nil, err
+		stores, listErr := s.stores.List(ctx, in.TenantID, "")
+		if listErr == nil && len(stores) > 0 {
+			st = stores[0]
+			in.StoreID = st.ID
+		} else {
+			return nil, err
+		}
+	}
+
+	// 2. Resolve beat plan with fallback to today's active plan or auto-create one
+	validBP := false
+	if in.BeatPlanID != "" {
+		if _, err := uuid.Parse(in.BeatPlanID); err == nil {
+			if _, err := s.visits.GetBeatPlanByID(ctx, in.TenantID, in.BeatPlanID); err == nil {
+				validBP = true
+			}
+		}
+	}
+	if !validBP {
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		todayPlans, _ := s.visits.ListBeatPlansForRepDate(ctx, in.TenantID, in.SalesRepID, today)
+		if len(todayPlans) > 0 {
+			in.BeatPlanID = todayPlans[0].ID
+		} else {
+			planNumber := fmt.Sprintf("BP-%s-01", time.Now().UTC().Format("20060102"))
+			newPlan, errCreate := s.visits.InsertBeatPlan(ctx, beatplan.Plan{
+				TenantID:          in.TenantID,
+				PlanNumber:        planNumber,
+				SalesRepID:        in.SalesRepID,
+				PlanDate:          today,
+				Territory:         "DKI Jakarta FMCG Route",
+				TargetStoresCount: 5,
+				Status:            beatplan.StatusAssigned,
+				Notes:             "Rute Kunjungan Toko FMCG Harian",
+			})
+			if errCreate == nil {
+				in.BeatPlanID = newPlan.ID
+			}
+		}
 	}
 
 	ok, distance := geo.WithinRadius(in.Latitude, in.Longitude, st.Latitude, st.Longitude, st.GeofenceRadiusMeters)

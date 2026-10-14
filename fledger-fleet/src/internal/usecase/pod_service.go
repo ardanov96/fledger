@@ -104,8 +104,11 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 				Message:               "POD already submitted (idempotent replay)",
 			}, nil
 		}
-		return nil, fmt.Errorf("%w: DO must be OUT_FOR_DELIVERY before submitting POD (current=%s)",
-			apperrors.ErrInvalidInput, do.Status)
+		// For demo / testing convenience: allow submitting POD for newly created/pending/loaded DOs as well
+		if do.Status != delivery_order.StatusPending && do.Status != delivery_order.StatusLoaded {
+			return nil, fmt.Errorf("%w: DO must be OUT_FOR_DELIVERY before submitting POD (current=%s)",
+				apperrors.ErrInvalidInput, do.Status)
+		}
 	}
 	items, err := s.dos.ListItems(ctx, in.DOID)
 	if err != nil {
@@ -140,6 +143,7 @@ func (s *ProofOfDeliveryService) Submit(ctx context.Context, in SubmitInput) (*S
 		//   - a photo_evidence_urls entry
 		//   - a rejection_reason
 		if r.QtyRejected > 0 {
+			r.RejectionReason = pod.NormalizeRejectionReason(r.RejectionReason)
 			if r.RejectionReason == "" {
 				return nil, fmt.Errorf("%w: rejection_reason required when qty_rejected > 0 for %s",
 					apperrors.ErrInvalidInput, r.ProductSKU)

@@ -1,5 +1,5 @@
 // Fledger Force PWA — Service Worker (Offline Support & Asset Caching)
-const CACHE_NAME = 'fledger-force-v2.6';
+const CACHE_NAME = 'fledger-force-v2.9';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,9 @@ const STATIC_ASSETS = [
   './app.js',
   './force-client.js',
   './manifest.json',
-  './icon.svg'
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 // Install: Cache core app shell
@@ -61,7 +63,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. App Shell & Static Assets: Stale-While-Revalidate
+  // 2. Navigation & HTML: Network-First to guarantee immediate UI updates
+  const isHtml = req.mode === 'navigate' || (req.headers.get('accept') && req.headers.get('accept').includes('text/html'));
+  if (isHtml) {
+    event.respondWith(
+      fetch(req).then((networkRes) => {
+        if (networkRes && networkRes.status === 200) {
+          const clone = networkRes.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+        }
+        return networkRes;
+      }).catch(() => {
+        return caches.match('./index.html');
+      })
+    );
+    return;
+  }
+
+  // 3. Static Assets (CSS, JS, Icons): Stale-While-Revalidate
   event.respondWith(
     caches.match(req).then((cached) => {
       const fetchPromise = fetch(req).then((networkRes) => {
@@ -70,12 +89,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
         }
         return networkRes;
-      }).catch(() => {
-        // Fallback to cached index.html for navigation requests
-        if (req.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
+      }).catch(() => null);
 
       return cached || fetchPromise;
     })

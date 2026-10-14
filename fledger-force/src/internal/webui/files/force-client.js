@@ -4,15 +4,19 @@
   const subpath = location.pathname.startsWith('/force') ? '/force' : '';
   const baseURL = (location.origin && location.origin !== 'null') ? (location.origin + subpath) : 'http://localhost:8084';
 
+  const DEFAULT_TENANT_ID = 'a0000000-0000-0000-0000-000000000001';
   let savedToken = '';
+  let savedTenant = DEFAULT_TENANT_ID;
   try {
     savedToken = localStorage.getItem('fledger_force_token') || '';
+    savedTenant = localStorage.getItem('fledger_force_tenant') || DEFAULT_TENANT_ID;
   } catch (e) {}
 
   function headers(extra) {
+    const tid = (global.Force && global.Force.tenantId) || savedTenant || DEFAULT_TENANT_ID;
     const h = Object.assign({
       'Content-Type': 'application/json',
-      'X-Tenant-ID': '00000000-0000-0000-0000-000000000001',
+      'X-Tenant-ID': tid,
       'X-Actor-Id': 'salesman-pwa',
     }, extra || {});
 
@@ -37,11 +41,18 @@
   const Force = {
     baseURL,
     token: savedToken,
+    tenantId: savedTenant,
     login: async (tid) => {
-      const res = await call('POST', '/v1/dev/login' + (tid ? '?tenant_id=' + tid : ''));
+      const targetTenant = tid || (global.Force && global.Force.tenantId) || savedTenant || DEFAULT_TENANT_ID;
+      const res = await call('POST', '/v1/dev/login?tenant_id=' + encodeURIComponent(targetTenant));
       if (res && res.access_token) {
         Force.token = res.access_token;
         savedToken = res.access_token;
+        if (res.tenant_id) {
+          Force.tenantId = res.tenant_id;
+          savedTenant = res.tenant_id;
+          try { localStorage.setItem('fledger_force_tenant', res.tenant_id); } catch (e) {}
+        }
         try { localStorage.setItem('fledger_force_token', res.access_token); } catch (e) {}
       }
       return res;

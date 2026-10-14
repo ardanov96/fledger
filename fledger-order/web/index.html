@@ -3,30 +3,63 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1d4ed8">
-  <title>Fledger Order — B2B Ordering Portal</title>
+  <meta name="theme-color" content="#090d16">
+  <title>Fledger Order — B2B Ordering &amp; Hard Credit Gate</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Ambient background glow & grid -->
+  <div class="ambient-glow"></div>
+  <div class="bg-dot-matrix"></div>
+
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🛒</span>
+      <div class="logo-badge">
+        <!-- Kinetic 'F' Monogram SVG -->
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+          <rect x="6" y="6" width="5.5" height="20" rx="2.75" fill="#ffffff"/>
+          <rect x="14.5" y="6" width="12" height="5.5" rx="2.75" fill="#38bdf8"/>
+          <rect x="14.5" y="14.5" width="8" height="5.5" rx="2.75" fill="#34d399"/>
+        </svg>
+      </div>
       <div>
         <h1>Fledger Order</h1>
-        <small>B2B OMS &amp; Hard Credit Gate</small>
+        <small>B2B OMS &amp; Hard Credit Gate Engine</small>
       </div>
     </div>
-    <div class="who" id="who">…</div>
+    <div class="nav-meta">
+      <nav class="ecosystem-nav">
+        <a href="http://localhost:8000" class="ecosystem-link">Hub :8000</a>
+        <a href="http://localhost:8081/web/" class="ecosystem-link">Core :8081</a>
+        <a href="http://localhost:8082" class="ecosystem-link">Fleet :8082</a>
+        <a href="http://localhost:8083" class="ecosystem-link">Pay :8083</a>
+        <a href="http://localhost:8084" class="ecosystem-link">Force :8084</a>
+        <a href="http://localhost:8085" class="ecosystem-link active">Order :8085</a>
+        <a href="http://localhost:8086" class="ecosystem-link">Dunning :8086</a>
+      </nav>
+      <span class="status-pill">Active Node</span>
+      <span class="who-pill" id="who">Mengotentikasi…</span>
+    </div>
   </header>
 
   <main class="content">
+    <!-- SECTION 1: PRODUCT CATALOG -->
     <section class="card">
-      <h2>1. Katalog Produk FMCG</h2>
-      <div class="grid">
-        <label>
-          Kategori
+      <div class="card-header-row">
+        <div>
+          <h2>1. Katalog Produk FMCG</h2>
+          <p class="desc">Katalog SKU terintegrasi dengan alokasi stok gudang fisik real-time.</p>
+        </div>
+      </div>
+      <div class="catalog-toolbar">
+        <label style="flex-direction:row; align-items:center; gap:8px;">
+          <span>Kategori SKU:</span>
           <select id="catalog-category">
-            <option value="">Semua</option>
+            <option value="">Semua Kategori</option>
             <option value="SEMBAKO">Sembako</option>
             <option value="MIE_INSTAN">Mie Instan</option>
             <option value="MINUMAN">Minuman</option>
@@ -34,89 +67,191 @@
             <option value="ROKOK">Rokok</option>
           </select>
         </label>
-        <button id="load-catalog" class="primary">Muat Katalog</button>
+        <button id="load-catalog" class="secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+          </svg>
+          <span>Refresh Katalog</span>
+        </button>
       </div>
-      <div class="catalog" id="catalog"></div>
+      <div class="catalog-grid" id="catalog"></div>
     </section>
 
+    <!-- SECTION 2: B2B CART & STORE DETAILS -->
     <section class="card">
-      <h2>2. Keranjang B2B</h2>
+      <div class="card-header-row">
+        <div>
+          <h2>2. Pemesanan Toko B2B</h2>
+          <p class="desc">Penetapan harga bertingkat (Wholesale Tiers) dan verifikasi data pelanggan.</p>
+        </div>
+      </div>
+
+      <!-- Quick store selector -->
+      <div class="quick-stores">
+        <span class="quick-label">Pilih Toko Cepat:</span>
+        <button type="button" class="quick-btn" data-name="Toko Sumber Rezeki" data-tier="GROSIR" data-addr="Jl. Raya Daan Mogot No. 45, Jakarta Barat">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
+          <span>Toko Sumber Rezeki (Grosir)</span>
+        </button>
+        <button type="button" class="quick-btn" data-name="Toko Berkah Mandiri" data-tier="STAR_OUTLET" data-addr="Jl. Pasar Minggu Raya No. 12, Jakarta Selatan">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
+          <span>Toko Berkah Mandiri (Star)</span>
+        </button>
+        <button type="button" class="quick-btn" data-name="Toko Sinar Jaya" data-tier="SEMI_GROSIR" data-addr="Jl. Danau Sunter Utara No. 88, Jakarta Utara">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
+          <span>Toko Sinar Jaya (Semi-Grosir)</span>
+        </button>
+      </div>
+
       <form id="order-form" class="grid">
         <label>
           Customer ID (UUID)
-          <input type="text" id="customer_id" required>
+          <input type="text" id="customer_id" class="tabular-nums" required>
         </label>
         <label>
           Nama Toko
           <input type="text" id="customer_name" value="Toko Sumber Rezeki" required>
         </label>
         <label>
-          Tier
+          Tier Harga Grosir
           <select id="customer_tier">
-            <option value="GROSIR">GROSIR</option>
+            <option value="GROSIR" selected>GROSIR (Wholesale)</option>
             <option value="SEMI_GROSIR">SEMI_GROSIR</option>
             <option value="RETAIL">RETAIL</option>
-            <option value="STAR_OUTLET">STAR_OUTLET</option>
+            <option value="STAR_OUTLET">STAR_OUTLET (Top Tier)</option>
           </select>
         </label>
         <label>
-          No HP Toko
-          <input type="text" id="customer_phone" value="081298765432">
+          No HP Toko / PIC
+          <input type="text" id="customer_phone" class="tabular-nums" value="081298765432">
         </label>
         <label class="span2">
-          Alamat Pengiriman
+          Alamat Pengiriman (Delivery Destination)
           <input type="text" id="destination_address" value="Jl. Raya Daan Mogot No. 45, Jakarta Barat" required>
         </label>
       </form>
-      <div class="cart">
-        <table class="cart-table">
+
+      <!-- Cart table -->
+      <div class="cart-table-wrap">
+        <table class="fl-table">
           <thead>
-            <tr><th>SKU</th><th>Nama</th><th>Qty</th><th>Harga</th><th>Subtotal</th><th></th></tr>
+            <tr>
+              <th>SKU Produk</th>
+              <th>Nama Item</th>
+              <th class="center">Kuantitas</th>
+              <th class="right">Estimasi Satuan</th>
+              <th class="right">Subtotal</th>
+              <th class="center" style="width:40px;">Hapus</th>
+            </tr>
           </thead>
           <tbody id="cart-body">
-            <tr><td colspan="6" class="muted">Belum ada item. Klik "Tambah" di katalog.</td></tr>
+            <tr><td colspan="6" class="center muted" style="padding:24px;">Belum ada item di keranjang. Klik "+ Keranjang" pada katalog di atas.</td></tr>
           </tbody>
           <tfoot>
-            <tr><th colspan="4" class="right">Total:</th><th id="cart-total">Rp 0</th><th></th></tr>
+            <tr>
+              <th colspan="4" class="right">Total Estimasi Nilai Pesanan:</th>
+              <th class="right tabular-nums" id="cart-total" style="font-size:1.05rem; color:#38bdf8;">Rp 0</th>
+              <th></th>
+            </tr>
           </tfoot>
         </table>
       </div>
-      <button id="submit-order" class="primary">Buat Pesanan (PENDING_CREDIT_CHECK)</button>
+
+      <div style="display:flex; justify-content:flex-end;">
+        <button id="submit-order" class="primary" style="padding:11px 22px;">
+          <!-- Lucide Send SVG -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" x2="11" y1="2" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+          <span>Submit Pesanan &amp; Evaluasi Credit Gate</span>
+        </button>
+      </div>
       <div id="order-status" class="status"></div>
     </section>
 
+    <!-- SECTION 3: HARD CREDIT GATE EVALUATION -->
     <section class="card" id="credit-card" hidden>
-      <h2>3. Evaluasi Hard Credit Gate</h2>
-      <p>Setelah order dibuat, klik tombol di bawah untuk mengevaluasi otomatis ke <strong>Fledger Core</strong> (plafon + aging).</p>
-      <button id="evaluate-credit" class="primary">Evaluasi Credit Gate</button>
-      <div id="credit-status" class="status"></div>
+      <div class="card-header-row">
+        <div>
+          <h2>3. Evaluasi Hard Credit Gate (Pre-Flight Check)</h2>
+          <p class="desc">Pemeriksaan otomatis ke Fledger Core: verifikasi limit piutang, penunggakan faktur &gt;30 hari, dan proyeksi eksposur.</p>
+        </div>
+      </div>
 
-      <div id="override-block" hidden>
-        <h3>Managerial Override (Finance Manager)</h3>
-        <p>Pesanan di-block oleh Credit Gate. Masukkan PIN otorisasi dan alasan tertulis.</p>
-        <form id="override-form" class="grid">
+      <div style="margin-bottom:16px;">
+        <button id="evaluate-credit" class="primary">
+          <!-- Lucide ShieldCheck SVG -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+          <span>Jalankan Evaluasi Credit Gate</span>
+        </button>
+      </div>
+
+      <div id="credit-status" class="status"></div>
+      <div id="credit-metrics-container"></div>
+
+      <!-- Managerial Override Block -->
+      <div id="override-block" class="override-container" hidden>
+        <div class="override-header">
+          <div style="width:36px; height:36px; border-radius:8px; background:rgba(239,68,68,0.15); display:flex; align-items:center; justify-content:center; color:#f87171;">
+            <!-- Lucide Lock SVG -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <h3>Managerial Override (Finance Manager Approval)</h3>
+            <p style="font-size:0.8rem; color:#fca5a5;">Pesanan ini tertahan oleh Hard Credit Gate. Diperlukan otorisasi PIN Finance Manager untuk melepas penahanan.</p>
+          </div>
+        </div>
+        <form id="override-form" class="grid" style="margin-top:14px; margin-bottom:0;">
           <label>
-            Override PIN
-            <input type="password" id="override_pin" required>
+            PIN Otorisasi Manager (Default Demo: 123456)
+            <input type="password" id="override_pin" placeholder="••••••" class="tabular-nums" required>
           </label>
           <label class="span2">
-            Alasan Override
-            <input type="text" id="override_reason" required>
+            Alasan Tertulis Override (Audit Trail)
+            <input type="text" id="override_reason" placeholder="Contoh: Kesepakatan pelunasan faktur mundur disetujui CFO" required>
           </label>
-          <button type="submit" class="primary">Override &amp; Setujui Order</button>
+          <div class="span2" style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <button type="submit" class="danger">
+              <!-- Lucide Unlock SVG -->
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+              </svg>
+              <span>Buka Blokir &amp; Setujui Pesanan</span>
+            </button>
+          </div>
         </form>
         <div id="override-status" class="status"></div>
       </div>
     </section>
 
+    <!-- SECTION 4: OUTBOX TELEMETRY -->
     <section class="card">
-      <h2>4. Outbox → Fledger Fleet</h2>
-      <div id="outbox-counts">Memuat...</div>
+      <div class="card-header-row">
+        <div>
+          <h2>4. Status Dispatch Outbox &rarr; Fledger Fleet</h2>
+          <p class="desc">Pemantauan antrean Surat Jalan (DO) yang dikirim ke logistik armada via transactional outbox.</p>
+        </div>
+      </div>
+      <div id="outbox-counts" class="outbox-kpi-grid">
+        <div class="kpi-card pending"><div class="kpi-title">Pending</div><div class="kpi-value tabular-nums">-</div></div>
+        <div class="kpi-card processing"><div class="kpi-title">Processing</div><div class="kpi-value tabular-nums">-</div></div>
+        <div class="kpi-card sent"><div class="kpi-title">Sent / Dispatched</div><div class="kpi-value tabular-nums">-</div></div>
+        <div class="kpi-card failed"><div class="kpi-title">Failed</div><div class="kpi-value tabular-nums">-</div></div>
+      </div>
     </section>
   </main>
 
   <footer>
-    <small>Fledger Order — Hard Credit Gate + Auto Dispatch.</small>
+    <small>Fledger Order &bull; Ledger-First B2B OMS &bull; Powered by Go &amp; PostgreSQL 16.</small>
   </footer>
 
   <script src="order-client.js"></script>

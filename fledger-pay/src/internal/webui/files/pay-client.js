@@ -14,7 +14,7 @@
   function headers(extra) {
     const h = Object.assign({
       'Content-Type': 'application/json',
-      'X-Tenant-ID': '00000000-0000-0000-0000-000000000001',
+      'X-Tenant-ID': 'a0000000-0000-0000-0000-000000000001',
       'X-Actor-Id': 'simulator-ui',
     }, extra || {});
 

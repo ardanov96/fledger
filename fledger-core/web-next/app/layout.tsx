@@ -10,8 +10,11 @@ import { AuthProvider } from '@/lib/auth';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'FMCG Wallet',
+  title: 'Fledger Core — Central Financial Ledger',
   description: 'Hybrid wallet backend for FMCG/F&B distributors',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({

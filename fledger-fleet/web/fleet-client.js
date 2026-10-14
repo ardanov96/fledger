@@ -3,7 +3,7 @@
  * Reusable client for Dispatcher Portals and Driver Mobile Web (including ekspedisi-dashboard).
  */
 class FledgerFleetClient {
-  constructor(baseUrl = 'http://localhost:8082', token = '', tenantId = '00000000-0000-0000-0000-000000000001') {
+  constructor(baseUrl = 'http://localhost:8082', token = '', tenantId = 'a0000000-0000-0000-0000-000000000001') {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.token = token;
     this.tenantId = tenantId;

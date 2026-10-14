@@ -90,13 +90,6 @@
             </button>
           </div>
         `;
-              <input type="number" min="1" value="10" id="qty-${p.id}" />
-            </div>
-            <button class="primary" style="flex:1;" data-add="${p.id}">
-              + Keranjang
-            </button>
-          </div>
-        `;
         el.querySelector('[data-add]').addEventListener('click', () => addToCart(p));
         $('catalog').appendChild(el);
       }

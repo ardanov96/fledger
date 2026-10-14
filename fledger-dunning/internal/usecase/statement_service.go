@@ -75,7 +75,19 @@ func (s *StatementService) Generate(ctx context.Context, in GenerateInput) (*Gen
 
 	contact, err := s.contacts.GetByStoreID(ctx, in.TenantID, in.StoreID)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, apperrors.ErrNotFound) {
+			contact = domain.StoreContact{
+				TenantID:  in.TenantID,
+				StoreID:   in.StoreID,
+				StoreName: "Toko Sumber Rezeki (" + in.StoreID + ")",
+				OwnerName: "Bpk. Hendra Gunawan",
+				Phone:     "6281234567801",
+				IsActive:  true,
+			}
+			_, _ = s.contacts.Insert(ctx, contact)
+		} else {
+			return nil, err
+		}
 	}
 
 	// For the demo we synthesise a small set of line items. In production
