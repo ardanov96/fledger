@@ -68,6 +68,14 @@
     previewStageMessage('PRE_DUE_H3', storeName, $('f-invoice-num').value, amount, phone);
   };
 
+  // Queue pagination and filtering state
+  const queueState = {
+    items: [],
+    currentPage: 1,
+    pageSize: 5,
+    statusFilter: 'ALL'
+  };
+
   document.addEventListener('DOMContentLoaded', async () => {
     // Login on load to seed the JWT
     try {
@@ -88,6 +96,28 @@
     $('btn-cron').addEventListener('click', onCron);
     $('btn-simulate-pay').addEventListener('click', onSimulatePay);
     $('btn-generate-stmt').addEventListener('click', onGenerateStmt);
+
+    // Queue page size selector listener
+    const pageSizeSelect = $('queue-page-size');
+    if (pageSizeSelect) {
+      pageSizeSelect.addEventListener('change', (e) => {
+        queueState.pageSize = parseInt(e.target.value, 10) || 5;
+        queueState.currentPage = 1;
+        renderQueues();
+      });
+    }
+
+    // Queue status filter pills listeners
+    const filterPills = document.querySelectorAll('#queue-status-filters .filter-pill');
+    filterPills.forEach((pill) => {
+      pill.addEventListener('click', () => {
+        filterPills.forEach((p) => p.classList.remove('active'));
+        pill.classList.add('active');
+        queueState.statusFilter = pill.getAttribute('data-status') || 'ALL';
+        queueState.currentPage = 1;
+        renderQueues();
+      });
+    });
 
     // Prefill gateway token if stored
     const tokenInput = $('f-gateway-token') || $('f-fonnte-token');
@@ -191,30 +221,103 @@
   async function refreshQueues() {
     try {
       const items = await FD.listQueues('');
-      const tbody = $('queue-table').querySelector('tbody');
-      if (!items || !items.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="tabular" style="text-align:center; color:var(--text-muted); padding:24px;">Belum ada antrean dunning aktif. Silakan ingest faktur baru.</td></tr>';
-        return;
+      queueState.items = Array.isArray(items) ? items : [];
+      updateQueueFilterCounts(queueState.items);
+      renderQueues();
+    } catch (e) {
+      console.error('refreshQueues error:', e);
+    }
+  }
+
+  function updateQueueFilterCounts(items) {
+    const counts = { ALL: items.length, QUEUED: 0, SENT: 0, CANCELLED_BY_PAYMENT: 0 };
+    items.forEach((q) => {
+      if (counts[q.status] !== undefined) counts[q.status]++;
+    });
+    if ($('count-all')) $('count-all').textContent = counts.ALL;
+    if ($('count-queued-pill')) $('count-queued-pill').textContent = counts.QUEUED;
+    if ($('count-sent-pill')) $('count-sent-pill').textContent = counts.SENT;
+    if ($('count-cancelled-pill')) $('count-cancelled-pill').textContent = counts.CANCELLED_BY_PAYMENT;
+  }
+
+  function renderQueues() {
+    const tbody = $('queue-table') ? $('queue-table').querySelector('tbody') : null;
+    if (!tbody) return;
+
+    const infoEl = $('queue-page-info');
+    const navEl = $('queue-page-nav');
+
+    // Filter by status
+    let filtered = queueState.items;
+    if (queueState.statusFilter !== 'ALL') {
+      filtered = filtered.filter((q) => q.status === queueState.statusFilter);
+    }
+
+    const total = filtered.length;
+    const pageSize = queueState.pageSize;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    // Clamp page
+    if (queueState.currentPage > totalPages) queueState.currentPage = totalPages;
+    if (queueState.currentPage < 1) queueState.currentPage = 1;
+
+    const startIdx = (queueState.currentPage - 1) * pageSize;
+    const endIdx = Math.min(startIdx + pageSize, total);
+    const pageItems = filtered.slice(startIdx, endIdx);
+
+    if (!pageItems.length) {
+      const filterMsg = queueState.statusFilter !== 'ALL' ? ` dengan status "${queueState.statusFilter}"` : '. Silakan ingest faktur baru.';
+      tbody.innerHTML = `<tr><td colspan="5" class="tabular" style="text-align:center; color:var(--text-muted); padding:28px;">Belum ada antrean dunning aktif${filterMsg}</td></tr>`;
+      if (infoEl) infoEl.textContent = 'Menampilkan 0 dari 0 antrean';
+      if (navEl) navEl.innerHTML = '';
+      return;
+    }
+
+    tbody.innerHTML = pageItems.map((q) => {
+      const info = stageInfo(q.stage);
+      let statusCls = 'off';
+      if (q.status === 'SENT') statusCls = 'on';
+      if (q.status === 'CANCELLED_BY_PAYMENT') statusCls = 'scan';
+
+      return `
+        <tr>
+          <td class="tabular" style="font-weight:600; color:#f8fafc;">${q.invoice_number}</td>
+          <td><span class="step-badge" style="background:${info.color}22; color:${info.color}; font-weight:700;">${q.stage}</span></td>
+          <td class="tabular">${q.phone_number}</td>
+          <td><span class="pill ${statusCls}">${q.status}</span></td>
+          <td class="tabular" style="font-size:0.75rem; color:var(--text-muted);">${fmtDT(q.scheduled_at)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    if (infoEl) {
+      infoEl.textContent = `Menampilkan ${startIdx + 1}–${endIdx} dari ${total} antrean (Halaman ${queueState.currentPage} dari ${totalPages})`;
+    }
+
+    if (navEl) {
+      let navHtml = '';
+      navHtml += `<button type="button" class="page-btn" ${queueState.currentPage <= 1 ? 'disabled' : ''} onclick="window.changeQueuePage(${queueState.currentPage - 1})">« Prev</button>`;
+
+      const maxButtons = 5;
+      let startP = Math.max(1, queueState.currentPage - Math.floor(maxButtons / 2));
+      let endP = Math.min(totalPages, startP + maxButtons - 1);
+      if (endP - startP + 1 < maxButtons) {
+        startP = Math.max(1, endP - maxButtons + 1);
       }
 
-      tbody.innerHTML = items.map((q) => {
-        const info = stageInfo(q.stage);
-        let statusCls = 'off';
-        if (q.status === 'SENT') statusCls = 'on';
-        if (q.status === 'CANCELLED_BY_PAYMENT') statusCls = 'scan';
+      for (let p = startP; p <= endP; p++) {
+        navHtml += `<button type="button" class="page-btn ${p === queueState.currentPage ? 'active' : ''}" onclick="window.changeQueuePage(${p})">${p}</button>`;
+      }
 
-        return `
-          <tr>
-            <td class="tabular" style="font-weight:600;">${q.invoice_number}</td>
-            <td><span class="step-badge" style="background:${info.color}22; color:${info.color}; font-weight:700;">${q.stage}</span></td>
-            <td class="tabular">${q.phone_number}</td>
-            <td><span class="pill ${statusCls}">${q.status}</span></td>
-            <td class="tabular" style="font-size:0.75rem; color:var(--text-muted);">${fmtDT(q.scheduled_at)}</td>
-          </tr>
-        `;
-      }).join('');
-    } catch (e) {}
+      navHtml += `<button type="button" class="page-btn" ${queueState.currentPage >= totalPages ? 'disabled' : ''} onclick="window.changeQueuePage(${queueState.currentPage + 1})">Next »</button>`;
+      navEl.innerHTML = navHtml;
+    }
   }
+
+  window.changeQueuePage = function (page) {
+    queueState.currentPage = page;
+    renderQueues();
+  };
 
   async function refreshCounts() {
     try {

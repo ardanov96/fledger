@@ -291,62 +291,12 @@
           </button>
           <div id="ingest-status" class="status-log">Siap menerima ingest invoice baru...</div>
         </section>
-
-        <!-- Card 3: E-Statement Generator -->
-        <section class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">3. E-Statement Generator (Rekening Koran)</div>
-              <div class="card-desc">Kompilasi mutasi AR bulanan toko ke dokumen PDF resmi berstempel</div>
-            </div>
-          </div>
-
-          <form id="stmt-form" class="form-grid" onsubmit="return false;">
-            <div class="form-group">
-              <label class="form-label">Store ID Target</label>
-              <input id="s-store-id" class="tabular" value="TKO-001" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Periode Bulan</label>
-              <input id="s-month" class="tabular" value="2026-10" required>
-            </div>
-          </form>
-
-          <button class="secondary" id="btn-generate-stmt" style="width:100%;">
-            <!-- Lucide FileText SVG -->
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-              <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-              <path d="M10 9H8"/>
-              <path d="M16 13H8"/>
-              <path d="M16 17H8"/>
-            </svg>
-            <span>Generate PDF Rekening Koran</span>
-          </button>
-          <div id="stmt-status" class="status-log">E-statement generator siap digunakan.</div>
-
-          <div class="table-wrapper">
-            <table class="data-table" id="stmt-table">
-              <thead>
-                <tr>
-                  <th>Store ID</th>
-                  <th>Bulan</th>
-                  <th>Total Invoiced</th>
-                  <th>Total Paid</th>
-                  <th>Saldo Akhir</th>
-                  <th>File PDF</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
       </div>
 
-      <!-- RIGHT COLUMN: Smartphone Simulator & Active Queue -->
+      <!-- RIGHT COLUMN: Smartphone Simulator (snug fit preview) -->
       <div class="col-right">
         <!-- Card 4: WhatsApp Live Smartphone Simulator -->
-        <section class="card">
+        <section class="card phone-card">
           <div class="card-header">
             <div>
               <div class="card-title">4. WhatsApp Smartphone Simulator</div>
@@ -413,50 +363,128 @@
             </div>
           </div>
         </section>
-
-        <!-- Card 5: Active Dunning Queues -->
-        <section class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">5. Antrean Dunning Aktif &amp; Self-Healing</div>
-              <div class="card-desc">Pengiriman otomatis &amp; pembatalan instan saat toko lunas</div>
-            </div>
-          </div>
-
-          <div class="btn-group" style="margin-bottom:14px;">
-            <button class="secondary" id="btn-refresh">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-              <span>Refresh Antrean</span>
-            </button>
-            <button class="primary" id="btn-cron">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-              <span>Trigger Cron Dispatch</span>
-            </button>
-            <button class="success" id="btn-simulate-pay">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <span>Simulasi Pelunasan (Self-Healing)</span>
-            </button>
-          </div>
-
-          <div id="queue-counts" class="hidden" style="display:none;"></div>
-
-          <div class="table-wrapper">
-            <table class="data-table" id="queue-table">
-              <thead>
-                <tr>
-                  <th>No Faktur</th>
-                  <th>Tahap Cadence</th>
-                  <th>Penerima</th>
-                  <th>Status</th>
-                  <th>Jadwal Kirim</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
       </div>
     </div>
+
+    <!-- FULL-WIDTH MASTER SECTION: Card 5: Active Dunning Queues with Pagination -->
+    <section class="card master-table-card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">5. Antrean Dunning Aktif &amp; Self-Healing</div>
+          <div class="card-desc">Pengiriman otomatis &amp; pembatalan instan saat toko lunas</div>
+        </div>
+      </div>
+
+      <div class="table-top-toolbar">
+        <div class="btn-group">
+          <button class="secondary" id="btn-refresh">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+            <span>Refresh Antrean</span>
+          </button>
+          <button class="primary" id="btn-cron">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+            <span>Trigger Cron Dispatch</span>
+          </button>
+          <button class="success" id="btn-simulate-pay">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span>Simulasi Pelunasan (Self-Healing)</span>
+          </button>
+        </div>
+
+        <div class="table-controls-bar">
+          <div class="filter-pills" id="queue-status-filters">
+            <button type="button" class="filter-pill active" data-status="ALL">Semua <span class="pill-count" id="count-all">0</span></button>
+            <button type="button" class="filter-pill" data-status="QUEUED">Queued <span class="pill-count" id="count-queued-pill">0</span></button>
+            <button type="button" class="filter-pill" data-status="SENT">Sent <span class="pill-count" id="count-sent-pill">0</span></button>
+            <button type="button" class="filter-pill" data-status="CANCELLED_BY_PAYMENT">Self-Healed <span class="pill-count" id="count-cancelled-pill">0</span></button>
+          </div>
+          <div class="page-size-selector">
+            <label for="queue-page-size">Baris per halaman:</label>
+            <select id="queue-page-size" class="select-sm tabular">
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="data-table" id="queue-table">
+          <thead>
+            <tr>
+              <th>No Faktur</th>
+              <th>Tahap Cadence</th>
+              <th>Penerima (WhatsApp)</th>
+              <th>Status</th>
+              <th>Jadwal Kirim</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div class="pagination-bar">
+        <div class="pagination-info" id="queue-page-info">
+          Menampilkan 0 dari 0 antrean
+        </div>
+        <div class="pagination-buttons" id="queue-page-nav">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- FULL-WIDTH SECTION: Card 3: E-Statement Generator -->
+    <section class="card master-table-card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">3. E-Statement Generator (Rekening Koran)</div>
+          <div class="card-desc">Kompilasi mutasi AR bulanan toko ke dokumen PDF resmi berstempel</div>
+        </div>
+      </div>
+
+      <form id="stmt-form" class="form-grid" onsubmit="return false;">
+        <div class="form-group">
+          <label class="form-label">Store ID Target</label>
+          <input id="s-store-id" class="tabular" value="TKO-001" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Periode Bulan</label>
+          <input id="s-month" class="tabular" value="2026-10" required>
+        </div>
+      </form>
+
+      <button class="secondary" id="btn-generate-stmt" style="width:100%;">
+        <!-- Lucide FileText SVG -->
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+          <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+          <path d="M10 9H8"/>
+          <path d="M16 13H8"/>
+          <path d="M16 17H8"/>
+        </svg>
+        <span>Generate PDF Rekening Koran</span>
+      </button>
+      <div id="stmt-status" class="status-log">E-statement generator siap digunakan.</div>
+
+      <div class="table-wrapper">
+        <table class="data-table" id="stmt-table">
+          <thead>
+            <tr>
+              <th>Store ID</th>
+              <th>Bulan</th>
+              <th>Total Invoiced</th>
+              <th>Total Paid</th>
+              <th>Saldo Akhir</th>
+              <th>File PDF</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <footer>
