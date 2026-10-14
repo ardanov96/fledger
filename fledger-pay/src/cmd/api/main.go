@@ -22,6 +22,7 @@ import (
 	"github.com/fledger/fledger-pay/internal/handler"
 	"github.com/fledger/fledger-pay/internal/integration/coreclient"
 	"github.com/fledger/fledger-pay/internal/integration/dunningclient"
+	"github.com/fledger/fledger-pay/internal/integration/midtransclient"
 	"github.com/fledger/fledger-pay/internal/middleware"
 	"github.com/fledger/fledger-pay/internal/platform/httpx"
 	"github.com/fledger/fledger-pay/internal/platform/log"
@@ -77,6 +78,16 @@ func run() error {
 		cfg.FledgerTenantID,
 	)
 
+	var midtransClient *midtransclient.Client
+	if cfg.MidtransServerKey != "" {
+		midtransClient = midtransclient.NewClient(midtransclient.Config{
+			ServerKey:  cfg.MidtransServerKey,
+			ClientKey:  cfg.MidtransClientKey,
+			MerchantID: cfg.MidtransMerchantID,
+			IsProd:     cfg.AppEnv == "production",
+		})
+	}
+
 	services := usecase.NewServices(usecase.Deps{
 		Pool:         pool,
 		Payments:     paymentRepo,
@@ -85,6 +96,7 @@ func run() error {
 		Audit:        auditRepo,
 		Core:         coreHTTP,
 		Dunning:      dunningHTTP,
+		Midtrans:     midtransClient,
 	})
 	services.Settlement.SetLogger(logger)
 
@@ -93,7 +105,7 @@ func run() error {
 	go services.Settlement.DrainLoop(bgCtx, cfg.OutboxPollInterval, 16, cfg.OutboxMaxAttempts)
 
 	v := validator.New(validator.WithRequiredStructEnabled())
-	handlers := handler.NewHandlers(v, services, cfg.WebhookSecret, pool.Ping)
+	handlers := handler.NewHandlers(v, services, cfg.WebhookSecret, cfg.MidtransServerKey, pool.Ping)
 
 	r := chi.NewRouter()
 	r.Use(chimw.RealIP)

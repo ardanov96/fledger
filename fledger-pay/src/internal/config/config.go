@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -27,12 +28,42 @@ type Config struct {
 
 	WebhookSecret string
 
+	MidtransServerKey  string
+	MidtransClientKey  string
+	MidtransMerchantID string
+
 	OutboxPollInterval   time.Duration
 	OutboxRequestTimeout time.Duration
 	OutboxMaxAttempts    int
 }
 
+func loadDotEnv() {
+	paths := []string{".env", "../.env", "../../.env", "fledger-pay/.env"}
+	for _, p := range paths {
+		if b, err := os.ReadFile(p); err == nil {
+			lines := strings.Split(string(b), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					k := strings.TrimSpace(parts[0])
+					v := strings.TrimSpace(parts[1])
+					v = strings.Trim(v, `"'`)
+					if os.Getenv(k) == "" {
+						_ = os.Setenv(k, v)
+					}
+				}
+			}
+			return
+		}
+	}
+}
+
 func Load() (*Config, error) {
+	loadDotEnv()
 	c := &Config{
 		AppEnv:                getEnv("APP_ENV", "development"),
 		Port:                  getEnvInt("PORT", 8083),
@@ -46,9 +77,15 @@ func Load() (*Config, error) {
 		JWTSecret:             os.Getenv("JWT_SECRET"),
 		TokenTTL:              getEnvDuration("TOKEN_TTL", 24*time.Hour),
 		WebhookSecret:         os.Getenv("WEBHOOK_SECRET"),
+		MidtransServerKey:     os.Getenv("MIDTRANS_SERVER_KEY"),
+		MidtransClientKey:     os.Getenv("MIDTRANS_CLIENT_KEY"),
+		MidtransMerchantID:    os.Getenv("MIDTRANS_MERCHANT_ID"),
 		OutboxPollInterval:    getEnvDuration("OUTBOX_POLL_INTERVAL", 3*time.Second),
 		OutboxRequestTimeout:  getEnvDuration("OUTBOX_REQUEST_TIMEOUT", 5*time.Second),
 		OutboxMaxAttempts:     getEnvInt("OUTBOX_MAX_ATTEMPTS", 10),
+	}
+	if c.WebhookSecret == "" && c.MidtransServerKey != "" {
+		c.WebhookSecret = c.MidtransServerKey
 	}
 	if err := c.validate(); err != nil {
 		return nil, err

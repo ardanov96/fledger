@@ -24,20 +24,22 @@ import (
 
 // Handlers bundles the use-case layer.
 type Handlers struct {
-	Validator    *validator.Validate
-	Payment      *usecase.PaymentService
-	Settlement   *usecase.SettlementService
-	WebhookSecret string
-	DBPinger     func(ctx context.Context) error
+	Validator         *validator.Validate
+	Payment           *usecase.PaymentService
+	Settlement        *usecase.SettlementService
+	WebhookSecret     string
+	MidtransServerKey string
+	DBPinger          func(ctx context.Context) error
 }
 
-func NewHandlers(v *validator.Validate, srv *usecase.Services, webhookSecret string, pinger func(ctx context.Context) error) *Handlers {
+func NewHandlers(v *validator.Validate, srv *usecase.Services, webhookSecret, midtransServerKey string, pinger func(ctx context.Context) error) *Handlers {
 	return &Handlers{
-		Validator:    v,
-		Payment:      srv.Payment,
-		Settlement:   srv.Settlement,
-		WebhookSecret: webhookSecret,
-		DBPinger:     pinger,
+		Validator:         v,
+		Payment:           srv.Payment,
+		Settlement:        srv.Settlement,
+		WebhookSecret:     webhookSecret,
+		MidtransServerKey: midtransServerKey,
+		DBPinger:          pinger,
 	}
 }
 
@@ -195,7 +197,11 @@ func (h *Handlers) handleMidtrans(w http.ResponseWriter, r *http.Request, tenant
 		return
 	}
 	statusCode := midtransStatusCode(p.TransactionStatus)
-	if err := webhook.VerifyMidtransSignature(p.OrderID, statusCode, p.GrossAmount, h.WebhookSecret, p.SignatureKey); err != nil {
+	serverKey := h.MidtransServerKey
+	if serverKey == "" {
+		serverKey = h.WebhookSecret
+	}
+	if err := webhook.VerifyMidtransSignature(p.OrderID, statusCode, p.GrossAmount, serverKey, p.SignatureKey); err != nil {
 		httpx.Error(w, r, apperrors.ErrSignatureInvalid401.WithDetail(map[string]any{"reason": err.Error()}))
 		return
 	}

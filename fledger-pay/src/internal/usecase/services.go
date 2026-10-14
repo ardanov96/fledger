@@ -5,6 +5,7 @@ import (
 
 	"github.com/fledger/fledger-pay/internal/integration/coreclient"
 	"github.com/fledger/fledger-pay/internal/integration/dunningclient"
+	"github.com/fledger/fledger-pay/internal/integration/midtransclient"
 	"github.com/fledger/fledger-pay/internal/repository/postgres"
 )
 
@@ -17,6 +18,7 @@ type Deps struct {
 	Audit        *postgres.AuditRepo
 	Core         *coreclient.Client
 	Dunning      *dunningclient.Client
+	Midtrans     *midtransclient.Client
 }
 
 // Services is the bag of application services instantiated at startup.
@@ -26,10 +28,14 @@ type Services struct {
 }
 
 func NewServices(d Deps) *Services {
-	return &Services{
+	svc := &Services{
 		Payment: NewPaymentService(d.Payments, d.Audit),
 		Settlement: NewSettlementService(
 			d.Payments, d.Transactions, d.Outbox, d.Audit, d.Core, d.Dunning,
 		),
 	}
+	if d.Midtrans != nil {
+		svc.Payment.SetMidtransClient(d.Midtrans)
+	}
+	return svc
 }

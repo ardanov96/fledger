@@ -13,6 +13,7 @@ import (
 	"github.com/fledger/fledger-pay/internal/domain/payment"
 	"github.com/fledger/fledger-pay/internal/domain/qris"
 	"github.com/fledger/fledger-pay/internal/domain/va"
+	"github.com/fledger/fledger-pay/internal/integration/midtransclient"
 	"github.com/fledger/fledger-pay/internal/repository/postgres"
 )
 
@@ -22,10 +23,15 @@ import (
 type PaymentService struct {
 	payments *postgres.PaymentRepo
 	audit    *postgres.AuditRepo
+	midtrans *midtransclient.Client
 }
 
 func NewPaymentService(p *postgres.PaymentRepo, a *postgres.AuditRepo) *PaymentService {
 	return &PaymentService{payments: p, audit: a}
+}
+
+func (s *PaymentService) SetMidtransClient(m *midtransclient.Client) {
+	s.midtrans = m
 }
 
 // CreateInput bundles the input of POST /v1/pay/requests.
@@ -102,10 +108,28 @@ func (s *PaymentService) Create(ctx context.Context, in CreateInput) (*CreateRes
 		if !bank.Valid() {
 			return nil, fmt.Errorf("%w: unsupported bank %q", apperrors.ErrInvalidInput, b)
 		}
+
+		vaNumber := ""
+		if s.midtrans != nil {
+			chResp, chErr := s.midtrans.ChargeVA(ctx, midtransclient.ChargeVARequest{
+				OrderID:       requestNumber,
+				GrossAmount:   in.Amount,
+				Bank:          string(bank),
+				CustomerName:  in.CustomerName,
+				CustomerPhone: in.CustomerPhone,
+			})
+			if chErr == nil && chResp != nil && chResp.VANumber != "" {
+				vaNumber = chResp.VANumber
+			}
+		}
+		if vaNumber == "" {
+			vaNumber = GenerateVANumber(bank, "PREVIEW-"+requestNumber, in.CustomerPhone)
+		}
+
 		outVAs = append(outVAs, va.Account{
 			TenantID:       in.TenantID,
 			BankCode:       bank,
-			VANumber:       GenerateVANumber(bank, "PREVIEW-"+requestNumber, in.CustomerPhone),
+			VANumber:       vaNumber,
 			VAName:         VADisplayName(in.CustomerName),
 			ExpectedAmount: in.Amount,
 			Status:         "ACTIVE",

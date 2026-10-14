@@ -69,13 +69,16 @@ $services = @{
         Exe     = "$base\.gobuild\bin\pay.exe"
         WorkDir = "$base\fledger-pay"
         Env     = @{
-            PORT                = "8083"
-            DATABASE_URL        = "postgres://fmcg:fmcg_dev_password@localhost:5432/fledger_pay?sslmode=disable"
-            FLEDGER_CORE_URL    = "http://localhost:8081"
-            FLEDGER_DUNNING_URL = "http://localhost:8086"
-            FLEDGER_TENANT_ID   = "a0000000-0000-0000-0000-000000000001"
-            JWT_SECRET          = "fledger-super-secure-jwt-secret-key-2026-min-32"
-            WEBHOOK_SECRET      = "dunning-super-secret-key-2026"
+            PORT                 = "8083"
+            DATABASE_URL         = "postgres://fmcg:fmcg_dev_password@localhost:5432/fledger_pay?sslmode=disable"
+            FLEDGER_CORE_URL     = "http://localhost:8081"
+            FLEDGER_DUNNING_URL  = "http://localhost:8086"
+            FLEDGER_TENANT_ID    = "a0000000-0000-0000-0000-000000000001"
+            JWT_SECRET           = "fledger-super-secure-jwt-secret-key-2026-min-32"
+            WEBHOOK_SECRET       = "SB-Mid-server-XJsYUlLDpouyLjW5E6NxELyI"
+            MIDTRANS_SERVER_KEY  = "SB-Mid-server-XJsYUlLDpouyLjW5E6NxELyI"
+            MIDTRANS_CLIENT_KEY  = "SB-Mid-client-5c-O12snGFaCx2fj"
+            MIDTRANS_MERCHANT_ID = "G426768001"
         }
     }
     "gateway" = @{
