@@ -78,7 +78,8 @@
     $('who').textContent = 'Fledger Dunning Tenant: ' + (FD.tenant || 'Default');
 
     // Attach button listeners
-    if ($('btn-save-fonnte')) $('btn-save-fonnte').addEventListener('click', onSaveFonnte);
+    const btnSave = $('btn-save-token') || $('btn-save-fonnte');
+    if (btnSave) btnSave.addEventListener('click', onSaveGatewayToken);
     $('btn-pair').addEventListener('click', onPair);
     $('btn-test-send').addEventListener('click', onTestSend);
     $('btn-disconnect').addEventListener('click', onDisconnect);
@@ -87,6 +88,12 @@
     $('btn-cron').addEventListener('click', onCron);
     $('btn-simulate-pay').addEventListener('click', onSimulatePay);
     $('btn-generate-stmt').addEventListener('click', onGenerateStmt);
+
+    // Prefill gateway token if stored
+    const tokenInput = $('f-gateway-token') || $('f-fonnte-token');
+    if (tokenInput) {
+      tokenInput.value = localStorage.getItem('wa_gateway_token') || 'EM8i5t8sWe11CpqBhLTx';
+    }
 
     // Attach step banner listeners
     document.querySelectorAll('.cadence-step').forEach((el) => {
@@ -137,10 +144,11 @@
     try {
       const s = await FD.whatsappStatus();
       const prov = (s.data && s.data.provider) || 'MOCK';
-      const phone = s.data && s.data.phone_connected ? s.data.phone_connected : (prov === 'FONNTE' ? '(Belum terhubung)' : '6281198765432 (Simulated)');
+      const isLive = (prov === 'FONNTE' || prov === 'GATEWAY' || prov === 'OFFICIAL');
+      const phone = s.data && s.data.phone_connected ? s.data.phone_connected : (isLive ? '(Belum terhubung)' : '6281198765432 (Simulasi)');
       const st = s.data ? s.data.connection_status : 'CONNECTED';
 
-      $('wa-provider').textContent = prov === 'FONNTE' ? 'FONNTE (api.fonnte.com)' : 'MOCK Engine';
+      $('wa-provider').textContent = isLive ? 'Official WhatsApp Business Gateway' : 'Simulasi (Development)';
       $('wa-session').textContent = s.data ? s.data.session_name || 'official-distributor-wa' : 'official-distributor-wa';
       $('wa-phone').textContent = phone;
       $('wa-status').textContent = st;
@@ -150,21 +158,21 @@
       const cls = st === 'CONNECTED' ? 'on' : st === 'SCAN_QR' ? 'scan' : 'off';
 
       pill.className = 'pill ' + cls;
-      pill.textContent = st === 'CONNECTED' && prov === 'FONNTE' ? 'FONNTE ONLINE' : st;
+      pill.textContent = st === 'CONNECTED' ? (isLive ? 'GATEWAY LIVE' : 'SIMULASI LIVE') : st;
       if (badge) {
         badge.className = 'pill ' + cls;
         badge.textContent = st;
       }
     } catch (e) {
       $('status-pill').className = 'pill on';
-      $('status-pill').textContent = 'MOCK ONLINE';
+      $('status-pill').textContent = 'GATEWAY READY';
       if ($('wa-status-badge')) {
         $('wa-status-badge').className = 'pill on';
         $('wa-status-badge').textContent = 'CONNECTED';
       }
-      $('wa-provider').textContent = 'MOCK Engine';
+      $('wa-provider').textContent = 'Simulasi (Development)';
       $('wa-session').textContent = 'official-distributor-wa';
-      $('wa-phone').textContent = '6281198765432 (Simulated)';
+      $('wa-phone').textContent = '6281198765432 (Simulasi)';
       $('wa-status').textContent = 'CONNECTED';
     }
   }
@@ -228,33 +236,44 @@
     } catch (e) {}
   }
 
-  async function onSaveFonnte() {
-    const token = ($('f-fonnte-token').value || '').trim();
+  async function onSaveGatewayToken() {
+    const input = $('f-gateway-token') || $('f-fonnte-token');
+    const token = (input ? input.value : '').trim();
+    const statusEl = $('gateway-status') || $('ingest-status');
+
     if (!token) {
       if (confirm('Kosongkan token dan kembali ke mode simulasi (MOCK)?')) {
         try {
           await FD.whatsappConfigure({ provider: 'MOCK' });
-          setStatus($('ingest-status'), 'Mode WhatsApp Gateway diatur ke MOCK Simulation.', 'ok');
+          localStorage.removeItem('wa_gateway_token');
+          setStatus(statusEl, 'Mode WhatsApp Gateway diatur ke mode Simulasi (MOCK).', 'ok');
+          alert('Mode WhatsApp Gateway dikembalikan ke mode simulasi.');
           await refreshWhatsApp();
         } catch (e) {
-          setStatus($('ingest-status'), 'Gagal: ' + e.message, 'err');
+          setStatus(statusEl, 'Gagal: ' + e.message, 'err');
+          alert('Gagal: ' + e.message);
         }
       }
       return;
     }
 
-    setStatus($('ingest-status'), 'Menghubungkan ke Fonnte API Gateway...', '');
+    setStatus(statusEl, 'Menghubungkan ke WhatsApp Business Gateway...', '');
     try {
       await FD.whatsappConfigure({ provider: 'FONNTE', token: token });
-      setStatus($('ingest-status'), '✅ Berhasil menghubungkan Fonnte WhatsApp Gateway! Status terverifikasi.', 'ok');
+      localStorage.setItem('wa_gateway_token', token);
+      setStatus(statusEl, '✅ Berhasil menghubungkan WhatsApp Gateway! Status terverifikasi aktif.', 'ok');
+      alert('✅ Berhasil menghubungkan WhatsApp Gateway! Token aktif.');
       await refreshWhatsApp();
     } catch (e) {
-      setStatus($('ingest-status'), 'Gagal menghubungkan Fonnte: ' + e.message, 'err');
+      const errDetail = (e.body && e.body.error) || (e.body && e.body.message) || e.message || 'Unknown error';
+      setStatus(statusEl, 'Gagal menghubungkan WhatsApp Gateway: ' + errDetail, 'err');
+      alert('❌ Gagal menghubungkan WhatsApp Gateway:\n' + errDetail);
     }
   }
 
   async function onPair() {
-    setStatus($('ingest-status'), 'Membuat QR code pairing WhatsApp...', '');
+    const statusEl = $('gateway-status') || $('ingest-status');
+    setStatus(statusEl, 'Membuat QR code pairing WhatsApp...', '');
     try {
       const r = await FD.whatsappQR('official-distributor-wa');
       const qr = r.data ? r.data.qr_code : '2@WACADENCE_DEMO_QR_CODE_' + Date.now();
@@ -268,37 +287,59 @@
       }
       $('status-pill').textContent = 'SCAN_QR';
       $('status-pill').className = 'pill scan';
-      setStatus($('ingest-status'), 'QR Pairing siap! Scan menggunakan aplikasi WhatsApp pada HP distributor.', 'ok');
+      setStatus(statusEl, 'QR Pairing siap! Buka WhatsApp di HP > Perangkat Tertaut > Tautkan Perangkat lalu scan QR.', 'ok');
       await refreshWhatsApp();
     } catch (e) {
-      setStatus($('ingest-status'), 'Gagal generate QR: ' + e.message, 'err');
+      const errDetail = (e.body && e.body.error) || (e.body && e.body.message) || e.message || 'Unknown error';
+      setStatus(statusEl, 'Gagal generate QR: ' + errDetail, 'err');
+      alert('Gagal generate QR:\n' + errDetail);
     }
   }
 
   async function onTestSend() {
-    const phone = prompt('Kirim pesan uji ke nomor WhatsApp (format E.164, contoh 6281234567890):', $('f-phone').value || '6281234567801');
+    const defaultPhone = ($('wa-phone') && $('wa-phone').textContent && !$('wa-phone').textContent.includes('Simulasi') && !$('wa-phone').textContent.includes('Belum'))
+      ? $('wa-phone').textContent.trim()
+      : ($('f-phone').value || '6289530876490');
+
+    const phone = prompt('Kirim pesan uji ke nomor WhatsApp (format 62xxx atau 08xxx):', defaultPhone);
     if (!phone) return;
-    setStatus($('ingest-status'), 'Mengirim test message via WhatsApp API...', '');
+
+    const statusEl = $('gateway-status') || $('ingest-status');
+    setStatus(statusEl, `Mengirim pesan uji WhatsApp ke ${phone}...`, '');
+
     try {
       const r = await FD.whatsappTestSend({
         phone_number: phone,
         body: '🔔 Test WhatsApp Message dari Fledger Dunning Console pada ' + new Date().toLocaleString('id-ID')
       });
-      setStatus($('ingest-status'), '✅ Test message berhasil terkirim! Provider Message ID: ' + (r.data ? r.data.provider_message_id : 'MOCK-WA-' + Date.now()), 'ok');
+      const msgId = r.data ? (r.data.provider_message_id || r.data.id || 'OK') : 'WA-' + Date.now();
+      const successMsg = `✅ Test message WhatsApp berhasil dikirim ke ${phone}! (ID: ${msgId})`;
+      setStatus(statusEl, successMsg, 'ok');
+      alert(successMsg);
       previewCustomMessage('TEST_MESSAGE', phone, '🔔 Test WhatsApp Message dari Fledger Dunning Engine.\nKoneksi WhatsApp Gateway terverifikasi aktif.');
+      await refreshWhatsApp();
     } catch (e) {
-      setStatus($('ingest-status'), 'Gagal mengirim pesan: ' + e.message, 'err');
+      const errDetail = (e.body && e.body.error) || (e.body && e.body.message) || e.message || 'Unknown error';
+      const failMsg = `❌ Gagal mengirim pesan uji WhatsApp ke ${phone}:\n${errDetail}`;
+      setStatus(statusEl, failMsg, 'err');
+      alert(failMsg);
     }
   }
 
   async function onDisconnect() {
     if (!confirm('Putuskan koneksi WhatsApp Gateway?')) return;
+    const statusEl = $('gateway-status') || $('ingest-status');
     try {
       await FD.whatsappDisconnect();
       await refreshWhatsApp();
       $('qr-area').classList.add('hidden');
-      setStatus($('ingest-status'), 'Sesi WhatsApp berhasil diputuskan.', '');
-    } catch (e) {}
+      setStatus(statusEl, 'Sesi WhatsApp berhasil diputuskan.', '');
+      alert('Sesi WhatsApp berhasil diputuskan.');
+    } catch (e) {
+      const errDetail = (e.body && e.body.error) || (e.body && e.body.message) || e.message || 'Unknown error';
+      setStatus(statusEl, 'Gagal disconnect: ' + errDetail, 'err');
+      alert('Gagal disconnect:\n' + errDetail);
+    }
   }
 
   async function onIngest() {

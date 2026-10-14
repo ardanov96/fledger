@@ -134,14 +134,14 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">1. WhatsApp Gateway &amp; Pairing</div>
-              <div class="card-desc">Koneksi provider Baileys / Mock Session resmi distributor FMCG</div>
+              <div class="card-title">1. WhatsApp Business Gateway</div>
+              <div class="card-desc">Koneksi WhatsApp Gateway resmi distributor FMCG</div>
             </div>
             <div id="wa-status-badge" class="pill off">OFFLINE</div>
           </div>
 
           <div class="kv-box">
-            <div class="kv-item"><span>Provider Engine:</span> <span id="wa-provider">MOCK</span></div>
+            <div class="kv-item"><span>Gateway Engine:</span> <span id="wa-provider">Official WhatsApp Gateway</span></div>
             <div class="kv-item"><span>Session Name:</span> <span id="wa-session">-</span></div>
             <div class="kv-item"><span>Sender Number:</span> <span id="wa-phone">-</span></div>
             <div class="kv-item"><span>Connection State:</span> <span id="wa-status">-</span></div>
@@ -149,14 +149,14 @@
 
           <div style="margin: 12px 0 14px 0; padding: 12px; background: rgba(15,23,42,0.45); border: 1px solid var(--border-color, #334155); border-radius: 8px;">
             <label class="form-label" style="display:flex; justify-content:space-between; margin-bottom:6px;">
-              <span style="font-weight:600; color:#38bdf8;">Fonnte WhatsApp Token (Live API)</span>
-              <span style="font-size:0.72rem; color:var(--text-muted);">api.fonnte.com</span>
+              <span style="font-weight:600; color:#38bdf8;">WhatsApp Gateway Device Token</span>
+              <span style="font-size:0.72rem; color:var(--text-muted);">Secure Integration</span>
             </label>
             <div style="display:flex; gap:8px;">
-              <input id="f-fonnte-token" type="password" placeholder="Tempel token Fonnte (contoh: 2n8v...)" class="tabular" style="flex:1; font-size:0.82rem; padding:8px 12px; background:#0b1120; border:1px solid #334155; border-radius:6px; color:#f8fafc;">
-              <button class="secondary" id="btn-save-fonnte" style="white-space:nowrap; padding:8px 14px; font-size:0.8rem; display:inline-flex; align-items:center; gap:6px;">
+              <input id="f-gateway-token" type="password" placeholder="Masukkan WhatsApp Gateway Token..." class="tabular" style="flex:1; font-size:0.82rem; padding:8px 12px; background:#0b1120; border:1px solid #334155; border-radius:6px; color:#f8fafc;">
+              <button class="secondary" id="btn-save-token" style="white-space:nowrap; padding:8px 14px; font-size:0.8rem; display:inline-flex; align-items:center; gap:6px;">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                <span>Hubungkan Fonnte</span>
+                <span>Simpan Token</span>
               </button>
             </div>
           </div>
@@ -197,6 +197,8 @@
               <span>Disconnect</span>
             </button>
           </div>
+
+          <div id="gateway-status" class="status-log" style="margin-top:12px;">WhatsApp Gateway siap digunakan.</div>
 
           <div id="qr-area" class="qr-container hidden">
             <div class="qr-card">

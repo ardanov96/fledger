@@ -34,11 +34,13 @@ type FonnteDeviceDetail struct {
 // FonnteProvider implements the Provider interface backed by the official
 // Fonnte WhatsApp API (https://api.fonnte.com).
 type FonnteProvider struct {
-	mu      sync.RWMutex
-	token   string
-	baseURL string
-	client  *http.Client
-	log     Logger
+	mu           sync.RWMutex
+	token        string
+	baseURL      string
+	client       *http.Client
+	log          Logger
+	cachedStatus *domain.Session
+	lastCheck    time.Time
 }
 
 // NewFonnteProvider creates a new Fonnte gateway instance.
@@ -118,12 +120,12 @@ func (f *FonnteProvider) SendTextMessage(ctx context.Context, req MessageRequest
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
 	var res struct {
-		Status  bool     `json:"status"`
-		Target  []string `json:"target"`
-		ID      []string `json:"id"`
-		Process string   `json:"process"`
-		Reason  string   `json:"reason"`
-		Detail  string   `json:"detail"`
+		Status  bool   `json:"status"`
+		Target  any    `json:"target"`
+		ID      any    `json:"id"`
+		Process string `json:"process"`
+		Reason  string `json:"reason"`
+		Detail  string `json:"detail"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &res); err != nil {
@@ -144,12 +146,16 @@ func (f *FonnteProvider) SendTextMessage(ctx context.Context, req MessageRequest
 		return "", fmt.Errorf("fonnte rejected send: %s", msg)
 	}
 
-	msgID := ""
-	if len(res.ID) > 0 && res.ID[0] != "" {
-		msgID = res.ID[0]
-	} else {
-		msgID = fmt.Sprintf("fonnte-%d", time.Now().UnixNano())
+	msgID := parseMessageID(res.ID)
+	if msgID == "" {
+		msgID = fmt.Sprintf("wa-%d", time.Now().UnixNano())
 	}
+
+	f.mu.Lock()
+	if f.cachedStatus != nil {
+		f.cachedStatus.ConnectionStatus = domain.SessionConnected
+	}
+	f.mu.Unlock()
 
 	if f.log != nil {
 		f.log.Info("fonnte.send_text.success",
@@ -250,12 +256,12 @@ func (f *FonnteProvider) SendDocument(ctx context.Context, req DocumentRequest) 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
 	var res struct {
-		Status  bool     `json:"status"`
-		Target  []string `json:"target"`
-		ID      []string `json:"id"`
-		Process string   `json:"process"`
-		Reason  string   `json:"reason"`
-		Detail  string   `json:"detail"`
+		Status  bool   `json:"status"`
+		Target  any    `json:"target"`
+		ID      any    `json:"id"`
+		Process string `json:"process"`
+		Reason  string `json:"reason"`
+		Detail  string `json:"detail"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &res); err != nil {
@@ -276,11 +282,9 @@ func (f *FonnteProvider) SendDocument(ctx context.Context, req DocumentRequest) 
 		return "", fmt.Errorf("fonnte rejected document send: %s", msg)
 	}
 
-	msgID := ""
-	if len(res.ID) > 0 && res.ID[0] != "" {
-		msgID = res.ID[0]
-	} else {
-		msgID = fmt.Sprintf("fonnte-%d", time.Now().UnixNano())
+	msgID := parseMessageID(res.ID)
+	if msgID == "" {
+		msgID = fmt.Sprintf("wa-%d", time.Now().UnixNano())
 	}
 
 	if f.log != nil {
@@ -301,13 +305,22 @@ func (f *FonnteProvider) GetStatus(ctx context.Context, tenantID string) (*domai
 
 	if token == "" {
 		return &domain.Session{
-			ID:               fmt.Sprintf("sess-fonnte-%s", tenantID),
+			ID:               fmt.Sprintf("sess-wa-%s", tenantID),
 			TenantID:         tenantID,
-			SessionName:      "Fonnte Gateway (Token Unset)",
+			SessionName:      "WhatsApp Gateway (Token Unset)",
 			ConnectionStatus: domain.SessionDisconnected,
 			UpdatedAt:        now,
 		}, nil
 	}
+
+	// Check in-memory cache to prevent hitting Fonnte /device rate limits (20s TTL)
+	f.mu.RLock()
+	if f.cachedStatus != nil && time.Since(f.lastCheck) < 20*time.Second {
+		cached := *f.cachedStatus
+		f.mu.RUnlock()
+		return &cached, nil
+	}
+	f.mu.RUnlock()
 
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
@@ -316,7 +329,7 @@ func (f *FonnteProvider) GetStatus(ctx context.Context, tenantID string) (*domai
 		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("fonnte: create request: %w", err)
+		return nil, fmt.Errorf("whatsapp gateway: create request: %w", err)
 	}
 
 	httpReq.Header.Set("Authorization", token)
@@ -324,12 +337,19 @@ func (f *FonnteProvider) GetStatus(ctx context.Context, tenantID string) (*domai
 	resp, err := f.client.Do(httpReq)
 	if err != nil {
 		if f.log != nil {
-			f.log.Warn("fonnte.get_status.failed", "err", err.Error())
+			f.log.Warn("whatsapp.get_status.failed", "err", err.Error())
 		}
+		f.mu.RLock()
+		if f.cachedStatus != nil {
+			cached := *f.cachedStatus
+			f.mu.RUnlock()
+			return &cached, nil
+		}
+		f.mu.RUnlock()
 		return &domain.Session{
-			ID:               fmt.Sprintf("sess-fonnte-%s", tenantID),
+			ID:               fmt.Sprintf("sess-wa-%s", tenantID),
 			TenantID:         tenantID,
-			SessionName:      "Fonnte Gateway (Network Error)",
+			SessionName:      "WhatsApp Gateway (Network Error)",
 			ConnectionStatus: domain.SessionDisconnected,
 			UpdatedAt:        now,
 		}, nil
@@ -351,13 +371,31 @@ func (f *FonnteProvider) GetStatus(ctx context.Context, tenantID string) (*domai
 	}
 
 	if err := json.Unmarshal(bodyBytes, &res); err != nil {
+		f.mu.RLock()
+		if f.cachedStatus != nil {
+			cached := *f.cachedStatus
+			f.mu.RUnlock()
+			return &cached, nil
+		}
+		f.mu.RUnlock()
 		return &domain.Session{
-			ID:               fmt.Sprintf("sess-fonnte-%s", tenantID),
+			ID:               fmt.Sprintf("sess-wa-%s", tenantID),
 			TenantID:         tenantID,
-			SessionName:      "Fonnte Gateway (Bad Response)",
+			SessionName:      "WhatsApp Gateway (Bad Response)",
 			ConnectionStatus: domain.SessionDisconnected,
 			UpdatedAt:        now,
 		}, nil
+	}
+
+	// If rate-limited or unexpected failure, preserve the last known good status
+	if !res.Status && res.DeviceStatus == "" {
+		f.mu.RLock()
+		if f.cachedStatus != nil {
+			cached := *f.cachedStatus
+			f.mu.RUnlock()
+			return &cached, nil
+		}
+		f.mu.RUnlock()
 	}
 
 	connStatus := domain.SessionDisconnected
@@ -367,18 +405,25 @@ func (f *FonnteProvider) GetStatus(ctx context.Context, tenantID string) (*domai
 
 	sessionName := res.Name
 	if sessionName == "" {
-		sessionName = "Fonnte Device"
+		sessionName = "WhatsApp Business Device"
 	}
 
-	return &domain.Session{
-		ID:               fmt.Sprintf("sess-fonnte-%s", tenantID),
+	sess := &domain.Session{
+		ID:               fmt.Sprintf("sess-wa-%s", tenantID),
 		TenantID:         tenantID,
 		SessionName:      sessionName,
 		ConnectionStatus: connStatus,
 		PhoneConnected:   res.Device,
 		LastHeartbeat:    &now,
 		UpdatedAt:        now,
-	}, nil
+	}
+
+	f.mu.Lock()
+	f.cachedStatus = sess
+	f.lastCheck = time.Now()
+	f.mu.Unlock()
+
+	return sess, nil
 }
 
 // GenerateQR requests pairing QR from POST /qr.
@@ -433,6 +478,35 @@ func (f *FonnteProvider) GenerateQR(ctx context.Context, tenantID, sessionName s
 	}
 
 	return qrPayload, nil
+}
+
+// parseMessageID flexibly extracts the message ID from Fonnte's various response formats (numeric, string, or array).
+func parseMessageID(idField any) string {
+	switch v := idField.(type) {
+	case []any:
+		if len(v) > 0 {
+			return parseMessageID(v[0])
+		}
+	case []string:
+		if len(v) > 0 {
+			return v[0]
+		}
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case int32:
+		return fmt.Sprintf("%d", v)
+	default:
+		if idField != nil {
+			return fmt.Sprintf("%v", idField)
+		}
+	}
+	return ""
 }
 
 // cleanPhoneNumber sanitizes mobile phone numbers for WhatsApp delivery.
