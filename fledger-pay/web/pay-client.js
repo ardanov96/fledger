@@ -11,29 +11,47 @@
     savedToken = localStorage.getItem('fledger_pay_token') || '';
   } catch (e) {}
 
-  function headers(extra) {
+  function headers(extra, skipAuth) {
     const h = Object.assign({
       'Content-Type': 'application/json',
       'X-Tenant-ID': 'a0000000-0000-0000-0000-000000000001',
       'X-Actor-Id': 'simulator-ui',
     }, extra || {});
 
-    const tok = PayClient.token || savedToken;
-    if (tok) {
-      h['Authorization'] = 'Bearer ' + tok;
+    if (!skipAuth) {
+      const tok = PayClient.token || savedToken;
+      if (tok) {
+        h['Authorization'] = 'Bearer ' + tok;
+      }
     }
     return h;
   }
 
-  async function call(method, path, body, extraHeaders) {
+  async function call(method, path, body, extraHeaders, isRetry) {
+    const isLogin = path.includes('/dev/login');
     const init = {
       method,
-      headers: headers(extraHeaders),
+      headers: headers(extraHeaders, isLogin),
     };
     if (body !== undefined && body !== null) {
       init.body = JSON.stringify(body);
     }
     const res = await fetch(baseURL + path, init);
+
+    // Auto-refresh token on 401 Unauthorized
+    if (res.status === 401 && !isRetry && !isLogin) {
+      console.warn('PayClient: 401 Unauthorized received, refreshing dev token...');
+      PayClient.token = '';
+      savedToken = '';
+      try { localStorage.removeItem('fledger_pay_token'); } catch (e) {}
+      try {
+        await PayClient.login();
+        return await call(method, path, body, extraHeaders, true);
+      } catch (loginErr) {
+        console.error('PayClient: auto-login recovery failed:', loginErr);
+      }
+    }
+
     const text = await res.text();
     let parsed;
     try { parsed = text ? JSON.parse(text) : {}; } catch (e) { parsed = { raw: text }; }

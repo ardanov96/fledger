@@ -12,14 +12,12 @@
     $('create-form').addEventListener('submit', onCreate);
     $('settle-form').addEventListener('submit', onSettle);
 
-    // Auto dev login so simulator functions immediately without 401
-    if (!PayClient.token) {
-      try {
-        await PayClient.login();
-        console.log('Dev auto-login successful');
-      } catch (e) {
-        console.warn('Dev auto-login skipped/failed:', e);
-      }
+    // Seed fresh dev token on load so simulator functions immediately without 401
+    try {
+      await PayClient.login();
+      console.log('Dev auto-login successful');
+    } catch (e) {
+      console.warn('Dev auto-login skipped/failed:', e);
     }
 
     refreshOutbox();
