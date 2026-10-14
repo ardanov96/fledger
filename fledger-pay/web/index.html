@@ -180,7 +180,7 @@
           <div class="qris-store-name" id="qris-store-display">Toko Sumber Rezeki</div>
           <div class="qris-amount-tag tabular-nums" id="qris-amount-display">Rp 4.000.000</div>
           <div class="qris-canvas-frame">
-            <canvas id="qris-canvas" width="200" height="200"></canvas>
+            <div id="qris-qrcode" style="display:flex; justify-content:center; align-items:center; min-height:200px;"></div>
           </div>
           <small style="color:#64748b; font-size:0.75rem;">Mendukung BCA Mobile, Livin, BRImo, GoPay, OVO, Dana</small>
         </div>
@@ -248,6 +248,7 @@
     <small>Fledger Pay &bull; B2B Payment Gateway &bull; Powered by Go &amp; PostgreSQL 16.</small>
   </footer>
 
+  <script src="qrcode.min.js"></script>
   <script src="pay-client.js"></script>
   <script src="app.js"></script>
 </body>

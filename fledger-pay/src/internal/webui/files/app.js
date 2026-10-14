@@ -108,7 +108,7 @@
       $('qris-store-display').textContent = out.request.customer_name || 'Toko Sumber Rezeki';
       $('qris-amount-display').textContent = fmtIDR(out.request.amount);
       $('qr-string').textContent = out.qris.qr_string;
-      drawQRISCanvas($('qris-canvas'), out.qris.qr_string);
+      renderQRISCode(out.qris.qr_string);
     } else {
       qrisWrap.hidden = true;
     }
@@ -118,59 +118,30 @@
     window._lastRequest = out;
   }
 
-  // Draw clean visual QR pattern on canvas
-  function drawQRISCanvas(canvas, str) {
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
+  // Generate real, 100% standards-compliant scannable EMVCo QRIS code
+  let qrisCodeInstance = null;
+  function renderQRISCode(qrString) {
+    const container = $('qris-qrcode');
+    if (!container) return;
+    container.innerHTML = '';
 
-    // Simple pseudo-random but deterministic matrix generator based on string hash
-    const matrixSize = 25;
-    const cellSize = Math.floor((width - 20) / matrixSize);
-    const offset = Math.floor((width - cellSize * matrixSize) / 2);
-
-    let seed = 0;
-    for (let i = 0; i < str.length; i++) {
-      seed = ((seed << 5) - seed) + str.charCodeAt(i);
-      seed |= 0;
-    }
-
-    function pseudoRand() {
-      seed = (seed * 9301 + 49297) % 233280;
-      return seed / 233280;
-    }
-
-    ctx.fillStyle = '#0f172a';
-
-    // Draw position finder patterns (top-left, top-right, bottom-left)
-    function drawFinder(r, c) {
-      const x = offset + c * cellSize;
-      const y = offset + r * cellSize;
-      ctx.fillRect(x, y, 7 * cellSize, 7 * cellSize);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x + cellSize, y + cellSize, 5 * cellSize, 5 * cellSize);
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(x + 2 * cellSize, y + 2 * cellSize, 3 * cellSize, 3 * cellSize);
-    }
-
-    drawFinder(0, 0);
-    drawFinder(0, matrixSize - 7);
-    drawFinder(matrixSize - 7, 0);
-
-    // Fill data grid
-    for (let r = 0; r < matrixSize; r++) {
-      for (let c = 0; c < matrixSize; c++) {
-        // Skip finder areas
-        if ((r < 8 && c < 8) || (r < 8 && c >= matrixSize - 8) || (r >= matrixSize - 8 && c < 8)) {
-          continue;
-        }
-        if (pseudoRand() > 0.45) {
-          ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize - 1, cellSize - 1);
-        }
+    if (typeof QRCode !== 'undefined') {
+      try {
+        qrisCodeInstance = new QRCode(container, {
+          text: qrString,
+          width: 200,
+          height: 200,
+          colorDark: '#0f172a',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+        return;
+      } catch (err) {
+        console.error('Failed to generate real QR Code via QRCode:', err);
       }
     }
+
+    container.innerHTML = '<div style="color:#ef4444; font-size:0.8rem; padding:12px;">Gagal menginisialisasi QR Code Generator</div>';
   }
 
   async function onSettle(ev) {
