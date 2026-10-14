@@ -163,6 +163,17 @@
         badge.className = 'pill ' + cls;
         badge.textContent = st;
       }
+
+      // If connected, automatically dismiss QR code area and update status banner
+      if (st === 'CONNECTED') {
+        const qrArea = $('qr-area');
+        if (qrArea && !qrArea.classList.contains('hidden')) {
+          qrArea.classList.add('hidden');
+          const statusEl = $('gateway-status') || $('ingest-status');
+          setStatus(statusEl, `✅ Perangkat WhatsApp berhasil terhubung (${phone})! Gateway siap digunakan.`, 'ok');
+          alert(`✅ Sukses! Perangkat WhatsApp (${phone}) telah berhasil terhubung.`);
+        }
+      }
     } catch (e) {
       $('status-pill').className = 'pill on';
       $('status-pill').textContent = 'GATEWAY READY';
