@@ -320,14 +320,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ----------------------------------------------------
   // Navigation Tabs
   // ----------------------------------------------------
-  document.querySelectorAll('.nav-tab').forEach(tabBtn => {
+  document.querySelectorAll('.nav-tab, .mode-btn').forEach(tabBtn => {
     tabBtn.addEventListener('click', () => {
-      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.nav-tab, .mode-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
 
       tabBtn.classList.add('active');
       const targetId = tabBtn.getAttribute('data-tab');
-      document.getElementById(targetId).classList.add('active');
+      if (!targetId) return;
+      const targetPane = document.getElementById(targetId);
+      if (targetPane) targetPane.classList.add('active');
       state.activeTab = targetId;
 
       if (targetId === 'driver-tab') loadDriverView();

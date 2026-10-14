@@ -9,16 +9,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261014-3">
 </head>
 <body>
   <!-- Ambient background glow & grid matching Fledger Force/Order/Dunning -->
   <div class="ambient-glow"></div>
   <div class="bg-dot-matrix"></div>
 
-  <!-- Top Navigation Bar -->
+  <!-- Top Navigation Bar (Launch UI Standard aligned with Fledger Force) -->
   <header class="topbar">
-    <div class="brand-wrapper">
+    <div class="brand">
       <div class="logo-badge">
         <!-- Kinetic 'F' Monogram SVG -->
         <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
@@ -27,60 +27,56 @@
           <rect x="14.5" y="14.5" width="8" height="5.5" rx="2.75" fill="#34d399"/>
         </svg>
       </div>
-      <div class="brand-info">
-        <h1>Fledger Fleet</h1>
+      <div>
+        <div class="brand-title-row">
+          <h1>Fledger Fleet</h1>
+          <span class="status-indicator" id="coreHealthIndicator">
+            <span class="dot online"></span>
+            <span class="label">Fleet API :8082</span>
+          </span>
+          <button id="btnQuickLogin" class="btn-token-quick" type="button" title="Dev Token Auto-Login">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span>Dev Token</span>
+          </button>
+        </div>
         <small id="who">Logistics, Trip Dispatcher &amp; Digital POD Engine</small>
       </div>
     </div>
 
-    <!-- Ecosystem Navigation & Node Status -->
-    <div class="topbar-right">
-      <nav class="ecosystem-nav">
-        <a href="http://localhost:8000" class="ecosystem-link" title="Unified API Gateway">Hub :8000</a>
-        <a href="http://localhost:8081/web/" class="ecosystem-link" title="Fledger Core Ledger">Core :8081</a>
-        <a href="http://localhost:8082" class="ecosystem-link active" title="Fledger Fleet Logistics">Fleet :8082</a>
-        <a href="http://localhost:8083" class="ecosystem-link" title="Fledger Pay Checkout">Pay :8083</a>
-        <a href="http://localhost:8084" class="ecosystem-link" title="Fledger Force SFA">Force :8084</a>
-        <a href="http://localhost:8085" class="ecosystem-link" title="Fledger Order Credit Gate">Order :8085</a>
-        <a href="http://localhost:8086" class="ecosystem-link" title="Fledger Dunning">Dunning :8086</a>
-      </nav>
+    <!-- Ecosystem Navigation -->
+    <nav class="ecosystem-nav">
+      <a href="http://localhost:8000" class="ecosystem-link" title="Unified API Gateway">Hub :8000</a>
+      <a href="http://localhost:8081/web/" class="ecosystem-link" title="Fledger Core Ledger">Core :8081</a>
+      <a href="http://localhost:8082" class="ecosystem-link active" title="Fledger Fleet Logistics">Fleet :8082</a>
+      <a href="http://localhost:8083" class="ecosystem-link" title="Fledger Pay Checkout">Pay :8083</a>
+      <a href="http://localhost:8084" class="ecosystem-link" title="Fledger Force SFA">Force :8084</a>
+      <a href="http://localhost:8085" class="ecosystem-link" title="Fledger Order Credit Gate">Order :8085</a>
+      <a href="http://localhost:8086" class="ecosystem-link" title="Fledger Dunning">Dunning :8086</a>
+    </nav>
 
-      <div class="status-indicator" id="coreHealthIndicator">
-        <span class="dot online"></span>
-        <span class="label">Fleet API :8082 Online</span>
-      </div>
-
-      <button id="btnQuickLogin" class="btn btn-secondary btn-sm" type="button">
+    <!-- Role Mode Switcher (Launch UI Segmented Control matching Fledger Force) -->
+    <nav class="mode">
+      <button class="mode-btn nav-tab active" data-tab="driver-tab" type="button">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-        </svg>
-        <span>Dev Token Auto-Login</span>
-      </button>
-    </div>
-  </header>
-
-  <div class="app-container">
-    <!-- Role & Mode Navigation (Segmented Control matching Fledger Force) -->
-    <nav class="mode-tabs">
-      <button class="nav-tab active" data-tab="driver-tab" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
           <path d="M12 18h.01"/>
         </svg>
-        <span>Mode Supir (Digital POD)</span>
+        <span>Mode Supir (POD)</span>
       </button>
 
-      <button class="nav-tab" data-tab="dispatcher-tab" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="mode-btn nav-tab" data-tab="dispatcher-tab" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
           <line x1="9" x2="9" y1="3" y2="18"/>
           <line x1="15" x2="15" y1="6" y2="21"/>
         </svg>
-        <span>Dispatcher &amp; Trip Hub</span>
+        <span>Dispatcher &amp; Trips</span>
       </button>
 
-      <button class="nav-tab" data-tab="master-tab" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="mode-btn nav-tab" data-tab="master-tab" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>
           <path d="M15 18H9"/>
           <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
@@ -90,7 +86,9 @@
         <span>Master Data &amp; DO</span>
       </button>
     </nav>
+  </header>
 
+  <div class="app-container">
     <!-- Main Content Area -->
     <main class="main-content">
 
@@ -578,7 +576,7 @@
     <div id="toast" class="toast hidden"></div>
   </div>
 
-  <script src="fleet-client.js"></script>
-  <script src="app.js"></script>
+  <script src="fleet-client.js?v=20261014-3"></script>
+  <script src="app.js?v=20261014-3"></script>
 </body>
 </html>
