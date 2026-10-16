@@ -9,6 +9,17 @@
 
 ---
 
+## 🌐 Live Production & Pitching Demo Access
+
+Core Ledger Web Portal dan REST API dapat diakses secara langsung melalui edge network:
+
+* **⚡ Live Web Portal (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/core/web/`](https://certified-nissan-refine-remarks.trycloudflare.com/core/web/)**
+* **🏷️ Branded Subdomain**: **[`https://fledger-fmcg.loca.lt/core/web/`](https://fledger-fmcg.loca.lt/core/web/)** *(IP Host: `180.248.114.245`)*
+* **💻 Local Port**: `http://localhost:8081/web/` *(atau via Gateway `http://localhost:8000/core/web/`)*
+* **📖 Panduan Demo Lengkap**: **[`../docs/LIVE-PRODUCTION-DIRECTORY.md`](../docs/LIVE-PRODUCTION-DIRECTORY.md)**
+
+---
+
 ## 🎯 Apa Ini?
 
 Backend wallet yang dirancang untuk distributor FMCG / F&B Indonesia yang punya:

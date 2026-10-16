@@ -3,10 +3,24 @@
 > **Service**: `fledger-pay`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8083`
-> **Gateway Route**: `http://localhost:80/pay/`
+> **Gateway Route**: `http://localhost:8000/pay/`
+> **Live Production (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/pay/`](https://certified-nissan-refine-remarks.trycloudflare.com/pay/)**
+> **Live Webhook Ingestion**: `https://certified-nissan-refine-remarks.trycloudflare.com/v1/pay/webhooks/midtrans`
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, zero npm dependencies
 > **Standalone Repository**: [ardanov96/fledger-pay](https://github.com/ardanov96/fledger-pay)
+
+---
+
+## 🌐 Live Production & Demo Access
+
+Layanan **Fledger Pay** dapat diakses secara langsung melalui public edge network:
+
+* **⚡ Sandbox VA & QRIS Simulator (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/pay/`](https://certified-nissan-refine-remarks.trycloudflare.com/pay/)**
+* **🏷️ Branded Subdomain**: **[`https://fledger-fmcg.loca.lt/pay/`](https://fledger-fmcg.loca.lt/pay/)** *(IP Host: `180.248.114.245`)*
+* **💳 Live Webhook Midtrans**: `https://certified-nissan-refine-remarks.trycloudflare.com/v1/pay/webhooks/midtrans`
+* **💻 Port Lokal**: `http://localhost:8083/` *(atau via Gateway `http://localhost:8000/pay/`)*
+* **📖 Panduan Demo Seluruh Ekosistem**: **[`../docs/LIVE-PRODUCTION-DIRECTORY.md`](../docs/LIVE-PRODUCTION-DIRECTORY.md)**
 
 ---
 

@@ -3,9 +3,21 @@
 > **Service**: `fledger-fleet`  
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for Distribution & Supply Chain*)  
 > **Port**: `:8082`  
-> **Gateway Route**: `http://localhost:80/fleet/`  
+> **Gateway Route**: `http://localhost:8000/fleet/`  
+> **Live Production (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/fleet/`](https://certified-nissan-refine-remarks.trycloudflare.com/fleet/)**  
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**  
 > **Standalone Repository**: [ardanov96/fledger-fleet](https://github.com/ardanov96/fledger-fleet)
+
+---
+
+## 🌐 Live Production & Demo Access
+
+Layanan **Fledger Fleet** dapat diakses secara langsung melalui public edge network:
+
+* **⚡ Mode Supir POD & Dispatcher Hub (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/fleet/`](https://certified-nissan-refine-remarks.trycloudflare.com/fleet/)**
+* **🏷️ Branded Subdomain**: **[`https://fledger-fmcg.loca.lt/fleet/`](https://fledger-fmcg.loca.lt/fleet/)** *(IP Host: `180.248.114.245`)*
+* **💻 Port Lokal**: `http://localhost:8082/` *(atau via Gateway `http://localhost:8000/fleet/`)*
+* **📖 Panduan Demo Seluruh Ekosistem**: **[`../docs/LIVE-PRODUCTION-DIRECTORY.md`](../docs/LIVE-PRODUCTION-DIRECTORY.md)**
 
 ---
 

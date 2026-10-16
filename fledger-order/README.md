@@ -3,10 +3,22 @@
 > **Service**: `fledger-order`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8085`
-> **Gateway Route**: `http://localhost:80/order/`
+> **Gateway Route**: `http://localhost:8000/order/`
+> **Live Production (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/order/`](https://certified-nissan-refine-remarks.trycloudflare.com/order/)**
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, embedded PWA, no npm
 > **Standalone Repository**: [ardanov96/fledger-order](https://github.com/ardanov96/fledger-order)
+
+---
+
+## 🌐 Live Production & Demo Access
+
+Layanan **Fledger Order** dapat diakses secara langsung melalui public edge network:
+
+* **⚡ B2B Wholesale Ordering & Hard Credit Gate Portal (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/order/`](https://certified-nissan-refine-remarks.trycloudflare.com/order/)**
+* **🏷️ Branded Subdomain**: **[`https://fledger-fmcg.loca.lt/order/`](https://fledger-fmcg.loca.lt/order/)** *(IP Host: `180.248.114.245`)*
+* **💻 Port Lokal**: `http://localhost:8085/` *(atau via Gateway `http://localhost:8000/order/`)*
+* **📖 Panduan Demo Seluruh Ekosistem**: **[`../docs/LIVE-PRODUCTION-DIRECTORY.md`](../docs/LIVE-PRODUCTION-DIRECTORY.md)**
 
 ---
 

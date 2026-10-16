@@ -3,10 +3,22 @@
 > **Service**: `fledger-force`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8084`
-> **Gateway Route**: `http://localhost:80/force/`
+> **Gateway Route**: `http://localhost:8000/force/`
+> **Live Production (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/force/`](https://certified-nissan-refine-remarks.trycloudflare.com/force/)**
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, Geofencing Haversine, embedded PWA
 > **Standalone Repository**: [ardanov96/fledger-force](https://github.com/ardanov96/fledger-force)
+
+---
+
+## 🌐 Live Production & Demo Access
+
+Layanan **Fledger Force** dapat diakses secara langsung melalui public edge network:
+
+* **⚡ PWA Mobile Salesman & Kasir EOD (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/force/`](https://certified-nissan-refine-remarks.trycloudflare.com/force/)**
+* **🏷️ Branded Subdomain**: **[`https://fledger-fmcg.loca.lt/force/`](https://fledger-fmcg.loca.lt/force/)** *(IP Host: `180.248.114.245`)*
+* **💻 Port Lokal**: `http://localhost:8084/` *(atau via Gateway `http://localhost:8000/force/`)*
+* **📖 Panduan Demo Seluruh Ekosistem**: **[`../docs/LIVE-PRODUCTION-DIRECTORY.md`](../docs/LIVE-PRODUCTION-DIRECTORY.md)**
 
 ---
 

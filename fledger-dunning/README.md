@@ -3,10 +3,22 @@
 > **Service**: `fledger-dunning`
 > **Ecosystem**: **FLEDGER OS** (*The Ledger-First Operating System for FMCG Distribution & Logistics*)
 > **Port**: `:8086`
-> **Gateway Route**: `http://localhost:80/dunning/`
+> **Gateway Route**: `http://localhost:8000/dunning/`
+> **Live Production (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/dunning/`](https://certified-nissan-refine-remarks.trycloudflare.com/dunning/)**
 > **Status**: ✅ **Production-Ready (Sprint 1–5 selesai, 100% test pass)**
 > **Tech Stack**: Go 1.23+, PostgreSQL 16 (`pgx/v5`), Chi Router + CORS, embedded dark-mode PWA
 > **Standalone Repository**: [ardanov96/fledger-dunning](https://github.com/ardanov96/fledger-dunning)
+
+---
+
+## 🌐 Live Production & Demo Access
+
+Layanan **Fledger Dunning** dapat diakses secara langsung melalui public edge network:
+
+* **⚡ WhatsApp Collection Hub & Portal AR (Edge)**: **[`https://certified-nissan-refine-remarks.trycloudflare.com/dunning/`](https://certified-nissan-refine-remarks.trycloudflare.com/dunning/)**
+* **🏷️ Branded Subdomain**: **[`https://fledger-fmcg.loca.lt/dunning/`](https://fledger-fmcg.loca.lt/dunning/)** *(IP Host: `180.248.114.245`)*
+* **💻 Port Lokal**: `http://localhost:8086/` *(atau via Gateway `http://localhost:8000/dunning/`)*
+* **📖 Panduan Demo Seluruh Ekosistem**: **[`../docs/LIVE-PRODUCTION-DIRECTORY.md`](../docs/LIVE-PRODUCTION-DIRECTORY.md)**
 
 ---
 

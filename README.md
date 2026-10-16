@@ -5,6 +5,30 @@
 
 ---
 
+## 🌐 Live Production & Pitching Demo Directory (Go-Live Ready)
+
+Ekosistem **FLEDGER OS** telah online dan siap diakses secara langsung oleh calon klien, manajemen distributor FMCG, dan mitra bisnis melalui public edge network:
+
+> ⚡ **Cloudflare Global Edge Base URL (Rekomendasi Utama — 1-Klik Buka Langsung, Tanpa Password):**  
+> **`https://certified-nissan-refine-remarks.trycloudflare.com`**  
+> *(Alternatif FMCG Subdomain: `https://fledger-fmcg.loca.lt` — jika muncul prompt verifikasi IP, masukkan: `180.248.114.245`)*
+
+| Layanan / Modul | Tautan Live Production (Edge) | Port Lokal / Path Gateway | Tanggung Jawab & Target Persona |
+| :--- | :--- | :--- | :--- |
+| **🌐 Landing Page Perusahaan** | [`/`](https://certified-nissan-refine-remarks.trycloudflare.com/) | `:8000/` | Profil korporat, showcase bento grid, arsitektur sistem, dan kalkulator ROI |
+| **📊 Live Ops Hub (Console)** | [`/hub`](https://certified-nissan-refine-remarks.trycloudflare.com/hub) | `:8000/hub` | Pusat kendali orkestrasi real-time 6 microservices & latensi gateway |
+| **🔄 Closed-Loop Simulator** | [`/simulator`](https://certified-nissan-refine-remarks.trycloudflare.com/simulator) | `:8000/simulator` | Alur simulasi end-to-end: Order ➔ DO Supir ➔ QRIS Pay ➔ Jurnal Keuangan |
+| **🟢 Fledger Core** | [`/core/web/`](https://certified-nissan-refine-remarks.trycloudflare.com/core/web/) | `:8081` (`/core/web/`) | ERP Keuangan, COA PSAK, Faktur, Rekonsiliasi, & Jurnal Umum |
+| **🚚 Fledger Fleet** | [`/fleet/`](https://certified-nissan-refine-remarks.trycloudflare.com/fleet/) | `:8082` (`/fleet/`) | Logistik Armada, Dispatching Surat Jalan, & Digital POD Canvas |
+| **💳 Fledger Pay** | [`/pay/`](https://certified-nissan-refine-remarks.trycloudflare.com/pay/) | `:8083` (`/pay/`) | Payment Gateway Dynamic QRIS, VA 6 Bank, & Settlement Webhook |
+| **📱 Fledger Force** | [`/force/`](https://certified-nissan-refine-remarks.trycloudflare.com/force/) | `:8084` (`/force/`) | Sales Force Automation (SFA) PWA, GPS Check-in 100m, & Kasir Setor |
+| **📦 Fledger Order** | [`/order/`](https://certified-nissan-refine-remarks.trycloudflare.com/order/) | `:8085` (`/order/`) | Portal B2B OMS, Katalog Grosir, & Hard Credit Gate Plafon |
+| **🔔 Fledger Dunning** | [`/dunning/`](https://certified-nissan-refine-remarks.trycloudflare.com/dunning/) | `:8086` (`/dunning/`) | Otomasi AR Dunning WhatsApp 5-Tahap & Rekening Koran e-Statement |
+
+👉 **[Buka Dokumen Lengkap Panduan Pitching & Demo Klien](docs/LIVE-PRODUCTION-DIRECTORY.md)**
+
+---
+
 ## 🧭 Struktur Monorepo Proyek
 
 Repositori ini mengadopsi struktur monorepo modular yang memisahkan masing-masing bounded context layanan mikro (*microservices*):
@@ -209,17 +233,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-all-local.ps1
 
 ## 🌐 Unified Port & Web Portal Directory
 
-Akses langsung seluruh modul operasional Fledger OS:
+Akses langsung seluruh modul operasional Fledger OS baik melalui jaringan lokal maupun edge network:
 
-| Layanan / Modul | Port Langsung | Path Gateway (:80) | Tanggung Jawab & Web UI |
-|---|---|---|---|
-| **🌐 API Gateway Hub** | `http://localhost:80` | `/` | Central Portal Control Plane & Service Directory |
-| **🟢 Fledger Core** | `http://localhost:8081` | `/core/` | Core Ledger, AR Aging & Reconciler (`/web`) |
-| **🚚 Fledger Fleet** | `http://localhost:8082` | `/fleet/` | Logistik Armada & Digital POD Canvas (`/web`) |
-| **💳 Fledger Pay** | `http://localhost:8083` | `/pay/` | Payment Sandbox VA & QRIS Simulator (`/web`) |
-| **📱 Fledger Force** | `http://localhost:8084` | `/force/` | Sales Force Automation PWA & GPS Check-In (`/web`) |
-| **📦 Fledger Order** | `http://localhost:8085` | `/order/` | B2B OMS & Hard Credit Gate (`/web`) |
-| **🔔 Fledger Dunning** | `http://localhost:8086` | `/dunning/` | AR Dunning WhatsApp & PDF e-Statement (`/web`) |
+| Layanan / Modul | Port Langsung | Path Gateway (:8000) | Live Production URL (Edge) | Tanggung Jawab & Web UI |
+|---|---|---|---|---|
+| **🌐 API Gateway Hub** | `http://localhost:8000` | `/` atau `/hub` | [Live Hub Console](https://certified-nissan-refine-remarks.trycloudflare.com/hub) | Central Portal Control Plane & Service Directory |
+| **🟢 Fledger Core** | `http://localhost:8081` | `/core/web/` | [Live Core Portal](https://certified-nissan-refine-remarks.trycloudflare.com/core/web/) | Core Ledger, AR Aging & Reconciler |
+| **🚚 Fledger Fleet** | `http://localhost:8082` | `/fleet/` | [Live Fleet Portal](https://certified-nissan-refine-remarks.trycloudflare.com/fleet/) | Logistik Armada & Digital POD Canvas |
+| **💳 Fledger Pay** | `http://localhost:8083` | `/pay/` | [Live Pay Sandbox](https://certified-nissan-refine-remarks.trycloudflare.com/pay/) | Payment Sandbox Dynamic QRIS & VA Simulator |
+| **📱 Fledger Force** | `http://localhost:8084` | `/force/` | [Live Force PWA](https://certified-nissan-refine-remarks.trycloudflare.com/force/) | Sales Force Automation PWA & GPS Check-In |
+| **📦 Fledger Order** | `http://localhost:8085` | `/order/` | [Live Order OMS](https://certified-nissan-refine-remarks.trycloudflare.com/order/) | B2B OMS & Hard Credit Gate Catalog |
+| **🔔 Fledger Dunning** | `http://localhost:8086` | `/dunning/` | [Live Dunning WA](https://certified-nissan-refine-remarks.trycloudflare.com/dunning/) | AR Dunning WhatsApp & PDF e-Statement |
 
 ---
 
