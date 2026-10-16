@@ -39,6 +39,7 @@ func NewRouter(cfg *config.Config, h *handler.Handlers, verifier jwt.Verifier) h
 	// Web portal (Sprint 5) served from embedded bundle.
 	wu := webui.Handler()
 	r.Mount("/web", http.StripPrefix("/web", wu))
+	r.Handle("/*", wu)
 
 	if cfg.AppEnv == "development" {
 		r.Post("/v1/dev/login", devLogin(cfg))

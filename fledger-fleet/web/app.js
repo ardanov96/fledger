@@ -10,6 +10,22 @@ document.addEventListener('DOMContentLoaded', () => {
     ? (window.location.origin + subpath)
     : 'http://localhost:8082';
 
+  // Dynamic Ecosystem Nav link resolver for Gateway and Cloudflare Tunnel
+  const isDirect = /:808[1-6]/.test(window.location.host);
+  if (!isDirect) {
+    document.querySelectorAll('.ecosystem-nav a, a.ecosystem-link').forEach(a => {
+      const h = a.getAttribute('href');
+      if (!h) return;
+      if (h.includes(':8000')) a.setAttribute('href', '/hub');
+      else if (h.includes(':8081')) a.setAttribute('href', '/core/web/');
+      else if (h.includes(':8082')) a.setAttribute('href', '/fleet/');
+      else if (h.includes(':8083')) a.setAttribute('href', '/pay/');
+      else if (h.includes(':8084')) a.setAttribute('href', '/force/');
+      else if (h.includes(':8085')) a.setAttribute('href', '/order/');
+      else if (h.includes(':8086')) a.setAttribute('href', '/dunning/');
+    });
+  }
+
   const client = new FledgerFleetClient(defaultBaseUrl);
   
   const state = {
