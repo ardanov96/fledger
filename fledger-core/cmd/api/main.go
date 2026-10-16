@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -505,16 +506,25 @@ func buildRouter(
 		if stat, err := os.Stat(filepath.Join(dir, "index.html")); err == nil && !stat.IsDir() {
 			fs := http.FileServer(http.Dir(dir))
 			r.Get("/web", func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
+				http.Redirect(w, r, "./web/", http.StatusMovedPermanently)
 			})
-			r.Handle("/web/*", http.StripPrefix("/web", fs))
+			r.Handle("/web/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				w.Header().Set("Pragma", "no-cache")
+				w.Header().Set("Expires", "0")
+				http.StripPrefix("/web", fs).ServeHTTP(w, r)
+			}))
 			log.Info("serving web portal", "dir", dir)
 			break
 		}
 	}
 
-	// Root endpoint: friendly hello with service info + endpoint list.
-	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+	// Root endpoint: friendly hello with service info + endpoint list, or browser redirect to web portal.
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			http.Redirect(w, r, "./web/", http.StatusFound)
+			return
+		}
 		httpx.JSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"service":     "fmcg-wallet",

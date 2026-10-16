@@ -78,7 +78,8 @@
 
   const badge = (status) => {
     if (!status) return '<span class="badge">—</span>';
-    return `<span class="badge badge-${status}">${status}</span>`;
+    const s = String(status).toLowerCase();
+    return `<span class="badge badge-${s} ${s}">${escapeHTML(status)}</span>`;
   };
 
   const escapeHTML = (s) => {
@@ -89,6 +90,59 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  };
+
+  const getUserMeta = (user) => {
+    if (!user) return { name: 'Guest', role: 'guest', roleDisplay: 'Guest', initials: 'G', tenantName: 'Default Tenant', userId: '', tenantId: '' };
+
+    const uid = String(user.user_id || user.username || '');
+    const tid = String(user.tenant_id || '');
+    let name = user.display_name || user.name;
+    let role = user.role || 'user';
+    let initials = 'U';
+
+    if (uid === '33333333-3333-3333-3333-333333333333' || user.username === '33333333-3333-3333-3333-333333333333' || user.username === 'admin') {
+      name = name || 'Admin HQ';
+      role = (role === 'unknown' || !role) ? 'hq_admin' : role;
+      initials = 'HQ';
+    } else if (uid === '44444444-4444-4444-4444-444444444444' || user.username === '44444444-4444-4444-4444-444444444444' || user.username === 'sales') {
+      name = name || 'Sales Joni';
+      role = (role === 'unknown' || !role) ? 'sales_rep' : role;
+      initials = 'SJ';
+    } else if (user.username && !user.username.includes('-')) {
+      name = user.username.charAt(0).toUpperCase() + user.username.slice(1);
+      initials = user.username.slice(0, 2).toUpperCase();
+    } else {
+      name = name || `User (${truncate(uid, 8)})`;
+      initials = uid.slice(0, 2).toUpperCase();
+    }
+
+    const roleLabels = {
+      'hq_admin': 'HQ Admin',
+      'hq_finance': 'HQ Finance',
+      'auditor': 'Auditor',
+      'sales_rep': 'Sales Rep',
+      'outlet_manager': 'Outlet Mgr',
+      'admin': 'Admin',
+    };
+    const roleDisplay = roleLabels[role] || (role ? role.replace(/_/g, ' ').toUpperCase() : 'User');
+
+    let tenantName = 'FMCG Tenant';
+    if (tid.startsWith('00000000-0000-0000-0000') || tid === 'hq' || tid === '00000000-0000-0000-0000-000000000001') {
+      tenantName = 'Global FMCG HQ';
+    } else if (tid) {
+      tenantName = `Tenant ${truncate(tid, 8)}`;
+    }
+
+    return {
+      name,
+      role,
+      roleDisplay,
+      initials,
+      tenantName,
+      userId: uid,
+      tenantId: tid,
+    };
   };
 
   // Toast notifications
@@ -136,6 +190,130 @@
       <div class="empty-title">${escapeHTML(title)}</div>
       ${hint ? `<div class="empty-hint">${escapeHTML(hint)}</div>` : ''}
     </div>`;
+
+  // ===========================================================================
+  // Paginator — Reusable table pagination controller (client-side & server-side)
+  // ===========================================================================
+  class Paginator {
+    constructor({ containerId, defaultPageSize = 10, pageSizes = [10, 25, 50, 100], onChange }) {
+      this.containerId = containerId;
+      this.pageSize = defaultPageSize;
+      this.pageSizes = pageSizes;
+      this.page = 1;
+      this.total = 0;
+      this.onChange = onChange;
+    }
+
+    get container() {
+      return document.getElementById(this.containerId);
+    }
+
+    reset() {
+      this.page = 1;
+    }
+
+    update(totalItems) {
+      this.total = totalItems;
+      const totalPages = Math.max(1, Math.ceil(this.total / this.pageSize));
+      if (this.page > totalPages) {
+        this.page = totalPages;
+      }
+      this.render();
+    }
+
+    getCurrentSlice(items) {
+      if (!items || !items.length) return [];
+      const start = (this.page - 1) * this.pageSize;
+      return items.slice(start, start + this.pageSize);
+    }
+
+    render() {
+      const el = this.container;
+      if (!el) return;
+      if (this.total === 0) {
+        el.innerHTML = '';
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+
+      const totalPages = Math.max(1, Math.ceil(this.total / this.pageSize));
+      const startItem = (this.page - 1) * this.pageSize + 1;
+      const endItem = Math.min(this.page * this.pageSize, this.total);
+
+      // Smart page numbers array
+      const pages = [];
+      if (totalPages <= 7) {
+        for (let p = 1; p <= totalPages; p++) pages.push(p);
+      } else {
+        pages.push(1);
+        if (this.page > 3) pages.push('...');
+        const pStart = Math.max(2, this.page - 1);
+        const pEnd = Math.min(totalPages - 1, this.page + 1);
+        for (let p = pStart; p <= pEnd; p++) {
+          if (!pages.includes(p)) pages.push(p);
+        }
+        if (this.page < totalPages - 2) pages.push('...');
+        if (!pages.includes(totalPages)) pages.push(totalPages);
+      }
+
+      el.innerHTML = `
+        <div class="pagination-left">
+          <div class="pagination-info">
+            Menampilkan <span class="highlight">${startItem}–${endItem}</span> dari <span class="highlight">${this.total}</span> data
+          </div>
+          <div class="pagination-size">
+            <span>Baris per halaman:</span>
+            <select class="page-size-select" aria-label="Jumlah baris per halaman">
+              ${this.pageSizes.map(s => `<option value="${s}" ${s === this.pageSize ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="pagination-nav">
+          <button type="button" class="pagination-btn btn-prev" ${this.page <= 1 ? 'disabled' : ''} title="Halaman Sebelumnya">« Sebelumnya</button>
+          ${pages.map(p => {
+            if (p === '...') return '<span class="pagination-ellipsis">…</span>';
+            return `<button type="button" class="pagination-btn btn-page ${p === this.page ? 'active' : ''}" data-page="${p}">${p}</button>`;
+          }).join('')}
+          <button type="button" class="pagination-btn btn-next" ${this.page >= totalPages ? 'disabled' : ''} title="Halaman Berikutnya">Berikutnya »</button>
+        </div>
+      `;
+
+      // Event handlers
+      const sizeSelect = el.querySelector('.page-size-select');
+      sizeSelect?.addEventListener('change', (e) => {
+        this.pageSize = parseInt(e.target.value, 10);
+        this.page = 1;
+        if (this.onChange) this.onChange();
+      });
+
+      const prevBtn = el.querySelector('.btn-prev');
+      prevBtn?.addEventListener('click', () => {
+        if (this.page > 1) {
+          this.page--;
+          if (this.onChange) this.onChange();
+        }
+      });
+
+      const nextBtn = el.querySelector('.btn-next');
+      nextBtn?.addEventListener('click', () => {
+        if (this.page < totalPages) {
+          this.page++;
+          if (this.onChange) this.onChange();
+        }
+      });
+
+      el.querySelectorAll('.btn-page').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetPage = parseInt(btn.dataset.page, 10);
+          if (targetPage !== this.page) {
+            this.page = targetPage;
+            if (this.onChange) this.onChange();
+          }
+        });
+      });
+    }
+  }
 
   // ===========================================================================
   // 1) API client
@@ -258,6 +436,9 @@
       document.getElementById('topbar').hidden = true;
       document.getElementById('nav').innerHTML = '';
       document.getElementById('view-login').hidden = false;
+      document.getElementById('user-dropdown-card')?.setAttribute('hidden', '');
+      document.getElementById('user-profile-btn')?.classList.remove('active');
+      document.getElementById('user-profile-btn')?.setAttribute('aria-expanded', 'false');
       ['view-dashboard','view-accounts','view-transfers','view-invoices','view-aging',
        'view-periods','view-reconciler','view-currencies','view-audit'].forEach(id => {
         const el = document.getElementById(id); if (el) el.hidden = true;
@@ -267,10 +448,39 @@
     showApp(user) {
       document.getElementById('topbar').hidden = false;
       document.getElementById('view-login').hidden = true;
-      const roleBadge = user.role && user.role !== 'unknown' ? ` <span class="badge badge-active">${user.role}</span>` : '';
-      document.getElementById('user-info').innerHTML =
-        `<strong>${escapeHTML(user.username)}</strong>${roleBadge}`;
-      document.getElementById('user-status').textContent = `tenant: ${truncate(user.tenant_id, 13)}…`;
+
+      const meta = getUserMeta(user);
+
+      // Topbar capsule elements
+      const avatarEl = document.getElementById('user-avatar');
+      if (avatarEl) {
+        avatarEl.innerHTML = `<span class="avatar-text">${meta.initials}</span><span class="avatar-status-dot" title="Active Session"></span>`;
+      }
+      const displayNameEl = document.getElementById('user-display-name');
+      if (displayNameEl) displayNameEl.textContent = meta.name;
+      const rolePillEl = document.getElementById('user-role-pill');
+      if (rolePillEl) rolePillEl.textContent = meta.roleDisplay;
+      const tenantLabelEl = document.getElementById('user-tenant-label');
+      if (tenantLabelEl) tenantLabelEl.textContent = meta.tenantName;
+
+      // Dropdown card elements
+      const ddAvatar = document.getElementById('dropdown-avatar-lg');
+      if (ddAvatar) ddAvatar.textContent = meta.initials;
+      const ddFullName = document.getElementById('dropdown-full-name');
+      if (ddFullName) ddFullName.textContent = meta.name;
+      const ddRoleBadge = document.getElementById('dropdown-role-badge');
+      if (ddRoleBadge) ddRoleBadge.textContent = meta.roleDisplay;
+      const ddUserId = document.getElementById('dropdown-user-id');
+      if (ddUserId) ddUserId.textContent = meta.userId || '—';
+      const ddTenantId = document.getElementById('dropdown-tenant-id');
+      if (ddTenantId) ddTenantId.textContent = meta.tenantId || '—';
+
+      // Status bar tenant text
+      const userStatusEl = document.getElementById('user-status');
+      if (userStatusEl) {
+        userStatusEl.textContent = `${meta.name} (${meta.roleDisplay}) | ${meta.tenantName}`;
+      }
+
       this.buildNav();
     },
     buildNav() {
@@ -403,40 +613,126 @@
 
     // ----- Accounts -----
     _allAccounts: [],
+    _filteredAccounts: [],
+    _accountsPaginator: null,
+
+    initAccountsPaginator() {
+      if (!this._accountsPaginator) {
+        this._accountsPaginator = new Paginator({
+          containerId: 'accounts-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderAccountsTable(),
+        });
+      }
+    },
+
+    filterAccounts() {
+      const typeFilter = document.getElementById('filter-account-type')?.value || '';
+      const searchFilter = (document.getElementById('filter-account-search')?.value || '').toLowerCase().trim();
+      let list = this._allAccounts || [];
+      if (typeFilter) list = list.filter(a => a.type === typeFilter);
+      if (searchFilter) list = list.filter(a =>
+        (a.code || '').toLowerCase().includes(searchFilter) ||
+        (a.name || '').toLowerCase().includes(searchFilter)
+      );
+      this._filteredAccounts = list;
+      this.initAccountsPaginator();
+      this._accountsPaginator.reset();
+      this._accountsPaginator.update(this._filteredAccounts.length);
+      this.renderAccountsTable();
+    },
+
+    renderAccountsTable() {
+      const tbody = document.querySelector('#accounts-table tbody');
+      if (!tbody) return;
+      if (!this._filteredAccounts || this._filteredAccounts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('🏦', 'No accounts found', 'Try changing the filters or click "+ New Account".')}</td></tr>`;
+        return;
+      }
+      const slice = this._accountsPaginator.getCurrentSlice(this._filteredAccounts);
+      tbody.innerHTML = slice.map(a => `
+        <tr>
+          <td><code>${escapeHTML(a.code)}</code></td>
+          <td>${escapeHTML(a.name)}</td>
+          <td>${badge(a.type)}</td>
+          <td>${escapeHTML(a.currency)}</td>
+          <td class="num">${fmtMinor(a.cached_balance_minor || a.balance_minor, a.currency)}</td>
+          <td>${badge(a.status)}</td>
+          <td>${fmtAgo(a.created_at)}</td>
+        </tr>`).join('');
+    },
+
     async accounts() {
       const tbody = document.querySelector('#accounts-table tbody');
-      const typeFilter = document.getElementById('filter-account-type').value;
-      const searchFilter = document.getElementById('filter-account-search').value.toLowerCase();
-      tbody.innerHTML = '<tr><td colspan="7" colspan="7">' + spinner('Loading accounts…') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7">' + spinner('Loading accounts…') + '</td></tr>';
       try {
         const res = await api.get('/v1/accounts');
-        let list = res.data || [];
-        this._allAccounts = list;
-        if (typeFilter) list = list.filter(a => a.type === typeFilter);
-        if (searchFilter) list = list.filter(a =>
-          (a.code || '').toLowerCase().includes(searchFilter) ||
-          (a.name || '').toLowerCase().includes(searchFilter)
-        );
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7">${emptyState('🏦', 'No accounts found', 'Try changing the filters or click "+ New Account".')}</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = list.map(a => `
-          <tr>
-            <td><code>${escapeHTML(a.code)}</code></td>
-            <td>${escapeHTML(a.name)}</td>
-            <td>${badge(a.type)}</td>
-            <td>${escapeHTML(a.currency)}</td>
-            <td class="num">${fmtMinor(a.cached_balance_minor || a.balance_minor, a.currency)}</td>
-            <td>${badge(a.status)}</td>
-            <td>${fmtAgo(a.created_at)}</td>
-          </tr>`).join('');
+        this._allAccounts = res.data || [];
+        this.filterAccounts();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="7">${emptyState('❌', 'Error loading accounts', e.message)}</td></tr>`;
       }
     },
 
     // ----- Transfers -----
+    _allTransfers: [],
+    _filteredTransfers: [],
+    _transfersPaginator: null,
+
+    initTransfersPaginator() {
+      if (!this._transfersPaginator) {
+        this._transfersPaginator = new Paginator({
+          containerId: 'transfers-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderTransfersTable(),
+        });
+      }
+    },
+
+    filterTransfers() {
+      const q = (document.getElementById('filter-transfer-search')?.value || '').toLowerCase().trim();
+      let list = this._allTransfers || [];
+      if (q) {
+        list = list.filter(t =>
+          (t.id || '').toLowerCase().includes(q) ||
+          (t.from?.code || '').toLowerCase().includes(q) ||
+          (t.from?.name || '').toLowerCase().includes(q) ||
+          (t.to?.code || '').toLowerCase().includes(q) ||
+          (t.to?.name || '').toLowerCase().includes(q) ||
+          (t.description || '').toLowerCase().includes(q) ||
+          (t.currency || '').toLowerCase().includes(q) ||
+          (t.status || '').toLowerCase().includes(q)
+        );
+      }
+      this._filteredTransfers = list;
+      this.initTransfersPaginator();
+      this._transfersPaginator.reset();
+      this._transfersPaginator.update(this._filteredTransfers.length);
+      this.renderTransfersTable();
+    },
+
+    renderTransfersTable() {
+      const tbody = document.querySelector('#transfers-table tbody');
+      if (!tbody) return;
+      if (!this._filteredTransfers || this._filteredTransfers.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('💸', 'Tidak ada transaksi yang cocok', 'Coba ubah kata kunci pencarian atau buat transfer baru.')}</td></tr>`;
+        return;
+      }
+      const slice = this._transfersPaginator.getCurrentSlice(this._filteredTransfers);
+      tbody.innerHTML = slice.map(t => `
+        <tr>
+          <td><code>${escapeHTML(truncate(t.id, 8))}</code></td>
+          <td>${escapeHTML(t.from ? `${t.from.code} — ${t.from.name}` : '-')}</td>
+          <td>${escapeHTML(t.to ? `${t.to.code} — ${t.to.name}` : '-')}</td>
+          <td class="num">${fmtIDR(t.amount_minor)}</td>
+          <td>${escapeHTML(t.currency)}</td>
+          <td>${badge(t.status)}</td>
+          <td>${fmtAgo(t.created_at)}</td>
+        </tr>`).join('');
+    },
+
     async transfers() {
       await this.loadAccountOptions();
       document.getElementById('transfer-success').hidden = true;
@@ -485,24 +781,10 @@
           }
         }
 
-        const txList = Array.from(txMap.values())
+        this._allTransfers = Array.from(txMap.values())
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-        if (txList.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7">${emptyState('💸', 'Create your first transfer', 'Use the form above. Transfer history appears here after creation.')}</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = txList.map(t => `
-          <tr>
-            <td><code>${escapeHTML(truncate(t.id, 8))}</code></td>
-            <td>${escapeHTML(t.from ? `${t.from.code} — ${t.from.name}` : '-')}</td>
-            <td>${escapeHTML(t.to ? `${t.to.code} — ${t.to.name}` : '-')}</td>
-            <td class="num">${fmtIDR(t.amount_minor)}</td>
-            <td>${escapeHTML(t.currency)}</td>
-            <td>${badge(t.status)}</td>
-            <td>${fmtAgo(t.created_at)}</td>
-          </tr>`).join('');
+        this.filterTransfers();
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7">${emptyState('❌', 'Error loading transfers', err.message)}</td></tr>`;
       }
@@ -566,37 +848,84 @@
     },
 
     // ----- Invoices -----
+    _allInvoices: [],
+    _filteredInvoices: [],
+    _invoicesPaginator: null,
+    _invoicesAcctMap: {},
+
+    initInvoicesPaginator() {
+      if (!this._invoicesPaginator) {
+        this._invoicesPaginator = new Paginator({
+          containerId: 'invoices-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderInvoicesTable(),
+        });
+      }
+    },
+
+    filterInvoices() {
+      const status = document.getElementById('filter-invoice-status')?.value || '';
+      const q = (document.getElementById('filter-invoice-search')?.value || '').toLowerCase().trim();
+      let list = this._allInvoices || [];
+      if (status) {
+        list = list.filter(inv => inv.status === status);
+      }
+      if (q) {
+        list = list.filter(inv => {
+          const cust = this._invoicesAcctMap[inv.customer_id];
+          return (inv.code || '').toLowerCase().includes(q) ||
+                 (inv.id || '').toLowerCase().includes(q) ||
+                 (inv.customer_id || '').toLowerCase().includes(q) ||
+                 (cust?.name || '').toLowerCase().includes(q) ||
+                 (cust?.code || '').toLowerCase().includes(q) ||
+                 (inv.status || '').toLowerCase().includes(q) ||
+                 (inv.description || '').toLowerCase().includes(q);
+        });
+      }
+      this._filteredInvoices = list;
+      this.initInvoicesPaginator();
+      this._invoicesPaginator.reset();
+      this._invoicesPaginator.update(this._filteredInvoices.length);
+      this.renderInvoicesTable();
+    },
+
+    renderInvoicesTable() {
+      const tbody = document.querySelector('#invoices-table tbody');
+      if (!tbody) return;
+      if (!this._filteredInvoices || this._filteredInvoices.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('📄', 'No invoices found', 'Try changing the filters or click "+ New Invoice".')}</td></tr>`;
+        return;
+      }
+      const slice = this._invoicesPaginator.getCurrentSlice(this._filteredInvoices);
+      tbody.innerHTML = slice.map(inv => {
+        const cust = this._invoicesAcctMap[inv.customer_id];
+        const paid = Number(inv.paid_minor ?? inv.paid_amount_minor ?? 0);
+        const outstanding = Number(inv.outstanding_minor ?? (Number(inv.amount_minor || 0) - paid));
+        return `<tr>
+          <td><code>${escapeHTML(inv.code)}</code></td>
+          <td>${cust ? escapeHTML(cust.name) : '<span class="muted">' + truncate(inv.customer_id, 12) + '</span>'}</td>
+          <td class="num">${fmtIDR(inv.amount_minor)}</td>
+          <td class="num">${fmtIDR(paid)}</td>
+          <td class="num">${fmtIDR(outstanding)}</td>
+          <td>${badge(inv.status)}</td>
+          <td>${fmtShortDate(inv.due_date)}</td>
+        </tr>`;
+      }).join('');
+    },
+
     async invoices() {
       const tbody = document.querySelector('#invoices-table tbody');
-      const statusFilter = document.getElementById('filter-invoice-status').value;
       tbody.innerHTML = `<tr><td colspan="7">${spinner()}</td></tr>`;
       try {
-        const qs = statusFilter ? `?status=${statusFilter}` : '';
-        const res = await api.get(`/v1/invoices${qs}`);
-        const list = res.data || [];
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7">${emptyState('📄', 'No invoices', 'Click "+ New Invoice" to create one.')}</td></tr>`;
-          return;
-        }
-        // Fetch accounts for customer names lookup
-        const acctRes = await api.get('/v1/accounts');
-        const acctMap = {};
-        (acctRes.data || []).forEach(a => { acctMap[a.id] = a; });
-
-        tbody.innerHTML = list.map(inv => {
-          const cust = acctMap[inv.customer_id];
-          const paid = Number(inv.paid_minor ?? inv.paid_amount_minor ?? 0);
-          const outstanding = Number(inv.outstanding_minor ?? (Number(inv.amount_minor || 0) - paid));
-          return `<tr>
-            <td><code>${escapeHTML(inv.code)}</code></td>
-            <td>${cust ? escapeHTML(cust.name) : '<span class="muted">' + truncate(inv.customer_id, 12) + '</span>'}</td>
-            <td class="num">${fmtIDR(inv.amount_minor)}</td>
-            <td class="num">${fmtIDR(paid)}</td>
-            <td class="num">${fmtIDR(outstanding)}</td>
-            <td>${badge(inv.status)}</td>
-            <td>${fmtShortDate(inv.due_date)}</td>
-          </tr>`;
-        }).join('');
+        const [invRes, acctRes] = await Promise.all([
+          api.get('/v1/invoices?limit=200'),
+          api.get('/v1/accounts'),
+        ]);
+        this._allInvoices = invRes.data || [];
+        this._invoicesAcctMap = {};
+        (acctRes.data || []).forEach(a => { this._invoicesAcctMap[a.id] = a; });
+        this.filterInvoices();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="7">${emptyState('❌', 'Error', e.message)}</td></tr>`;
       }
@@ -669,6 +998,78 @@
     // ----- Aging -----
     _customers: [],
     _currentAgingCustomer: null,
+    _agingInvoices: [],
+    _filteredAgingInvoices: [],
+    _agingInvoicesPaginator: null,
+
+    initAgingInvoicesPaginator() {
+      if (!this._agingInvoicesPaginator) {
+        this._agingInvoicesPaginator = new Paginator({
+          containerId: 'aging-invoices-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderAgingInvoicesTable(),
+        });
+      }
+    },
+
+    filterAgingInvoices() {
+      const status = document.getElementById('filter-aging-status')?.value || '';
+      const q = (document.getElementById('filter-aging-search')?.value || '').toLowerCase().trim();
+      let list = this._agingInvoices || [];
+      if (status) {
+        list = list.filter(inv => inv.status === status);
+      }
+      if (q) {
+        list = list.filter(inv =>
+          (inv.code || '').toLowerCase().includes(q) ||
+          (inv.id || '').toLowerCase().includes(q) ||
+          (inv.status || '').toLowerCase().includes(q) ||
+          (inv.due_date || '').toLowerCase().includes(q)
+        );
+      }
+      this._filteredAgingInvoices = list;
+      this.initAgingInvoicesPaginator();
+      this._agingInvoicesPaginator.reset();
+      this._agingInvoicesPaginator.update(this._filteredAgingInvoices.length);
+      this.renderAgingInvoicesTable();
+    },
+
+    renderAgingInvoicesTable() {
+      const tbody = document.querySelector('#aging-invoices-table tbody');
+      if (!tbody) return;
+      if (!this._filteredAgingInvoices || this._filteredAgingInvoices.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('📄', 'Tidak ada data faktur', 'Tidak ditemukan faktur yang cocok dengan pencarian.')}</td></tr>`;
+        return;
+      }
+      const slice = this._agingInvoicesPaginator.getCurrentSlice(this._filteredAgingInvoices);
+      tbody.innerHTML = slice.map(inv => {
+        const paid = Number(inv.paid_minor ?? inv.paid_amount_minor ?? 0);
+        const amount = Number(inv.amount_minor || 0);
+        const outstanding = Number(inv.outstanding_minor ?? (amount - paid));
+
+        const dueDate = new Date(inv.due_date);
+        const now = new Date();
+        const diffDays = Math.floor((now - dueDate) / (1000 * 60 * 60 * 24));
+        let bucketLabel = '<span class="badge badge-active">Lancar (Current)</span>';
+        if (diffDays > 90) bucketLabel = '<span class="badge badge-tampered">&gt; 90 Hari</span>';
+        else if (diffDays > 60) bucketLabel = '<span class="badge badge-danger">61–90 Hari</span>';
+        else if (diffDays > 30) bucketLabel = '<span class="badge badge-warn">31–60 Hari</span>';
+        else if (diffDays > 7) bucketLabel = '<span class="badge badge-warn">8–30 Hari</span>';
+        else if (diffDays > 0) bucketLabel = '<span class="badge badge-pending">1–7 Hari</span>';
+
+        return `<tr>
+          <td><code>${escapeHTML(inv.code)}</code></td>
+          <td>${fmtShortDate(inv.due_date)}</td>
+          <td class="num">${fmtIDR(amount)}</td>
+          <td class="num">${fmtIDR(paid)}</td>
+          <td class="num" style="font-weight:600; color:${outstanding > 0 ? 'var(--primary)' : 'inherit'};">${fmtIDR(outstanding)}</td>
+          <td>${bucketLabel}</td>
+          <td>${badge(inv.status)}</td>
+        </tr>`;
+      }).join('');
+    },
+
     async aging() {
       const select = document.getElementById('aging-customer-select');
       const tbody = document.querySelector('#aging-table tbody');
@@ -716,7 +1117,10 @@
       tbody.innerHTML = `<tr><td colspan="4">${spinner()}</td></tr>`;
       cards.innerHTML = spinner();
       try {
-        const res = await api.get(`/v1/customers/${customerID}/aging`);
+        const [res, invRes] = await Promise.all([
+          api.get(`/v1/customers/${customerID}/aging`),
+          api.get(`/v1/invoices?customer_id=${customerID}&limit=200`).catch(() => ({ data: [] }))
+        ]);
         const data = res.data || [];
         const bucketDefs = [
           { code: 'current',   desc: 'Not yet due' },
@@ -755,6 +1159,10 @@
             <td class="num">${fmtIDR(row.outstanding_minor)}</td>
           </tr>`;
         }).join('');
+
+        // Also update aging invoices list with search & pagination
+        this._agingInvoices = (invRes.data || []).sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+        this.filterAgingInvoices();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="4">${emptyState('❌', 'Error', e.message)}</td></tr>`;
         cards.innerHTML = '';
@@ -762,29 +1170,73 @@
     },
 
     // ----- Periods -----
+    _allPeriods: [],
+    _filteredPeriods: [],
+    _periodsPaginator: null,
+
+    initPeriodsPaginator() {
+      if (!this._periodsPaginator) {
+        this._periodsPaginator = new Paginator({
+          containerId: 'periods-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderPeriodsTable(),
+        });
+      }
+    },
+
+    filterPeriods() {
+      const status = document.getElementById('filter-period-status')?.value || '';
+      const q = (document.getElementById('filter-period-search')?.value || '').toLowerCase().trim();
+      let list = this._allPeriods || [];
+      if (status) {
+        list = list.filter(p => p.status === status);
+      }
+      if (q) {
+        list = list.filter(p =>
+          (p.id || '').toLowerCase().includes(q) ||
+          (p.period_start || p.start_date || '').toLowerCase().includes(q) ||
+          (p.period_end || p.end_date || '').toLowerCase().includes(q) ||
+          (p.status || '').toLowerCase().includes(q)
+        );
+      }
+      this._filteredPeriods = list;
+      this.initPeriodsPaginator();
+      this._periodsPaginator.reset();
+      this._periodsPaginator.update(this._filteredPeriods.length);
+      this.renderPeriodsTable();
+    },
+
+    renderPeriodsTable() {
+      const tbody = document.querySelector('#periods-table tbody');
+      if (!tbody) return;
+      if (!this._filteredPeriods || this._filteredPeriods.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6">${emptyState('📅', 'Tidak ada periode yang cocok', 'Coba ubah kata kunci pencarian atau filter status.')}</td></tr>`;
+        return;
+      }
+      const slice = this._periodsPaginator.getCurrentSlice(this._filteredPeriods);
+      tbody.innerHTML = slice.map(p => {
+        const actions = [];
+        if (p.status === 'open') actions.push(`<button class="btn-link" data-action="request-close" data-period-id="${p.id}">Request close</button>`);
+        if (p.status === 'closing') actions.push(`<button class="btn-link" data-action="approve-close" data-period-id="${p.id}">Approve</button><button class="btn-link" data-action="reject-close" data-period-id="${p.id}">Reject</button>`);
+        return `<tr>
+          <td><code>${truncate(p.id, 12)}</code></td>
+          <td>${fmtShortDate(p.period_start || p.start_date)}</td>
+          <td>${fmtShortDate(p.period_end || p.end_date)}</td>
+          <td>${badge(p.status)}</td>
+          <td>${fmtAgo(p.created_at)}</td>
+          <td>${actions.length ? actions.join(' / ') : '—'}</td>
+        </tr>`;
+      }).join('');
+    },
+
     async periods() {
       const tbody = document.querySelector('#periods-table tbody');
       tbody.innerHTML = `<tr><td colspan="6">${spinner()}</td></tr>`;
       try {
         const res = await api.get('/v1/periods');
-        const list = res.data || [];
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="6">${emptyState('📅', 'No accounting periods', 'Seed demo data or create a period.')}</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = list.map(p => {
-          const actions = [];
-          if (p.status === 'open') actions.push(`<button class="btn-link" data-action="request-close" data-period-id="${p.id}">Request close</button>`);
-          if (p.status === 'closing') actions.push(`<button class="btn-link" data-action="approve-close" data-period-id="${p.id}">Approve</button><button class="btn-link" data-action="reject-close" data-period-id="${p.id}">Reject</button>`);
-          return `<tr>
-            <td><code>${truncate(p.id, 12)}</code></td>
-            <td>${fmtShortDate(p.period_start || p.start_date)}</td>
-            <td>${fmtShortDate(p.period_end || p.end_date)}</td>
-            <td>${badge(p.status)}</td>
-            <td>${fmtAgo(p.created_at)}</td>
-            <td>${actions.length ? actions.join(' / ') : '—'}</td>
-          </tr>`;
-        }).join('');
+        this._allPeriods = res.data || [];
+        this.filterPeriods();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="6">${emptyState('❌', 'Error', e.message)}</td></tr>`;
       }
@@ -805,17 +1257,107 @@
     },
 
     // ----- Reconciler -----
+    _allRuns: [],
+    _filteredRuns: [],
+    _reconcilerPeriodMap: new Map(),
+    _reconcilerPaginator: null,
+
+    initReconcilerPaginator() {
+      if (!this._reconcilerPaginator) {
+        this._reconcilerPaginator = new Paginator({
+          containerId: 'reconciler-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderReconcilerTable(),
+        });
+      }
+    },
+
+    filterReconciler() {
+      const status = document.getElementById('filter-reconciler-status')?.value || '';
+      const q = (document.getElementById('filter-reconciler-search')?.value || '').toLowerCase().trim();
+      let list = this._allRuns || [];
+      if (status) {
+        list = list.filter(r => r.status === status);
+      }
+      if (q) {
+        list = list.filter(r => {
+          const matchedPeriod = this._reconcilerPeriodMap.get(r.period_id);
+          const periodLabel = matchedPeriod
+            ? `${matchedPeriod.period_start} ${matchedPeriod.period_end}`
+            : '';
+          return (r.id || '').toLowerCase().includes(q) ||
+                 (r.period_id || '').toLowerCase().includes(q) ||
+                 periodLabel.toLowerCase().includes(q) ||
+                 (r.status || '').toLowerCase().includes(q);
+        });
+      }
+      this._filteredRuns = list;
+      this.initReconcilerPaginator();
+      this._reconcilerPaginator.reset();
+      this._reconcilerPaginator.update(this._filteredRuns.length);
+      this.renderReconcilerTable();
+    },
+
+    renderReconcilerTable() {
+      const tbody = document.querySelector('#runs-table tbody');
+      if (!tbody) return;
+      if (!this._filteredRuns || this._filteredRuns.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9">${emptyState('🔍', 'Tidak ada riwayat rekonsiliasi yang cocok', 'Coba ubah kata kunci pencarian atau filter status.')}</td></tr>`;
+        return;
+      }
+      const slice = this._reconcilerPaginator.getCurrentSlice(this._filteredRuns);
+      tbody.innerHTML = slice.map(r => {
+        let dur = '—';
+        if (r.duration_ms) {
+          dur = `${(r.duration_ms / 1000).toFixed(2)}s`;
+        } else if (r.started_at && r.finished_at) {
+          const ms = Math.max(0, new Date(r.finished_at).getTime() - new Date(r.started_at).getTime());
+          dur = ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
+        }
+
+        const imbalance = Number(r.imbalance_minor || 0);
+        const isImbalanced = imbalance !== 0;
+        const isTampered = r.status === 'tampered';
+        const rowClass = (isImbalanced || isTampered) ? 'class="row-danger"' : '';
+
+        const matchedPeriod = this._reconcilerPeriodMap.get(r.period_id);
+        const periodLabel = matchedPeriod
+          ? `${fmtShortDate(matchedPeriod.period_start)} – ${fmtShortDate(matchedPeriod.period_end)}`
+          : truncate(r.period_id, 8);
+
+        let hashBadge = '<span class="text-muted" style="font-size:12px;">— Dilewati</span>';
+        if (r.hash_chain_ok === true) {
+          hashBadge = '<span class="badge badge-balanced" title="Seluruh rantai hash kriptografi SHA-256 valid">✅ Valid</span>';
+        } else if (r.hash_chain_ok === false) {
+          hashBadge = `<span class="badge badge-tampered" title="Terdeteksi pelanggaran integritas data atau rantai hash terputus">🚨 ${r.hash_chain_errors || 0} Error</span>`;
+        }
+
+        return `<tr ${rowClass}>
+          <td><code>${truncate(r.id, 8)}</code></td>
+          <td><strong>${periodLabel}</strong></td>
+          <td>${badge(r.status)}</td>
+          <td class="num">${fmtIDR(r.total_debit_minor || 0)}</td>
+          <td class="num">${fmtIDR(r.total_credit_minor || 0)}</td>
+          <td class="num" style="${isImbalanced ? 'color: var(--error); font-weight: 700;' : ''}">${fmtIDR(imbalance)}</td>
+          <td class="text-center">${hashBadge}</td>
+          <td>${fmtAgo(r.started_at)}</td>
+          <td>${dur}</td>
+        </tr>`;
+      }).join('');
+    },
+
     async reconciler() {
       const tbody = document.querySelector('#runs-table tbody');
       const periodSelect = document.getElementById('reconciler-period-select');
       tbody.innerHTML = `<tr><td colspan="9">${spinner()}</td></tr>`;
       try {
         const [runsRes, periodsRes] = await Promise.all([
-          api.get(`/v1/reconciler/runs?tenant_id=${encodeURIComponent(api.getUser()?.tenant_id || '')}&limit=20`),
+          api.get(`/v1/reconciler/runs?tenant_id=${encodeURIComponent(api.getUser()?.tenant_id || '')}&limit=200`),
           api.get('/v1/periods'),
         ]);
         const periods = periodsRes.data || [];
-        const periodMap = new Map(periods.map(p => [p.id, p]));
+        this._reconcilerPeriodMap = new Map(periods.map(p => [p.id, p]));
 
         periodSelect.innerHTML = periods.length
           ? periods.map(p => {
@@ -827,51 +1369,8 @@
             }).join('')
           : '<option value="">(Belum ada periode akuntansi)</option>';
 
-        const runs = runsRes.data || [];
-        if (runs.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="9">${emptyState('🔍', 'Belum ada riwayat rekonsiliasi', 'Jalankan rekonsiliasi pertama Anda menggunakan form di atas.')}</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = runs.map(r => {
-          let dur = '—';
-          if (r.duration_ms) {
-            dur = `${(r.duration_ms / 1000).toFixed(2)}s`;
-          } else if (r.started_at && r.finished_at) {
-            const ms = Math.max(0, new Date(r.finished_at).getTime() - new Date(r.started_at).getTime());
-            dur = ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
-          }
-
-          const imbalance = Number(r.imbalance_minor || 0);
-          const isImbalanced = imbalance !== 0;
-          const isTampered = r.status === 'tampered';
-          const rowClass = (isImbalanced || isTampered) ? 'class="row-danger"' : '';
-
-          // Matched period date range
-          const matchedPeriod = periodMap.get(r.period_id);
-          const periodLabel = matchedPeriod
-            ? `${fmtShortDate(matchedPeriod.period_start)} – ${fmtShortDate(matchedPeriod.period_end)}`
-            : truncate(r.period_id, 8);
-
-          // Hash chain audit status
-          let hashBadge = '<span class="text-muted" style="font-size:12px;">— Dilewati</span>';
-          if (r.hash_chain_ok === true) {
-            hashBadge = '<span class="badge badge-balanced" title="Seluruh rantai hash kriptografi SHA-256 valid">✅ Valid</span>';
-          } else if (r.hash_chain_ok === false) {
-            hashBadge = `<span class="badge badge-tampered" title="Terdeteksi pelanggaran integritas data atau rantai hash terputus">🚨 ${r.hash_chain_errors || 0} Error</span>`;
-          }
-
-          return `<tr ${rowClass}>
-            <td><code>${truncate(r.id, 8)}</code></td>
-            <td><strong>${periodLabel}</strong></td>
-            <td>${badge(r.status)}</td>
-            <td class="num">${fmtIDR(r.total_debit_minor || 0)}</td>
-            <td class="num">${fmtIDR(r.total_credit_minor || 0)}</td>
-            <td class="num" style="${isImbalanced ? 'color: var(--error); font-weight: 700;' : ''}">${fmtIDR(imbalance)}</td>
-            <td class="text-center">${hashBadge}</td>
-            <td>${fmtAgo(r.started_at)}</td>
-            <td>${dur}</td>
-          </tr>`;
-        }).join('');
+        this._allRuns = runsRes.data || [];
+        this.filterReconciler();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="9">${emptyState('❌', 'Error', e.message)}</td></tr>`;
       }
@@ -921,6 +1420,53 @@
 
     // ----- Currencies -----
     _currencies: [],
+    _filteredCurrencies: [],
+    _currenciesPaginator: null,
+
+    initCurrenciesPaginator() {
+      if (!this._currenciesPaginator) {
+        this._currenciesPaginator = new Paginator({
+          containerId: 'currencies-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderCurrenciesTable(),
+        });
+      }
+    },
+
+    filterCurrencies() {
+      const q = (document.getElementById('filter-currency-search')?.value || '').toLowerCase().trim();
+      let list = this._currencies || [];
+      if (q) {
+        list = list.filter(c =>
+          (c.code || '').toLowerCase().includes(q) ||
+          (c.name || '').toLowerCase().includes(q)
+        );
+      }
+      this._filteredCurrencies = list;
+      this.initCurrenciesPaginator();
+      this._currenciesPaginator.reset();
+      this._currenciesPaginator.update(this._filteredCurrencies.length);
+      this.renderCurrenciesTable();
+    },
+
+    renderCurrenciesTable() {
+      const tbody = document.querySelector('#currencies-table tbody');
+      if (!tbody) return;
+      if (!this._filteredCurrencies || this._filteredCurrencies.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4">${emptyState('💱', 'Mata uang tidak ditemukan', 'Coba cari dengan kode lain.')}</td></tr>`;
+        return;
+      }
+      const slice = this._currenciesPaginator.getCurrentSlice(this._filteredCurrencies);
+      tbody.innerHTML = slice.map(c => `
+        <tr>
+          <td><span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700;">${escapeHTML(c.code)}</span></td>
+          <td><strong>${escapeHTML(c.name)}</strong></td>
+          <td class="num">${c.decimal_places != null ? `${c.decimal_places} desimal` : '—'}</td>
+          <td class="text-center"><span class="badge ${c.is_active ? 'active' : 'closed'}">${c.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
+        </tr>`).join('');
+    },
+
     async currencies() {
       const tbody = document.querySelector('#currencies-table tbody');
       const fromSel = document.getElementById('convert-from');
@@ -929,17 +1475,8 @@
       try {
         const res = await api.get('/v1/currencies');
         this._currencies = res.data || [];
-        if (this._currencies.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4">${emptyState('💱', 'Belum ada mata uang', 'Seed data demo terlebih dahulu.')}</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = this._currencies.map(c => `
-          <tr>
-            <td><span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700;">${escapeHTML(c.code)}</span></td>
-            <td><strong>${escapeHTML(c.name)}</strong></td>
-            <td class="num">${c.decimal_places != null ? `${c.decimal_places} desimal` : '—'}</td>
-            <td class="text-center"><span class="badge ${c.is_active ? 'active' : 'closed'}">${c.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
-          </tr>`).join('');
+        this.filterCurrencies();
+
         const opts = this._currencies.map(c => `<option value="${escapeHTML(c.code)}">${escapeHTML(c.code)} — ${escapeHTML(c.name)}</option>`).join('');
         fromSel.innerHTML = opts;
         toSel.innerHTML = opts;
@@ -1053,32 +1590,69 @@
     },
 
     // ----- Audit -----
+    _allAudit: [],
+    _filteredAudit: [],
+    _auditPaginator: null,
+
+    initAuditPaginator() {
+      if (!this._auditPaginator) {
+        this._auditPaginator = new Paginator({
+          containerId: 'audit-pagination',
+          defaultPageSize: 10,
+          pageSizes: [10, 25, 50, 100],
+          onChange: () => this.renderAuditTable(),
+        });
+      }
+    },
+
+    filterAudit() {
+      const searchFilter = (document.getElementById('filter-audit-search')?.value || '').toLowerCase().trim();
+      let list = this._allAudit || [];
+      if (searchFilter) {
+        list = list.filter(a =>
+          (a.action || '').toLowerCase().includes(searchFilter) ||
+          (a.actor_id || '').toLowerCase().includes(searchFilter) ||
+          (a.resource_type || '').toLowerCase().includes(searchFilter) ||
+          (a.resource_id || '').toLowerCase().includes(searchFilter) ||
+          (a.outcome || a.status || '').toLowerCase().includes(searchFilter) ||
+          (a.ip_address || '').toLowerCase().includes(searchFilter)
+        );
+      }
+      this._filteredAudit = list;
+      this.initAuditPaginator();
+      this._auditPaginator.reset();
+      this._auditPaginator.update(this._filteredAudit.length);
+      this.renderAuditTable();
+    },
+
+    renderAuditTable() {
+      const tbody = document.querySelector('#audit-table tbody');
+      if (!tbody) return;
+      if (!this._filteredAudit || this._filteredAudit.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6">${emptyState('📋', 'No audit entries', 'Audit log fills up as you use the app.')}</td></tr>`;
+        return;
+      }
+      const slice = this._auditPaginator.getCurrentSlice(this._filteredAudit);
+      tbody.innerHTML = slice.map(a => `
+        <tr>
+          <td title="${escapeHTML(a.occurred_at || a.created_at)}">${fmtAgo(a.occurred_at || a.created_at)}</td>
+          <td><code>${truncate(a.actor_id, 8)}</code></td>
+          <td>${escapeHTML(a.action || '—')}</td>
+          <td>${escapeHTML(a.resource_type || '')} <code>${truncate(a.resource_id, 8)}</code></td>
+          <td>${badge(a.outcome || a.status || (a.status_code ? String(a.status_code) : 'success'))}</td>
+          <td>${escapeHTML(a.ip_address || '—')}</td>
+        </tr>`).join('');
+    },
+
     async audit() {
       const tbody = document.querySelector('#audit-table tbody');
       const resourceFilter = document.getElementById('filter-audit-resource').value;
-      const searchFilter = document.getElementById('filter-audit-search').value.toLowerCase();
       tbody.innerHTML = `<tr><td colspan="6">${spinner()}</td></tr>`;
       try {
-        const qs = resourceFilter ? `?resource_type=${resourceFilter}&limit=100` : '?limit=100';
+        const qs = resourceFilter ? `?resource_type=${resourceFilter}&limit=500` : '?limit=500';
         const res = await api.get(`/v1/audit${qs}`);
-        let list = res.data || [];
-        if (searchFilter) list = list.filter(a =>
-          (a.action || '').toLowerCase().includes(searchFilter) ||
-          (a.actor_id || '').toLowerCase().includes(searchFilter)
-        );
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="6">${emptyState('📋', 'No audit entries', 'Audit log fills up as you use the app.')}</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = list.slice(0, 100).map(a => `
-          <tr>
-            <td title="${escapeHTML(a.occurred_at || a.created_at)}">${fmtAgo(a.occurred_at || a.created_at)}</td>
-            <td><code>${truncate(a.actor_id, 8)}</code></td>
-            <td>${escapeHTML(a.action || '—')}</td>
-            <td>${escapeHTML(a.resource_type || '')} <code>${truncate(a.resource_id, 8)}</code></td>
-            <td>${a.status_code || ''}</td>
-            <td>${escapeHTML(a.ip_address || '—')}</td>
-          </tr>`).join('');
+        this._allAudit = res.data || [];
+        this.filterAudit();
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="6">${emptyState('❌', 'Error', e.message)}</td></tr>`;
       }
@@ -1090,10 +1664,33 @@
   // ===========================================================================
   const app = {
     async init() {
+      // Production mode / Option A: remove dev ecosystem toolbar if not on localhost
+      const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname) || window.location.hostname.endsWith('.local');
+      const forceDev = window.location.search.indexOf('dev=true') !== -1 || localStorage.getItem('fledger.show_dev_toolbar') === 'true';
+      if (!isLocalHost && !forceDev) {
+        document.documentElement.classList.add('prod-mode');
+        document.querySelectorAll('.dev-toolbar, .ecosystem-nav, .ecosystem-nav-login').forEach(el => el.remove());
+      } else {
+        const isDirect = /:808[1-6]/.test(window.location.host);
+        if (!isDirect) {
+          document.querySelectorAll('.ecosystem-nav a, a.ecosystem-link').forEach(a => {
+            const h = a.getAttribute('href');
+            if (!h) return;
+            if (h.includes(':8000')) a.setAttribute('href', '/hub');
+            else if (h.includes(':8081')) a.setAttribute('href', '/core/web/');
+            else if (h.includes(':8082')) a.setAttribute('href', '/fleet/');
+            else if (h.includes(':8083')) a.setAttribute('href', '/pay/');
+            else if (h.includes(':8084')) a.setAttribute('href', '/force/');
+            else if (h.includes(':8085')) a.setAttribute('href', '/order/');
+            else if (h.includes(':8086')) a.setAttribute('href', '/dunning/');
+          });
+        }
+      }
+
       // Password visibility toggle
-      document.getElementById('toggle-pw').addEventListener('click', () => {
+      document.getElementById('toggle-pw')?.addEventListener('click', () => {
         const pw = document.getElementById('password');
-        pw.type = pw.type === 'password' ? 'text' : 'password';
+        if (pw) pw.type = pw.type === 'password' ? 'text' : 'password';
       });
 
       // API status indicator
@@ -1191,12 +1788,57 @@
         }
       });
 
-      // Logout
-      document.getElementById('logout-btn').addEventListener('click', async () => {
+      // Profile dropdown toggle & close on outside click
+      const profileBtn = document.getElementById('user-profile-btn');
+      const dropdownCard = document.getElementById('user-dropdown-card');
+
+      profileBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isHidden = dropdownCard?.hasAttribute('hidden');
+        if (isHidden) {
+          dropdownCard?.removeAttribute('hidden');
+          profileBtn?.classList.add('active');
+          profileBtn?.setAttribute('aria-expanded', 'true');
+        } else {
+          dropdownCard?.setAttribute('hidden', '');
+          profileBtn?.classList.remove('active');
+          profileBtn?.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!dropdownCard?.hasAttribute('hidden') && !dropdownCard?.contains(e.target) && !profileBtn?.contains(e.target)) {
+          dropdownCard?.setAttribute('hidden', '');
+          profileBtn?.classList.remove('active');
+          profileBtn?.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      // Copy User ID and Tenant ID
+      document.getElementById('btn-copy-user-id')?.addEventListener('click', () => {
+        const txt = document.getElementById('dropdown-user-id')?.textContent;
+        if (txt) {
+          navigator.clipboard.writeText(txt);
+          toast('User ID disalin ke clipboard!', 'success');
+        }
+      });
+      document.getElementById('btn-copy-tenant-id')?.addEventListener('click', () => {
+        const txt = document.getElementById('dropdown-tenant-id')?.textContent;
+        if (txt) {
+          navigator.clipboard.writeText(txt);
+          toast('Tenant ID disalin ke clipboard!', 'success');
+        }
+      });
+
+      // Dropdown Logout handler
+      const handleLogout = async () => {
+        dropdownCard?.setAttribute('hidden', '');
+        profileBtn?.classList.remove('active');
         await api.logout();
         auth.showLogin();
-        toast('Logged out', 'info');
-      });
+        toast('Berhasil keluar (Logged out)', 'info');
+      };
+      document.getElementById('dropdown-logout-btn')?.addEventListener('click', handleLogout);
 
       // Transfer form
       document.getElementById('transfer-form').addEventListener('submit', async (e) => {
@@ -1245,24 +1887,41 @@
       document.getElementById('new-account-btn').addEventListener('click', () => showNewAccountModal());
 
       // New Invoice button
-      document.getElementById('new-invoice-btn').addEventListener('click', () => views.showNewInvoiceModal());
+      document.getElementById('new-invoice-btn')?.addEventListener('click', () => views.showNewInvoiceModal());
 
       // Account filters
-      document.getElementById('filter-account-type').addEventListener('change', () => views.accounts());
-      document.getElementById('filter-account-search').addEventListener('input', debounce(() => views.accounts(), 300));
+      document.getElementById('filter-account-type')?.addEventListener('change', () => views.filterAccounts());
+      document.getElementById('filter-account-search')?.addEventListener('input', debounce(() => views.filterAccounts(), 300));
 
-      // Invoice filter
-      document.getElementById('filter-invoice-status').addEventListener('change', () => views.invoices());
+      // Transfer search
+      document.getElementById('filter-transfer-search')?.addEventListener('input', debounce(() => views.filterTransfers(), 300));
 
-      // Aging refresh
-      document.getElementById('aging-refresh-btn').addEventListener('click', () => {
+      // Invoice filters (status & search)
+      document.getElementById('filter-invoice-status')?.addEventListener('change', () => views.filterInvoices());
+      document.getElementById('filter-invoice-search')?.addEventListener('input', debounce(() => views.filterInvoices(), 300));
+
+      // Aging customer invoice filters (status & search) & refresh
+      document.getElementById('filter-aging-status')?.addEventListener('change', () => views.filterAgingInvoices());
+      document.getElementById('filter-aging-search')?.addEventListener('input', debounce(() => views.filterAgingInvoices(), 300));
+      document.getElementById('aging-refresh-btn')?.addEventListener('click', () => {
         const sel = document.getElementById('aging-customer-select');
-        if (sel.value) views.loadAgingFor(sel.value);
+        if (sel?.value) views.loadAgingFor(sel.value);
       });
 
+      // Period filters (status & search)
+      document.getElementById('filter-period-status')?.addEventListener('change', () => views.filterPeriods());
+      document.getElementById('filter-period-search')?.addEventListener('input', debounce(() => views.filterPeriods(), 300));
+
+      // Reconciler filters (status & search)
+      document.getElementById('filter-reconciler-status')?.addEventListener('change', () => views.filterReconciler());
+      document.getElementById('filter-reconciler-search')?.addEventListener('input', debounce(() => views.filterReconciler(), 300));
+
+      // Currency search
+      document.getElementById('filter-currency-search')?.addEventListener('input', debounce(() => views.filterCurrencies(), 300));
+
       // Audit filters
-      document.getElementById('filter-audit-resource').addEventListener('change', () => views.audit());
-      document.getElementById('filter-audit-search').addEventListener('input', debounce(() => views.audit(), 300));
+      document.getElementById('filter-audit-resource')?.addEventListener('change', () => views.audit());
+      document.getElementById('filter-audit-search')?.addEventListener('input', debounce(() => views.filterAudit(), 300));
 
       // Periods action delegation
       document.getElementById('periods-table').addEventListener('click', (e) => {
