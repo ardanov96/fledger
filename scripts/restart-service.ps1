@@ -89,6 +89,20 @@ $services = @{
             PORT = "8000"
         }
     }
+    "core" = @{
+        Port    = 8081
+        Cmd     = "go run ./cmd/api"
+        WorkDir = "$base\fledger-core"
+        Env     = @{
+            APP_ENV         = "development"
+            PORT            = "8081"
+            DATABASE_URL    = "postgres://fmcg:fmcg_dev_password@localhost:5432/fmcg_wallet?sslmode=disable"
+            REDIS_URL       = "redis://localhost:6379/0"
+            NATS_URL        = "nats://localhost:4222"
+            JWT_SECRET      = "fledger-super-secure-jwt-secret-key-2026-min-32"
+            RBAC_POLICY_DIR = "$base\fledger-core\internal\auth\rbac\policies"
+        }
+    }
 }
 
 if (-not $services.ContainsKey($ServiceName)) {
@@ -112,7 +126,8 @@ Start-Sleep -Milliseconds 600
 # 2. Start process
 Write-Host "Starting $ServiceName on port :$port..." -ForegroundColor Yellow
 $envCmd = ($s.Env.GetEnumerator() | ForEach-Object { "set ""$($_.Key)=$($_.Value)""" }) -join " && "
-$fullCmd = "cmd /c ""$envCmd && `"$($s.Exe)`" >> `"$logDir\$ServiceName.out`" 2>>&1"""
+$targetCmd = if ($s.Cmd) { $s.Cmd } else { "`"$($s.Exe)`"" }
+$fullCmd = "cmd /c ""$envCmd && $targetCmd >> `"$logDir\$ServiceName.out`" 2>>&1"""
 
 Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
     CommandLine      = $fullCmd

@@ -35,6 +35,10 @@ cd /d "%BASE%\fledger-dunning"
 go build -o "%OUT%\dunning.exe" ./cmd/server
 if errorlevel 1 ( echo BUILD FAIL: dunning & exit /b 1 )
 
+cd /d "%BASE%\deployments\gateway"
+go build -o "%OUT%\gateway.exe" .
+if errorlevel 1 ( echo BUILD FAIL: gateway & exit /b 1 )
+
 echo.
 echo Copying binaries to source roots...
 copy /Y "%OUT%\core.exe"    "%BASE%\fledger-core\core.exe"        >nul
@@ -43,5 +47,6 @@ copy /Y "%OUT%\pay.exe"     "%BASE%\fledger-pay\src\pay.exe"          >nul
 copy /Y "%OUT%\force.exe"   "%BASE%\fledger-force\src\force.exe"      >nul
 copy /Y "%OUT%\order.exe"   "%BASE%\fledger-order\src\order.exe"      >nul
 copy /Y "%OUT%\dunning.exe" "%BASE%\fledger-dunning\dunning.exe"  >nul
+copy /Y "%OUT%\gateway.exe" "%BASE%\deployments\gateway\gateway.exe" >nul
 
-echo All 6 binaries built and copied.
+echo All 7 binaries (6 microservices + gateway) built and copied.

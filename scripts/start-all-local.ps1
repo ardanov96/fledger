@@ -42,8 +42,8 @@ $services = @(
         Name    = "core"
         Title   = "Fledger Core Ledger"
         Port    = 8081
-        Exe     = "$base\.gobuild\bin\core.exe"
-        WorkDir = $base
+        Cmd     = "go run ./cmd/api"
+        WorkDir = "$base\fledger-core"
         Env     = @{
             APP_ENV         = "development"
             PORT            = "8081"
@@ -154,7 +154,8 @@ $services = @(
 Write-Host "`n[2/4] Launching Microservices & Gateway..." -ForegroundColor Yellow
 foreach ($s in $services) {
     $envCmd = ($s.Env.GetEnumerator() | ForEach-Object { "set ""$($_.Key)=$($_.Value)""" }) -join " && "
-    $fullCmd = "cmd /c ""$envCmd && `"$($s.Exe)`" >> `"$logDir\$($s.Name).out`" 2>>&1"""
+    $targetCmd = if ($s.Cmd) { $s.Cmd } else { "`"$($s.Exe)`"" }
+    $fullCmd = "cmd /c ""$envCmd && $targetCmd >> `"$logDir\$($s.Name).out`" 2>>&1"""
     Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
         CommandLine      = $fullCmd
         CurrentDirectory = $s.WorkDir
