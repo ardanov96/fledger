@@ -2263,6 +2263,33 @@
       color: #cbd5e1;
     }
 
+    .bento-cta-row {
+      margin-top: 14px;
+      display: flex;
+    }
+
+    .bento-live-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      padding: 6px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .bento-live-btn:hover {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.45);
+      color: #7dd3fc;
+      transform: translateX(3px);
+    }
+
     /* --- Head-to-Head Competitor Comparison Matrix --- */
     .table-container {
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 100%), var(--bg-card);
@@ -3535,6 +3562,16 @@
     </nav>
 
     <div class="topbar-actions">
+      <a href="/hub" class="btn-launch-primary" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#f8fafc;box-shadow:none;text-decoration:none;">
+        <!-- Lucide LayoutDashboard SVG -->
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="7" height="9" x="3" y="3" rx="1"/>
+          <rect width="7" height="5" x="14" y="3" rx="1"/>
+          <rect width="7" height="9" x="14" y="12" rx="1"/>
+          <rect width="7" height="5" x="3" y="16" rx="1"/>
+        </svg>
+        <span>Live Ecosystem Hub</span>
+      </a>
       <a href="/demo" class="btn-launch-primary">
         <span>Jadwalkan Demo</span>
         <!-- Lucide ArrowRight SVG -->
@@ -4972,6 +5009,12 @@
           <span class="bento-spec-tag">Pantau Umur Piutang</span>
           <span class="bento-spec-tag">Standar PSAK</span>
         </div>
+        <div class="bento-cta-row">
+          <a href="/core/web/" target="_blank" class="bento-live-btn">
+            <span>Buka Core Ledger Web</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
+        </div>
       </div>
 
       <!-- 2. Force SFA -->
@@ -4999,6 +5042,12 @@
           <span class="bento-spec-tag">Uang Sales Terkunci</span>
           <span class="bento-spec-tag">GPS Toko Akurat</span>
           <span class="bento-spec-tag">Setor Kasir Harian</span>
+        </div>
+        <div class="bento-cta-row">
+          <a href="/force/" target="_blank" class="bento-live-btn">
+            <span>Buka SFA Mobile Web</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
         </div>
       </div>
 
@@ -5031,6 +5080,12 @@
           <span class="bento-spec-tag">Nol Debat Retur</span>
           <span class="bento-spec-tag">Kepatuhan Beban KIR</span>
         </div>
+        <div class="bento-cta-row">
+          <a href="/fleet/" target="_blank" class="bento-live-btn">
+            <span>Buka Fleet &amp; POD Supir</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
+        </div>
       </div>
 
       <!-- 4. Dunning WA Cadence -->
@@ -5062,6 +5117,12 @@
           <span class="bento-spec-tag">Tombol Bayar 1-Klik</span>
           <span class="bento-spec-tag">Auto-Stop Saat Lunas</span>
         </div>
+        <div class="bento-cta-row">
+          <a href="/dunning/" target="_blank" class="bento-live-btn">
+            <span>Buka Dunning WA Portal</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
+        </div>
       </div>
 
       <!-- 5. Pay Gateway -->
@@ -5090,6 +5151,12 @@
           <span class="bento-spec-tag">Virtual Account Bank</span>
           <span class="bento-spec-tag">Nol Cek Mutasi Manual</span>
         </div>
+        <div class="bento-cta-row">
+          <a href="/pay/" target="_blank" class="bento-live-btn">
+            <span>Buka Kasir Pay Gateway</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
+        </div>
       </div>
 
       <!-- 6. Order OMS -->
@@ -5117,6 +5184,12 @@
           <span class="bento-spec-tag">Blokir Toko Nunggak</span>
           <span class="bento-spec-tag">Pemesanan Grosir 24 Jam</span>
           <span class="bento-spec-tag">Izin Khusus Direksi</span>
+        </div>
+        <div class="bento-cta-row">
+          <a href="/order/" target="_blank" class="bento-live-btn">
+            <span>Buka Order OMS Portal</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
         </div>
       </div>
     </div>

@@ -802,7 +802,7 @@
             <span style="color:var(--text-dim);">Latency Probe:</span>
             <span class="health-status-indicator" id="health-8081">ONLINE</span>
           </div>
-          <a href="http://localhost:8081/web/" target="_blank" class="btn-launch-outline">
+          <a href="/core/web/" target="_blank" class="btn-launch-outline">
             <span>Buka Core Ledger Web (:8081)</span>
             <!-- Lucide ArrowUpRight SVG -->
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -849,7 +849,7 @@
             <span style="color:var(--text-dim);">Latency Probe:</span>
             <span class="health-status-indicator" id="health-8083">ONLINE</span>
           </div>
-          <a href="http://localhost:8083/" target="_blank" class="btn-launch-outline">
+          <a href="/pay/" target="_blank" class="btn-launch-outline">
             <span>Buka Pay Checkout (:8083)</span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M7 17 17 7"/><path d="M7 7h10v10"/>
@@ -895,7 +895,7 @@
             <span style="color:var(--text-dim);">Latency Probe:</span>
             <span class="health-status-indicator" id="health-8084">ONLINE</span>
           </div>
-          <a href="http://localhost:8084/" target="_blank" class="btn-launch-outline">
+          <a href="/force/" target="_blank" class="btn-launch-outline">
             <span>Buka SFA Console (:8084)</span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M7 17 17 7"/><path d="M7 7h10v10"/>
@@ -947,7 +947,7 @@
             <span style="color:var(--text-dim);">Latency Probe:</span>
             <span class="health-status-indicator" id="health-8085">ONLINE</span>
           </div>
-          <a href="http://localhost:8085/" target="_blank" class="btn-launch-outline">
+          <a href="/order/" target="_blank" class="btn-launch-outline">
             <span>Buka Order OMS Portal (:8085)</span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M7 17 17 7"/><path d="M7 7h10v10"/>
@@ -996,7 +996,7 @@
             <span style="color:var(--text-dim);">Latency Probe:</span>
             <span class="health-status-indicator" id="health-8082">ONLINE</span>
           </div>
-          <a href="http://localhost:8082/web/" target="_blank" class="btn-launch-outline">
+          <a href="/fleet/" target="_blank" class="btn-launch-outline">
             <span>Buka Fleet Portal (:8082)</span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M7 17 17 7"/><path d="M7 7h10v10"/>
@@ -1046,7 +1046,7 @@
             <span style="color:var(--text-dim);">Latency Probe:</span>
             <span class="health-status-indicator" id="health-8086">ONLINE</span>
           </div>
-          <a href="http://localhost:8086/" target="_blank" class="btn-launch-outline">
+          <a href="/dunning/" target="_blank" class="btn-launch-outline">
             <span>Buka Dunning &amp; WA Portal (:8086)</span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M7 17 17 7"/><path d="M7 7h10v10"/>
@@ -1104,12 +1104,12 @@
 
   <script>
     const services = [
-      { id: '8081', url: 'http://localhost:8081/healthz' },
-      { id: '8082', url: 'http://localhost:8082/healthz' },
-      { id: '8083', url: 'http://localhost:8083/healthz' },
-      { id: '8084', url: 'http://localhost:8084/healthz' },
-      { id: '8085', url: 'http://localhost:8085/healthz' },
-      { id: '8086', url: 'http://localhost:8086/healthz' },
+      { id: '8081', url: '/core/healthz' },
+      { id: '8082', url: '/fleet/healthz' },
+      { id: '8083', url: '/pay/healthz' },
+      { id: '8084', url: '/force/healthz' },
+      { id: '8085', url: '/order/healthz' },
+      { id: '8086', url: '/dunning/healthz' },
     ];
 
     async function probeService(s) {

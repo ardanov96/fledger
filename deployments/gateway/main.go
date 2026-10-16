@@ -42,12 +42,25 @@ func proxyHandler(targetURL string, prefix string) http.Handler {
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
 		req.Host = target.Host
+		if req.Header.Get("X-Forwarded-Host") == "" {
+			req.Header.Set("X-Forwarded-Host", req.Host)
+		}
 		if prefix != "" && strings.HasPrefix(req.URL.Path, prefix) {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, strings.TrimSuffix(prefix, "/"))
 			if !strings.HasPrefix(req.URL.Path, "/") {
 				req.URL.Path = "/" + req.URL.Path
 			}
 		}
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		loc := resp.Header.Get("Location")
+		if loc != "" && prefix != "" {
+			cleanPrefix := "/" + strings.Trim(prefix, "/")
+			if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, cleanPrefix+"/") && loc != cleanPrefix {
+				resp.Header.Set("Location", cleanPrefix+loc)
+			}
+		}
+		return nil
 	}
 	return proxy
 }
@@ -166,13 +179,40 @@ func main() {
 		fmt.Fprintf(w, `{"status":"alive","gateway":"fledger-gateway","port":%s}`, port)
 	})
 
-	// Reverse Proxies
-	mux.Handle("/core/", proxyHandler("http://127.0.0.1:8081", "/core"))
+	// Core Ledger Web Portal & API Proxy
+	mux.HandleFunc("/core", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/core/web/", http.StatusFound)
+	})
+	mux.HandleFunc("/core/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/core/" || r.URL.Path == "/core" {
+			http.Redirect(w, r, "/core/web/", http.StatusFound)
+			return
+		}
+		proxyHandler("http://127.0.0.1:8081", "/core").ServeHTTP(w, r)
+	})
+
+	// Trailing-slash redirects for portal subpaths to ensure relative assets resolve properly
+	for _, p := range []string{"/fleet", "/pay", "/force", "/order", "/dunning"} {
+		prefix := p
+		mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, prefix+"/", http.StatusFound)
+		})
+	}
+
+	// Reverse Proxies for all Microservices
 	mux.Handle("/fleet/", proxyHandler("http://127.0.0.1:8082", "/fleet"))
 	mux.Handle("/pay/", proxyHandler("http://127.0.0.1:8083", "/pay"))
 	mux.Handle("/force/", proxyHandler("http://127.0.0.1:8084", "/force"))
 	mux.Handle("/order/", proxyHandler("http://127.0.0.1:8085", "/order"))
 	mux.Handle("/dunning/", proxyHandler("http://127.0.0.1:8086", "/dunning"))
+
+	// Direct API & Webhook Proxies (Midtrans, Xendit, WhatsApp callbacks, inter-service API)
+	mux.Handle("/v1/core/", proxyHandler("http://127.0.0.1:8081", ""))
+	mux.Handle("/v1/fleet/", proxyHandler("http://127.0.0.1:8082", ""))
+	mux.Handle("/v1/pay/", proxyHandler("http://127.0.0.1:8083", ""))
+	mux.Handle("/v1/force/", proxyHandler("http://127.0.0.1:8084", ""))
+	mux.Handle("/v1/order/", proxyHandler("http://127.0.0.1:8085", ""))
+	mux.Handle("/v1/dunning/", proxyHandler("http://127.0.0.1:8086", ""))
 
 	// Developer & QA Operations Hub
 	mux.HandleFunc("/hub", func(w http.ResponseWriter, r *http.Request) {
