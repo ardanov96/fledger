@@ -3,24 +3,29 @@ set -e
 
 echo "================================================================="
 echo "  FLEDGER OS — ALL-IN-ONE ENTERPRISE CLOUD CONTAINER             "
-echo "  Ready for 24/7 Render / Koyeb / Hugging Face Deployment        "
+echo "  Rootless Multi-Cloud Edition (Hugging Face / Koyeb / Docker)   "
 echo "================================================================="
 
-# -----------------------------------------------------------------------------
-# 1. Start Embedded PostgreSQL
-# -----------------------------------------------------------------------------
-mkdir -p /run/postgresql /var/lib/postgresql/data /var/log/postgresql
-chown -R postgres:postgres /run/postgresql /var/lib/postgresql /var/log/postgresql
+HOME_DIR="${HOME:-/home/user}"
+PGDATA="${HOME_DIR}/data/postgres"
+PGRUN="${HOME_DIR}/run"
+REDIS_DATA="${HOME_DIR}/data/redis"
+NATS_DATA="${HOME_DIR}/data/nats"
 
-if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+mkdir -p "$PGDATA" "$PGRUN" "$REDIS_DATA" "$NATS_DATA"
+
+# -----------------------------------------------------------------------------
+# 1. Start Embedded PostgreSQL 16 (Rootless)
+# -----------------------------------------------------------------------------
+if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo ">>> [1/5] Initializing local PostgreSQL 16 Cluster..."
-    su - postgres -c "initdb -D /var/lib/postgresql/data --auth-local=trust --auth-host=trust"
-    su - postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/log/postgresql/pg.log start"
+    initdb -D "$PGDATA" --auth-local=trust --auth-host=trust
+    pg_ctl -D "$PGDATA" -o "-k $PGRUN -p 5432" -l "$HOME_DIR/pg.log" start
     
     echo ">>> [1/5] Creating dedicated microservice databases & user..."
-    su - postgres -c "psql -c \"CREATE USER fmcg WITH SUPERUSER PASSWORD 'fmcg_dev_password';\""
+    psql -h "$PGRUN" -p 5432 -d postgres -c "CREATE USER fmcg WITH SUPERUSER PASSWORD 'fmcg_dev_password';" || true
     for db in fmcg_wallet fledger_fleet fledger_pay fledger_force fledger_order fledger_dunning; do
-        su - postgres -c "psql -c \"CREATE DATABASE $db OWNER fmcg;\""
+        psql -h "$PGRUN" -p 5432 -d postgres -c "CREATE DATABASE $db OWNER fmcg;" || true
     done
 
     echo ">>> [1/5] Running schema migrations..."
@@ -28,47 +33,47 @@ if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
     if [ -d "/app/migrations/core" ]; then
         for f in $(ls /app/migrations/core/*up.sql 2>/dev/null | sort); do
             echo "  -> Core migration: $f"
-            su - postgres -c "psql -U fmcg -d fmcg_wallet -f '$f'" >/dev/null 2>&1 || true
+            psql -h "$PGRUN" -p 5432 -U fmcg -d fmcg_wallet -f "$f" >/dev/null 2>&1 || true
         done
     fi
     # 2. Fleet migrations
     if [ -d "/app/migrations/fleet" ]; then
         for f in $(ls /app/migrations/fleet/*.sql 2>/dev/null | sort); do
             echo "  -> Fleet migration: $f"
-            su - postgres -c "psql -U fmcg -d fledger_fleet -f '$f'" >/dev/null 2>&1 || true
+            psql -h "$PGRUN" -p 5432 -U fmcg -d fledger_fleet -f "$f" >/dev/null 2>&1 || true
         done
     fi
     # 3. Pay migrations
     if [ -d "/app/migrations/pay" ]; then
         for f in $(ls /app/migrations/pay/*.sql 2>/dev/null | sort); do
             echo "  -> Pay migration: $f"
-            su - postgres -c "psql -U fmcg -d fledger_pay -f '$f'" >/dev/null 2>&1 || true
+            psql -h "$PGRUN" -p 5432 -U fmcg -d fledger_pay -f "$f" >/dev/null 2>&1 || true
         done
     fi
     # 4. Force migrations
     if [ -d "/app/migrations/force" ]; then
         for f in $(ls /app/migrations/force/*.sql 2>/dev/null | sort); do
             echo "  -> Force migration: $f"
-            su - postgres -c "psql -U fmcg -d fledger_force -f '$f'" >/dev/null 2>&1 || true
+            psql -h "$PGRUN" -p 5432 -U fmcg -d fledger_force -f "$f" >/dev/null 2>&1 || true
         done
     fi
     # 5. Order migrations
     if [ -d "/app/migrations/order" ]; then
         for f in $(ls /app/migrations/order/*.sql 2>/dev/null | sort); do
             echo "  -> Order migration: $f"
-            su - postgres -c "psql -U fmcg -d fledger_order -f '$f'" >/dev/null 2>&1 || true
+            psql -h "$PGRUN" -p 5432 -U fmcg -d fledger_order -f "$f" >/dev/null 2>&1 || true
         done
     fi
     # 6. Dunning migrations
     if [ -d "/app/migrations/dunning" ]; then
         for f in $(ls /app/migrations/dunning/*.sql 2>/dev/null | sort); do
             echo "  -> Dunning migration: $f"
-            su - postgres -c "psql -U fmcg -d fledger_dunning -f '$f'" >/dev/null 2>&1 || true
+            psql -h "$PGRUN" -p 5432 -U fmcg -d fledger_dunning -f "$f" >/dev/null 2>&1 || true
         done
     fi
 else
     echo ">>> [1/5] Starting existing PostgreSQL..."
-    su - postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/log/postgresql/pg.log start"
+    pg_ctl -D "$PGDATA" -o "-k $PGRUN -p 5432" -l "$HOME_DIR/pg.log" start
 fi
 
 DB_BASE="postgres://fmcg:fmcg_dev_password@127.0.0.1:5432"
@@ -77,11 +82,10 @@ DB_BASE="postgres://fmcg:fmcg_dev_password@127.0.0.1:5432"
 # 2. Start Redis & NATS JetStream
 # -----------------------------------------------------------------------------
 echo ">>> [2/5] Starting Redis 7..."
-redis-server --daemonize yes --port 6379 --bind 127.0.0.1
+redis-server --daemonize yes --port 6379 --bind 127.0.0.1 --dir "$REDIS_DATA"
 
 echo ">>> [2/5] Starting NATS JetStream..."
-mkdir -p /data/nats
-nats-server -js -sd /data/nats -p 4222 >/dev/null 2>&1 &
+nats-server -js -sd "$NATS_DATA" -p 4222 >/dev/null 2>&1 &
 
 sleep 2
 
@@ -170,7 +174,7 @@ echo ">>> [4/5] Scheduling Ecosystem Auto-Seeder..."
 # -----------------------------------------------------------------------------
 # 5. Start Unified API Gateway on $PORT (Foreground)
 # -----------------------------------------------------------------------------
-LISTEN_PORT="${PORT:-10000}"
+LISTEN_PORT="${PORT:-7860}"
 export PORT="$LISTEN_PORT"
 echo "================================================================="
 echo ">>> [5/5] FLEDGER OS Gateway is ONLINE at port ${LISTEN_PORT}"

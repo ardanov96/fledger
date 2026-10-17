@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/simulator", "destination": "/simulator.html" },
+    { "source": "/hub", "destination": "/hub.html" },
+    { "source": "/console", "destination": "/hub.html" },
+    { "source": "/demo", "destination": "/demo.html" },
+    { "source": "/logo-preview", "destination": "/logo-preview.html" },
+    { "source": "/core", "destination": "/core/web/index.html" },
+    { "source": "/core/web", "destination": "/core/web/index.html" },
+    { "source": "/core/web/", "destination": "/core/web/index.html" },
+    { "source": "/fleet", "destination": "/fleet/index.html" },
+    { "source": "/fleet/", "destination": "/fleet/index.html" },
+    { "source": "/pay", "destination": "/pay/index.html" },
+    { "source": "/pay/", "destination": "/pay/index.html" },
+    { "source": "/force", "destination": "/force/index.html" },
+    { "source": "/force/", "destination": "/force/index.html" },
+    { "source": "/order", "destination": "/order/index.html" },
+    { "source": "/order/", "destination": "/order/index.html" }
+  ]
+}

@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#090d16">
+  <title>Simulator Surat Jalan Digital &amp; Kas Terkunci — Fledger OS</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <meta name="description" content="Simulasi interaktif langsung alur distribusi tertutup: dari terbit surat jalan digital, faktur bersih di toko, hingga setoran kas terkunci otomatis ke buku besar.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-base: #060910;
+      --bg-surface: #0a0f1d;
+      --bg-card: #0d1527;
+      --bg-card-hover: #121c33;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --accent-blue: #38bdf8;
+      --accent-emerald: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-rose: #f43f5e;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    .bg-dot-matrix {
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 25%, #000 40%, transparent 90%);
+      -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 25%, #000 40%, transparent 90%);
+    }
+
+    /* Top Navigation */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 40px;
+      background: rgba(10, 15, 29, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon-frame {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #1d4ed8 0%, #0284c7 100%);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(2, 132, 199, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      color: #fff;
+    }
+
+    .brand-tag {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 2px 7px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      margin-left: 6px;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .nav-btn-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: rgba(255, 255, 255, 0.03);
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn-link:hover {
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .nav-btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #fff;
+      text-decoration: none;
+      padding: 8px 18px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+      border: 1px solid #1d4ed8;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    /* Main Simulator Layout */
+    .simulator-container {
+      max-width: 1480px;
+      width: min(1480px, calc(100% - 48px));
+      margin: 36px auto 80px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .sim-header {
+      text-align: center;
+      max-width: 860px;
+      margin: 0 auto 36px;
+    }
+
+    .sim-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      color: var(--accent-emerald);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 16px;
+    }
+
+    .sim-eyebrow-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    .sim-title {
+      font-size: 2.6rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #fff;
+      margin-bottom: 14px;
+      line-height: 1.2;
+    }
+
+    .sim-desc {
+      font-size: 1rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Step Timeline Bar */
+    .step-track {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 900px) {
+      .step-track {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .step-node {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step-node.active {
+      background: rgba(37, 99, 235, 0.12);
+      border-color: #38bdf8;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+    }
+
+    .step-node.completed {
+      border-color: rgba(52, 211, 153, 0.4);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .step-node-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .step-node.active .step-node-icon {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .step-node.completed .step-node-icon {
+      background: #10b981;
+      color: #fff;
+    }
+
+    .step-node-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .step-node-idx {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+    }
+
+    .step-node-lbl {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Simulation Interactive Stage Card */
+    .sim-stage-card {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%), var(--bg-surface);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-xl);
+      padding: 36px 40px;
+      box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.7);
+      margin-bottom: 32px;
+    }
+
+    .stage-view {
+      display: none;
+      animation: fadeIn 0.35s ease;
+    }
+
+    .stage-view.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .stage-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 40px;
+      align-items: start;
+    }
+
+    @media (max-width: 1024px) {
+      .stage-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+      .sim-stage-card {
+        padding: 24px;
+      }
+    }
+
+    .stage-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .stage-subtitle {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    /* Document/Ticket Mockup Card */
+    .document-card {
+      background: #060a14;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      font-family: var(--font-mono);
+      position: relative;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
+      margin-bottom: 18px;
+    }
+
+    .doc-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .doc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-bottom: 18px;
+    }
+
+    .doc-table th {
+      text-align: left;
+      color: var(--text-dim);
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.74rem;
+    }
+
+    .doc-table td {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #cbd5e1;
+    }
+
+    .doc-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Live Telemetry Log Feed */
+    .telemetry-feed {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      height: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .log-line {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      line-height: 1.4;
+    }
+
+    .log-time {
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+
+    .log-tag {
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.68rem;
+    }
+
+    .log-tag.blue { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    .log-tag.green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .log-tag.amber { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .log-tag.rose { background: rgba(244, 63, 94, 0.2); color: #f43f5e; }
+
+    .log-msg {
+      color: #e2e8f0;
+    }
+
+    /* Action Buttons */
+    .action-btn-row {
+      display: flex;
+      gap: 14px;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
+
+    .btn-act-primary {
+      background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+      border-top: 1px solid rgba(255, 255, 255, 0.35);
+      border-left: 1px solid rgba(255, 255, 255, 0.15);
+      border-right: 1px solid rgba(255, 255, 255, 0.15);
+      border-bottom: 1px solid #1d4ed8;
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+      color: #fff;
+      padding: 13px 24px;
+      border-radius: var(--radius-md);
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .btn-act-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-act-outline {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-strong);
+      color: #cbd5e1;
+      padding: 13px 20px;
+      border-radius: var(--radius-md);
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .btn-act-outline:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.25);
+      color: #fff;
+    }
+
+    .btn-act-danger {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      color: #fb7185;
+      padding: 13px 20px;
+      border-radius: var(--radius-md);
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .btn-act-danger:hover {
+      background: rgba(244, 63, 94, 0.25);
+      color: #fff;
+    }
+
+    /* Live Ledger Table Mockup */
+    .ledger-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      margin-top: 14px;
+    }
+
+    .ledger-table th {
+      background: rgba(255, 255, 255, 0.04);
+      padding: 8px 12px;
+      text-align: left;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .ledger-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #e2e8f0;
+    }
+
+    /* Final CTA Banner */
+    .sim-cta-box {
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.12) 0%, rgba(14, 21, 38, 0.9) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      border-radius: var(--radius-xl);
+      padding: 36px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .cta-txt h3 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .cta-txt p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-dot-matrix"></div>
+
+  <!-- Top Navigation Header -->
+  <header class="topbar">
+    <a href="/" class="brand-group">
+      <div class="brand-icon-frame">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+          <rect x="6" y="6" width="5.5" height="20" rx="2.75" fill="#ffffff"/>
+          <rect x="14.5" y="6" width="12" height="5.5" rx="2.75" fill="#38bdf8"/>
+          <rect x="14.5" y="14.5" width="8" height="5.5" rx="2.75" fill="#34d399"/>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-title">FLEDGER OS</span>
+        <span class="brand-tag">v2.6 Enterprise</span>
+      </div>
+    </a>
+
+    <div class="nav-actions">
+      <a href="/" class="nav-btn-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Ke Beranda</span>
+      </a>
+      <a href="/demo" class="nav-btn-primary">
+        <span>Jadwalkan Demo Privat</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Simulator Container -->
+  <main class="simulator-container">
+    <div class="sim-header">
+      <div class="sim-eyebrow">
+        <span class="sim-eyebrow-dot"></span>
+        <span>Interactive Closed-Loop Supply Chain Simulator</span>
+      </div>
+      <h1 class="sim-title">
+        Simulasi Siklus Surat Jalan &amp; Kas Terkunci
+      </h1>
+      <p class="sim-desc">
+        Coba langsung 4 tahap alur penguncian kas Fledger dalam waktu 60 detik: dari penerbitan DO digital di gudang, eliminasi sengketa retur di toko, hingga setoran kas terkunci otomatis ke buku besar.
+      </p>
+    </div>
+
+    <!-- 4 Step Track Timeline -->
+    <div class="step-track">
+      <div class="step-node active" id="track-1" onclick="switchStage(1)">
+        <div class="step-node-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+        <div class="step-node-meta">
+          <span class="step-node-idx">Tahap 1</span>
+          <span class="step-node-lbl">Gudang &amp; Validasi DO</span>
+        </div>
+      </div>
+
+      <div class="step-node" id="track-2" onclick="switchStage(2)">
+        <div class="step-node-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </div>
+        <div class="step-node-meta">
+          <span class="step-node-idx">Tahap 2</span>
+          <span class="step-node-lbl">Di Perjalanan Supir</span>
+        </div>
+      </div>
+
+      <div class="step-node" id="track-3" onclick="switchStage(3)">
+        <div class="step-node-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div class="step-node-meta">
+          <span class="step-node-idx">Tahap 3</span>
+          <span class="step-node-lbl">Serah Terima &amp; Retur</span>
+        </div>
+      </div>
+
+      <div class="step-node" id="track-4" onclick="switchStage(4)">
+        <div class="step-node-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="step-node-meta">
+          <span class="step-node-idx">Tahap 4</span>
+          <span class="step-node-lbl">Kas Terkunci &amp; Jurnal</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Stage Main Card -->
+    <div class="sim-stage-card">
+      <!-- STAGE 1: Gudang Dispatch & Validasi Plafon Kredit -->
+      <div class="stage-view active" id="stage-1">
+        <div class="stage-grid">
+          <div>
+            <h2 class="stage-title">
+              <span>Penerbitan Surat Jalan Digital (DO-2026-SUB-0849)</span>
+            </h2>
+            <p class="stage-subtitle">
+              Sistem secara otomatis mengecek riwayat pembayaran dan batas kredit toko sebelum barang boleh dimuat ke truk. Jika toko menunggak, DO terkunci otomatis.
+            </p>
+
+            <div class="document-card">
+              <div class="doc-header">
+                <div>
+                  <div style="color:#fff; font-weight:700; font-size:0.95rem;">DO-2026-SUB-0849 &bull; HUB SURABAYA</div>
+                  <div style="color:var(--text-dim); font-size:0.75rem;">Toko Tujuan: Toko Berkah Mandiri (Rungkut)</div>
+                </div>
+                <span class="doc-badge" style="background:rgba(52,211,153,0.15); color:#34d399; border-color:rgba(52,211,153,0.3);">
+                  &bull; KREDIT APPROVED
+                </span>
+              </div>
+
+              <table class="doc-table">
+                <thead>
+                  <tr>
+                    <th>ITEM SKU</th>
+                    <th>QTY</th>
+                    <th>HARGA SATUAN</th>
+                    <th style="text-align:right;">SUBTOTAL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Minyak Goreng Sawit 2L (Karton/6 Pch)</td>
+                    <td>200 Dus</td>
+                    <td>Rp 360.000</td>
+                    <td style="text-align:right;">Rp 72.000.000</td>
+                  </tr>
+                  <tr>
+                    <td>Biskuit Gandum Keluarga 300g</td>
+                    <td>100 Dus</td>
+                    <td>Rp 180.000</td>
+                    <td style="text-align:right;">Rp 18.000.000</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div class="doc-total-row">
+                <span style="color:var(--text-muted); font-size:0.85rem;">TOTAL TAGIHAN INVOICE:</span>
+                <span style="color:#38bdf8;">Rp 90.000.000</span>
+              </div>
+            </div>
+
+            <div class="action-btn-row">
+              <button class="btn-act-primary" onclick="proceedToStage(2)">
+                <span>Terbitkan DO Digital &amp; Kirim ke HP Supir</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Live Audit Log Feed -->
+          <div>
+            <div style="font-size:0.82rem; font-weight:700; color:#fff; margin-bottom:10px; display:flex; justify-content:space-between;">
+              <span>AUDIT TRAIL &bull; SYSTEM TELEMETRY</span>
+              <span style="color:#34d399;">LIVE &bull; PORT 8085</span>
+            </div>
+            <div class="telemetry-feed" id="feed-log">
+              <div class="log-line">
+                <span class="log-time">14:20:01</span>
+                <span class="log-tag blue">ORDER</span>
+                <span class="log-msg">Sales SO-849 terkonfirmasi oleh Toko Berkah Mandiri.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:20:03</span>
+                <span class="log-tag green">CREDIT</span>
+                <span class="log-msg">Plafon kredit Rp 150jt valid. Sisa limit aman: Rp 60jt.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:20:05</span>
+                <span class="log-tag blue">FLEET</span>
+                <span class="log-msg">Armada Truk Colt Diesel L-9142-UB ditugaskan (Muatan 4.2 Ton).</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 2: Di Perjalanan Supir (GPS & Digital QR POD) -->
+      <div class="stage-view" id="stage-2">
+        <div class="stage-grid">
+          <div>
+            <h2 class="stage-title">
+              <span>Armada Dalam Perjalanan (Live GPS En Route)</span>
+            </h2>
+            <p class="stage-subtitle">
+              Surat jalan digital aktif di smartphone supir tanpa lembaran kertas fisik. Rute pengiriman terkunci dengan batas waktu estimasi kedatangan (ETA).
+            </p>
+
+            <div class="document-card" style="border-color:rgba(56, 189, 248, 0.4);">
+              <div class="doc-header">
+                <div>
+                  <div style="color:#fff; font-weight:700; font-size:0.95rem;">L-9142-UB &bull; SUPIR: JOKO SANTOSO</div>
+                  <div style="color:#38bdf8; font-size:0.75rem;">Status: Bergerak ke Rungkut Industri (Kecepatan: 38 km/jam)</div>
+                </div>
+                <span class="doc-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8;">
+                  &bull; ON DELIVERY
+                </span>
+              </div>
+
+              <div style="padding:14px; background:rgba(0,0,0,0.3); border-radius:var(--radius-md); font-size:0.8rem; margin-bottom:14px; display:flex; justify-content:space-between;">
+                <div>
+                  <div style="color:var(--text-dim); font-size:0.7rem;">ESTIMASI TIBA (ETA)</div>
+                  <div style="color:#fff; font-weight:700;">12 Menit Lagi</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-dim); font-size:0.7rem;">QR CODE SURAT JALAN</div>
+                  <div style="color:#34d399; font-weight:700;">TERENKRIPSI SHA-256</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-dim); font-size:0.7rem;">STATUS RETUR SEBELUMNYA</div>
+                  <div style="color:#38bdf8; font-weight:700;">Nol Tunggakan</div>
+                </div>
+              </div>
+
+              <p style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">
+                Surat jalan digital ini mencegah supir mengubah rute tanpa izin atau menurunkan barang di toko lain yang tidak terdaftar.
+              </p>
+            </div>
+
+            <div class="action-btn-row">
+              <button class="btn-act-outline" onclick="proceedToStage(1)">Kembali</button>
+              <button class="btn-act-primary" onclick="proceedToStage(3)">
+                <span>Simulasikan Truk Tiba di Toko</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:0.82rem; font-weight:700; color:#fff; margin-bottom:10px; display:flex; justify-content:space-between;">
+              <span>AUDIT TRAIL &bull; SYSTEM TELEMETRY</span>
+              <span style="color:#34d399;">LIVE &bull; PORT 8082</span>
+            </div>
+            <div class="telemetry-feed" id="feed-log-2">
+              <div class="log-line">
+                <span class="log-time">14:22:15</span>
+                <span class="log-tag green">QR-POD</span>
+                <span class="log-msg">Surat jalan digital terbit di HP supir. Token QR aktif.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:28:40</span>
+                <span class="log-tag blue">GPS</span>
+                <span class="log-msg">Armada keluar dari Gerbang Hub Waru, melaju ke rute Rungkut.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:38:12</span>
+                <span class="log-tag amber">GEOFENCE</span>
+                <span class="log-msg">Armada memasuki radius 100m dari Toko Berkah Mandiri.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 3: Serah Terima di Toko & Faktur Bersih (The Aha! Moment) -->
+      <div class="stage-view" id="stage-3">
+        <div class="stage-grid">
+          <div>
+            <h2 class="stage-title">
+              <span>Serah Terima Toko &amp; Faktur Bersih</span>
+            </h2>
+            <p class="stage-subtitle">
+              Toko mengecek barang. Jika ditemukan barang rusak, supir langsung memotong nota di layar HP saat serah terima. Faktur langsung klop tanpa coret-coret nota manual.
+            </p>
+
+            <div class="document-card" id="clean-doc-card">
+              <div class="doc-header">
+                <div>
+                  <div style="color:#fff; font-weight:700; font-size:0.95rem;">VERIFIKASI SERAH TERIMA FISIK</div>
+                  <div style="color:var(--text-dim); font-size:0.75rem;">Penerima: Toko Berkah Mandiri (Kasir Budi)</div>
+                </div>
+                <span class="doc-badge" id="clean-badge" style="background:rgba(245,158,11,0.15); color:#fbbf24; border-color:rgba(245,158,11,0.3);">
+                  &bull; PEMERIKSAAN FISIK
+                </span>
+              </div>
+
+              <table class="doc-table">
+                <thead>
+                  <tr>
+                    <th>ITEM SKU</th>
+                    <th>ORDER</th>
+                    <th>DITERIMA</th>
+                    <th style="text-align:right;">NILAI BERSIH</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Minyak Goreng Sawit 2L</td>
+                    <td>200 Dus</td>
+                    <td id="row-minyak-qty">200 Dus</td>
+                    <td style="text-align:right;" id="row-minyak-subtotal">Rp 72.000.000</td>
+                  </tr>
+                  <tr>
+                    <td>Biskuit Gandum Keluarga</td>
+                    <td>100 Dus</td>
+                    <td>100 Dus</td>
+                    <td style="text-align:right;">Rp 18.000.000</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div id="retur-highlight" style="display:none; background:rgba(244,63,94,0.1); border:1px solid rgba(244,63,94,0.3); border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.78rem; color:#f87171;">
+                <strong>POTONGAN RETUR:</strong> 5 Dus Minyak Rusak (-Rp 1.800.000). Foto bukti rusak tersimpan permanen di cloud.
+              </div>
+
+              <div class="doc-total-row">
+                <span style="color:var(--text-muted); font-size:0.85rem;">TOTAL TAGIHAN FAKTUR BERSIH:</span>
+                <span style="color:#34d399;" id="clean-total-val">Rp 90.000.000</span>
+              </div>
+            </div>
+
+            <!-- Interactive Trigger Buttons -->
+            <div class="action-btn-row">
+              <button class="btn-act-danger" id="btn-trigger-retur" onclick="simulateDamagedReturn()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span>[Klik Disini] Toko Minta Retur 5 Dus Rusak</span>
+              </button>
+
+              <button class="btn-act-primary" id="btn-next-to-4" onclick="proceedToStage(4)">
+                <span>Toko Tanda Tangan &amp; Bayar</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:0.82rem; font-weight:700; color:#fff; margin-bottom:10px; display:flex; justify-content:space-between;">
+              <span>AUDIT TRAIL &bull; SYSTEM TELEMETRY</span>
+              <span style="color:#34d399;">LIVE &bull; PORT 8086</span>
+            </div>
+            <div class="telemetry-feed" id="feed-log-3">
+              <div class="log-line">
+                <span class="log-time">14:41:05</span>
+                <span class="log-tag blue">POD</span>
+                <span class="log-msg">Truk tiba di Toko Berkah Mandiri. Kasir memulai scan QR.</span>
+              </div>
+              <div class="log-line" id="log-retur-line" style="display:none;">
+                <span class="log-time">14:42:18</span>
+                <span class="log-tag rose">RETUR-POD</span>
+                <span class="log-msg">5 Dus Minyak Rusak diverifikasi supir. Faktur bersih terhitung otomatis.</span>
+              </div>
+              <div class="log-line" id="log-clean-line" style="display:none;">
+                <span class="log-time">14:42:20</span>
+                <span class="log-tag green">CLEAN-POD</span>
+                <span class="log-msg">Toko & supir tanda tangan digital. Nol sengketa nota jatuh tempo!</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 4: Kas Terkunci & Jurnal Akuntansi Real-Time -->
+      <div class="stage-view" id="stage-4">
+        <div class="stage-grid">
+          <div>
+            <h2 class="stage-title">
+              <span>Setoran Kas Terkunci &amp; Jurnal Otomatis</span>
+            </h2>
+            <p class="stage-subtitle">
+              Uang tunai langsung terkunci di aplikasi lapangan dan wajib disetor ke kantor di hari H. Buku besar double-entry kantor langsung terposting otomatis detik itu juga.
+            </p>
+
+            <div class="document-card" style="border-color:rgba(52, 211, 153, 0.4);">
+              <div class="doc-header">
+                <div>
+                  <div style="color:#fff; font-weight:700; font-size:0.95rem;">VAULT KAS TERKUNCI &bull; JURNAL PSAK 101</div>
+                  <div style="color:#34d399; font-size:0.75rem;">Status: Kas Fisik Masuk Brankas Aplikasi Supir</div>
+                </div>
+                <span class="doc-badge" style="background:rgba(52,211,153,0.15); color:#34d399;">
+                  &bull; 100% RECONCILED
+                </span>
+              </div>
+
+              <div style="padding:16px; background:rgba(0,0,0,0.35); border-radius:var(--radius-md); margin-bottom:14px;">
+                <div style="font-size:0.76rem; color:var(--text-dim); margin-bottom:4px;">SETORAN KAS FISIK DI TANGAN SUPIR (LOCKED):</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#34d399;" id="locked-cash-val">Rp 88.200.000</div>
+                <div style="font-size:0.75rem; color:#cbd5e1; margin-top:4px;">
+                  Supir wajib setor fisik sebelum jam 18:00 WIB. Saldo kas perusahaan di bank terverifikasi otomatis.
+                </div>
+              </div>
+
+              <div style="font-size:0.78rem; font-weight:700; color:#fff;">BUKU BESAR DOUBLE-ENTRY TERPOSTING OTOMATIS:</div>
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    <th>KODE AKUN</th>
+                    <th>NAMA AKUN BUKU BESAR</th>
+                    <th>DEBIT</th>
+                    <th style="text-align:right;">KREDIT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>101-02</td>
+                    <td>Kas di Tangan Supir (Locked)</td>
+                    <td style="color:#34d399;" id="ledger-debit-val">Rp 88.200.000</td>
+                    <td style="text-align:right;">-</td>
+                  </tr>
+                  <tr>
+                    <td>401-02</td>
+                    <td>Retur Penjualan Toko (Valid)</td>
+                    <td style="color:#fbbf24;" id="ledger-retur-val">Rp 1.800.000</td>
+                    <td style="text-align:right;">-</td>
+                  </tr>
+                  <tr>
+                    <td>112-01</td>
+                    <td>Piutang Dagang Toko Berkah Mandiri</td>
+                    <td>-</td>
+                    <td style="text-align:right; color:#38bdf8;">Rp 90.000.000</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="action-btn-row">
+              <button class="btn-act-outline" onclick="resetSimulator()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                <span>Ulangi Simulasi dari Awal</span>
+              </button>
+              <a href="/demo" class="btn-act-primary" style="text-decoration:none;">
+                <span>Terapkan Sistem Ini di Distributor Anda</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </a>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:0.82rem; font-weight:700; color:#fff; margin-bottom:10px; display:flex; justify-content:space-between;">
+              <span>AUDIT TRAIL &bull; SYSTEM TELEMETRY</span>
+              <span style="color:#34d399;">LIVE &bull; PORT 8081</span>
+            </div>
+            <div class="telemetry-feed" id="feed-log-4">
+              <div class="log-line">
+                <span class="log-time">14:45:00</span>
+                <span class="log-tag green">SETTLEMENT</span>
+                <span class="log-msg">Pembayaran tunai Rp 88.200.000 diterima supir.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:45:02</span>
+                <span class="log-tag green">VAULT-LOCK</span>
+                <span class="log-msg">Kas terkunci di aplikasi HP. Sales/Supir tidak bisa menunda setoran.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:45:05</span>
+                <span class="log-tag blue">LEDGER-SYNC</span>
+                <span class="log-msg">Jurnal double-entry #JRN-2026-9481 masuk buku besar pusat otomatis.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-time">14:45:08</span>
+                <span class="log-tag green">ZERO-LEAK</span>
+                <span class="log-msg">Hasil rekonsiliasi: 0 selisih kas, 0 sengketa piutang. Modal berputar aman!</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Final Call to Action -->
+    <div class="sim-cta-box">
+      <div class="cta-txt">
+        <h3>Siap Mengunci Kebocoran Kas di Armada Nyata Anda?</h3>
+        <p>Konsultasikan kebutuhan operasional distributor Anda bersama Solution Architect Fledger OS secara privat.</p>
+      </div>
+      <a href="/demo" class="btn-act-primary" style="text-decoration:none; padding:14px 28px;">
+        <span>Jadwalkan Demo Privat Enterprise</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </a>
+    </div>
+  </main>
+
+  <script>
+    let currentStage = 1;
+    let hasReturned = false;
+
+    function switchStage(stageNum) {
+      currentStage = stageNum;
+      for (let i = 1; i <= 4; i++) {
+        const stageEl = document.getElementById(`stage-${i}`);
+        const trackEl = document.getElementById(`track-${i}`);
+        if (stageEl) stageEl.classList.toggle('active', i === stageNum);
+        if (trackEl) {
+          trackEl.classList.toggle('active', i === stageNum);
+          if (i < stageNum) {
+            trackEl.classList.add('completed');
+          } else if (i > stageNum) {
+            trackEl.classList.remove('completed');
+          }
+        }
+      }
+    }
+
+    function proceedToStage(stageNum) {
+      switchStage(stageNum);
+    }
+
+    function simulateDamagedReturn() {
+      if (hasReturned) return;
+      hasReturned = true;
+
+      document.getElementById('row-minyak-qty').textContent = '195 Dus (5 Dus Retur Rusak)';
+      document.getElementById('row-minyak-subtotal').textContent = 'Rp 70.200.000';
+      document.getElementById('retur-highlight').style.display = 'block';
+      document.getElementById('clean-total-val').textContent = 'Rp 88.200.000';
+      
+      const badge = document.getElementById('clean-badge');
+      badge.textContent = '• FAKTUR BERSIH (CLEAN POD)';
+      badge.style.background = 'rgba(52,211,153,0.15)';
+      badge.style.color = '#34d399';
+      badge.style.borderColor = 'rgba(52,211,153,0.3)';
+
+      document.getElementById('log-retur-line').style.display = 'flex';
+      document.getElementById('log-clean-line').style.display = 'flex';
+
+      const btn = document.getElementById('btn-trigger-retur');
+      btn.style.opacity = '0.6';
+      btn.style.pointerEvents = 'none';
+      btn.innerHTML = '<span>&check; 5 Dus Rusak Terpotong di Faktur</span>';
+    }
+
+    function resetSimulator() {
+      hasReturned = false;
+      document.getElementById('row-minyak-qty').textContent = '200 Dus';
+      document.getElementById('row-minyak-subtotal').textContent = 'Rp 72.000.000';
+      document.getElementById('retur-highlight').style.display = 'none';
+      document.getElementById('clean-total-val').textContent = 'Rp 90.000.000';
+      
+      const badge = document.getElementById('clean-badge');
+      badge.textContent = '• PEMERIKSAAN FISIK';
+      badge.style.background = 'rgba(245,158,11,0.15)';
+      badge.style.color = '#fbbf24';
+      badge.style.borderColor = 'rgba(245,158,11,0.3)';
+
+      const btn = document.getElementById('btn-trigger-retur');
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>[Klik Disini] Toko Minta Retur 5 Dus Rusak</span>`;
+
+      switchStage(1);
+    }
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 # ==============================================================================
-# FLEDGER OS — Master All-in-One Cloud Dockerfile (PaaS & Zero-Card Edition)
+# FLEDGER OS — Master All-in-One Cloud Dockerfile (Rootless & Zero-Card Edition)
 # Runs 6 Go microservices + Gateway + PostgreSQL + Redis + NATS in a single image
-# Optimized for Render.com (512MB RAM), Koyeb, and Hugging Face Spaces (16GB RAM)
+# Optimized for Hugging Face Spaces (16GB RAM / 0 Cards), Koyeb, and Render
 # ==============================================================================
 
 # --- Stage 1: Build All Go Binaries ---
@@ -71,8 +71,16 @@ COPY deployments/docker/all-in-one/entrypoint.sh /app/entrypoint.sh
 COPY deployments/docker/all-in-one/seed.sh /app/seed.sh
 RUN chmod +x /app/entrypoint.sh /app/seed.sh /app/bin/*
 
-# Render / Koyeb dynamic HTTP port
-ENV PORT=10000
-EXPOSE 10000 8000 80
+# Set up standard non-root user (UID 1000) for Hugging Face Spaces compatibility
+RUN adduser -D -u 1000 user && \
+    mkdir -p /home/user/data /home/user/run && \
+    chown -R user:user /home/user /app
+
+USER user
+ENV HOME=/home/user
+
+# Default port 7860 (Hugging Face) / 10000 (Render) / 8000
+ENV PORT=7860
+EXPOSE 7860 10000 8000 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]
