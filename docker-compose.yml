@@ -279,7 +279,7 @@ services:
       - "80:80"
     volumes:
       - ./deployments/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./deployments/gateway/index.html:/usr/share/nginx/html/index.html:ro
+      - ./deployments/gateway:/usr/share/nginx/html:ro
     depends_on:
       - core
       - fleet

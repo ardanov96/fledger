@@ -16,7 +16,7 @@ COPY src/ ./
 COPY web/ ./web/
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux \
     go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/api ./cmd/api
